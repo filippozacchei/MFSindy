@@ -82,8 +82,6 @@ def evaluate_mf_sindy(
     system_name: str,
     n_lf_vals,
     n_hf_vals,
-    noise_level_hf=0.01,
-    noise_level_lf=0.1,
     runs: int = 100,
     T: float = 0.1,
     dt: float = 1e-3,
@@ -92,7 +90,6 @@ def evaluate_mf_sindy(
     out_dir: str = "./Results",
     C_true=None,
     seed: int = 1,
-    T_test: float = 10.0,
     lib=None,
     d_order: int = 0,
     *,
@@ -125,7 +122,7 @@ def evaluate_mf_sindy(
 
     # Clean test trajectory for R²
     test_call = {**gen_kwargs, **gen_test_kwargs}
-    X_test, _, _ = generator(n_traj=5, noise_level=0.0, seed=999, T=T_test, **test_call)
+    X_test, _, _ = generator(n_traj=5, seed=999, **test_call)
     std_scale = float(np.std(X_test))  # scale for noise
 
     for i, n_lf in enumerate(tqdm(n_lf_vals, desc=f"{system_name}: LF grid")):
@@ -144,21 +141,21 @@ def evaluate_mf_sindy(
 
                 X_hf, grid_hf, t_hf = generator(
                     n_traj=n_hf,
-                    noise_level=noise_level_hf * std_scale,
+                    noise_level=n_lf * std_scale,
                     T=T,
                     seed=run * seed,
                     **hf_call
                 )
                 X_lf, _, t_lf = generator(
                     n_traj=n_lf,
-                    noise_level=noise_level_lf * std_scale,
+                    noise_level=n_hf * std_scale,
                     T=T,
                     seed=run * seed + 100,
                     **lf_call
                 )
 
                 # Weights can still be overridden by sindy_kwargs if desired
-                weights = [(1 / noise_level_hf) ** 2] * n_hf + [(1 / noise_level_lf) ** 2] * n_lf
+                weights = [(1 / n_hf) ** 2] * n_hf + [(1 / n_lf) ** 2] * n_lf
 
                 models = _train_models(
                     X_lf, t_lf, X_hf, t_hf, grid_hf, degree, threshold,
@@ -171,7 +168,6 @@ def evaluate_mf_sindy(
                 for metric_name in ("r2", "mad", "dis"):
                     for fidelity in metrics[metric_name]:
                         all_runs[metric_name][fidelity].append(metrics[metric_name][fidelity])
-
             agg_r2 = _aggregate_runs(all_runs["r2"], "r2")
             agg_mad = _aggregate_runs(all_runs["mad"], "mad")
             agg_dis = _aggregate_runs(all_runs["dis"], "dis")

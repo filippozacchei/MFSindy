@@ -8,7 +8,7 @@ def run_ensemble_sindy(
     threshold: float = 0.1,
     library=None,
     weights=None,
-    n_models: int = 100,
+    n_models: int = 20,
 ):
     """
     Train an Ensemble SINDy (Weak-SINDy) model.
