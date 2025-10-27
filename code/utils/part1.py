@@ -122,8 +122,7 @@ def evaluate_mf_sindy(
 
     # Clean test trajectory for R²
     test_call = {**gen_kwargs, **gen_test_kwargs}
-    X_test, _, _ = generator(n_traj=5, seed=999, **test_call)
-    std_scale = float(np.std(X_test))  # scale for noise
+    X_test, _, _ = generator(**test_call)
 
     for i, n_lf in enumerate(tqdm(n_lf_vals, desc=f"{system_name}: LF grid")):
         for j, n_hf in enumerate(n_hf_vals):
@@ -141,14 +140,12 @@ def evaluate_mf_sindy(
 
                 X_hf, grid_hf, t_hf = generator(
                     n_traj=n_hf,
-                    noise_level=n_lf * std_scale,
                     T=T,
                     seed=run * seed,
                     **hf_call
                 )
                 X_lf, _, t_lf = generator(
                     n_traj=n_lf,
-                    noise_level=n_hf * std_scale,
                     T=T,
                     seed=run * seed + 100,
                     **lf_call
@@ -202,4 +199,4 @@ def evaluate_mf_sindy(
         },
     )
 
-    print(f"Completed {system_name} evaluation → results saved in {out_path}")
+    print(f"Completed {system_name} evaluation -> results saved in {out_path}")
