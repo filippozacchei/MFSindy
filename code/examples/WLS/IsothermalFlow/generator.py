@@ -77,13 +77,17 @@ def compressible(t, U, dx, N, mu, RT):
 # ---------------------------------------------------------------------
 # Initial condition generator
 # ---------------------------------------------------------------------
-def make_initial_condition(X, Y, L, ic_type="taylor-green", perturb_scale=0.0):
+def make_initial_condition(X, Y, L, ic_type="taylor-green", perturb_scale=1):
     """Return (U0, V0, RHO0) for a chosen flow configuration."""
+    rng = np.random.default_rng()
     if ic_type == "taylor-green":
-        U0 = np.sin(2 * np.pi * X / L) * np.cos(2 * np.pi * Y / L)
-        V0 = -np.cos(2 * np.pi * X / L) * np.sin(2 * np.pi * Y / L)
-        RHO0 = 1.0 + 0.1 * np.cos(4 * np.pi * X / L) * np.cos(4 * np.pi * Y / L)
-        perturb = perturb_scale * np.exp(-((X - L / 2) ** 2 + (Y - L / 2) ** 2) / (0.1 * L) ** 2)
+        U0 = (-np.sin(2 * np.pi / L * X) + 0.5 * np.cos(2 * 2 * np.pi / L * Y))
+        V0 = (0.5 * np.cos(2 * np.pi / L * X) - np.sin(2 * 2 * np.pi / L * Y))
+        RHO0 = ( 1 + 0.5 * np.cos(2 * np.pi / L * X) * np.cos(2 * 2 * np.pi / L * Y))
+        # U0 = np.sin(2 * np.pi * X / L) * np.cos(2 * np.pi * Y / L)
+        # V0 = -np.cos(2 * np.pi * X / L) * np.sin(2 * np.pi * Y / L)
+        # RHO0 = 1.0 + 0.1 * np.cos(4 * np.pi * X / L) * np.cos(4 * np.pi * Y / L)
+        perturb = perturb_scale * np.exp(-((X - L / 2) ** 2 + (Y - L / 2) ** 2) / (0.1 * L) ** 2) * (0.5*rng.standard_normal(U0.shape))
         U0 += perturb
         V0 -= perturb
         
@@ -110,7 +114,7 @@ def make_initial_condition(X, Y, L, ic_type="taylor-green", perturb_scale=0.0):
 def generate_compressible_flow(
     n_traj=1,
     N=64,
-    Nt=100,
+    Nt=101,
     L=5,
     T=2,
     mu=1.0,
