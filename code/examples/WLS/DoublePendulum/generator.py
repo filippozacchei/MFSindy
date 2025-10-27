@@ -113,81 +113,42 @@ def simulate(y0, T=10.0, dt=1/240):
 
 
 def generate_dataset(
-    y0s,
-    n_hf,
-    n_lf,
-    noise_lf,
-    noise_hf,
-    T=10.0,
+    noise,
+    n_traj=5,
+    T=5.0,
     dt=0.001,
     seed=42,
-    save_data=True,
-    out_path="./data/double_pendulum_dataset.npz"
+    n_per_trajectory=1,
+    bounds: tuple = ((-np.pi/2, np.pi/2), (-np.pi/2, np.pi/2),
+                     (-np.pi/2, np.pi/2), (-np.pi/2, np.pi/2)),
 ):
     """
     Generate multiple double pendulum trajectories for identification experiments.
-
-
-    Returns
-    -------
-    data : dict
-        Dictionary containing all trajectories, also saved to disk.
-
-    Saved file structure
-    --------------------
-    The final `.npz` file contains:
-        - t : time vector
-        - Y_true : [n_total, n_steps, 4] array of true states
-        - Y_noisy : [n_total, n_steps, 4] array of noisy states
-        - sigma : [n_total] noise level for each trajectory
-        - type : [n_total] "HF" or "LF" string array
-        - y0 : [n_total, 4] array of initial conditions
     """
-    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    from pyDOE import lhs  # ensures reproducible stratified sampling
     rng = np.random.default_rng(seed)
 
-    all_noisy = []
-    all_sigma = []
-    all_trues = []
+    # Generate initial conditions using Latin Hypercube Sampling
+    dim = 4
+    samples = lhs(dim, samples=n_traj)
+    lows = np.array([b[0] for b in bounds])
+    highs = np.array([b[1] for b in bounds])
+    y0s = lows + (highs - lows) * samples  # scale LHS samples into bounds
+    all = []
+    t_all = []
+    
+    # generate y0 from bouynds y0s
 
     for y0 in y0s:
         t, Y_true = simulate(y0, T, dt)
-        all_trues.append(Y_true)
         
         # High-fidelity
-        for _ in range(n_hf):
-            Y_noisy = Y_true + rng.normal(scale=noise_hf, size=Y_true.shape)
-            all_noisy.append(Y_noisy)
-            all_sigma.append(noise_hf)
+        for _ in range(n_per_trajectory):
+            Y_noisy = Y_true + rng.normal(scale=noise, size=Y_true.shape)
+            all.append(Y_noisy)
+            t_all.append(t)    
 
-        # Low-fidelity
-        for _ in range(n_lf):
-            Y_noisy = Y_true + rng.normal(scale=noise_lf, size=Y_true.shape)
-            all_noisy.append(Y_noisy)
-            all_sigma.append(noise_lf)
-
-    # Convert to arrays
-    all_trues = np.stack(all_trues)
-    all_noisy = np.stack(all_noisy)
-    all_sigma = np.array(all_sigma)
-
-    # Save final dataset
-    if save_data:
-        np.savez(
-            out_path,
-            t=t,
-            Y_noisy=all_noisy,
-            Y_true=all_trues,
-            sigma=all_sigma,
-        )
-        print(f"Saved final dataset with {len(all_noisy)} trajectories → {out_path}")
-
-    return dict(
-        t=t,
-        Y_true=all_trues,
-        Y_noisy=all_noisy,
-        sigma=all_sigma,
-    )
+    return all, t, t_all
     
 if __name__ == "__main__":
     # Parameters

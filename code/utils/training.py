@@ -8,7 +8,7 @@ def run_ensemble_sindy(
     threshold: float = 0.1,
     library=None,
     weights=None,
-    n_models: int = 20,
+    n_models: int = 100,
 ):
     """
     Train an Ensemble SINDy (Weak-SINDy) model.
@@ -18,6 +18,7 @@ def run_ensemble_sindy(
         bagging=True,
         n_models=n_models,
     )
+    
     model = ps.SINDy(feature_library=library, optimizer=optimizer)
     model.fit(X_list, t=t_list, sample_weight=weights)
     return model, optimizer

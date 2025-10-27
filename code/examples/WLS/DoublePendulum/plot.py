@@ -5,8 +5,8 @@ import sys
 sys.path.append("../../../")
 from utils.plot import plot_heatmap
 
-system_name = "isothermal-flow"
-in_dir = "./Results1"
+system_name = "double-pendulum"
+in_dir = "./Results"
 out_dir = "./Figures"
 
 # Define grid and parameters

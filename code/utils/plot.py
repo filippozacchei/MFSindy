@@ -31,7 +31,7 @@ def plot_heatmap(
     fig, ax = plt.subplots(figsize=(3.5, 2.8))  # column width ≈ 90 mm
 
     # --- Plot heatmap ---
-    im = ax.imshow(matrix, origin="lower", cmap=cmap, aspect="auto", interpolation="nearest")
+    im = ax.imshow(matrix, origin="lower", cmap=cmap, aspect="auto", interpolation="nearest", vmin=-0.01, vmax=0.01)
 
     # --- Colorbar ---
     cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)

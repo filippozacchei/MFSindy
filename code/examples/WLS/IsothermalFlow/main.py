@@ -17,12 +17,10 @@ if __name__ == "__main__":
     # Grid definitions
     n_lf_vals = np.arange(10, 101, 10)
     n_hf_vals = np.arange(1, 11, 1)
-    runs = 25
+    runs = 1
     dt = 0.001
     threshold = 0.5
-    degree = 2
     L = 5
-    T = 0.1
 
     # ---------------------------------------------------------------------
     # Custom feature library for SINDy
@@ -55,26 +53,22 @@ if __name__ == "__main__":
         runs=runs,
         dt=dt,
         threshold=threshold,
-        degree=degree,
         out_dir=out_dir,
         seed=seed_val,
-        T=T,
-        d_order=2,
         lib=custom_library,
 
         # ---- kwargs passthroughs ----
         gen_kwargs={
             "N": 64,
-            "Nt": 200,
             "L": L,
             "mu": 1.0,
             "RT": 1.0,
             "initial_condition": "taylor-green",
             "noise_0": 0.01,
         },
-        gen_hf_kwargs={"noise_level": 0.01*std_test},   # high-fidelity noise
-        gen_lf_kwargs={"noise_level": 0.25*std_test},   # low-fidelity noise
-        gen_test_kwargs={"noise_level": 0.0, "T": 1.0, "n_traj":1, "seed":999},
+        gen_hf_kwargs={"noise_level": 0.01*std_test, "T":0.1, "Nt":100},   # high-fidelity noise
+        gen_lf_kwargs={"noise_level": 0.25*std_test, "T":0.1, "Nt":100},   # low-fidelity noise
+        gen_test_kwargs={"noise_level": 0.0, "T": 1.0, "n_traj":1, "seed":999, "Nt":1000},
         lib_kwargs={
             "derivative_order": 2,
             "p": 2,
