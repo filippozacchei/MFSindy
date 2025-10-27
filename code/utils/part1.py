@@ -12,26 +12,47 @@ def _init_metrics(shape):
     """Create metric containers for LF/HF/MF comparisons."""
     def zeros(): return np.full(shape, np.nan)
     return dict(
-        mf=zeros(), lf=zeros(), hf=zeros(),
+        mf=zeros(), 
+        lf=zeros(), hf=zeros(),
         dlf=zeros(), dhf=zeros()
     )
 
-def _train_models(X_lf, t_lf, X_hf, t_hf, grid, degree, threshold, K=100, d_order=0, lib=None, weights=None):
-    """Train LF, HF, and MF ensemble SINDy models."""
-    if lib==None:
-        lib=ps.PolynomialLibrary(degree=degree, include_bias=False)
+def _train_models(
+    X_lf, t_lf, X_hf, t_hf, grid, degree, threshold,
+    lib=None, weights=None,
+    *,  # force kwargs below
+    lib_kwargs=None
+):
+    """
+    Train LF, HF, and MF ensemble SINDy models.
+    lib_kwargs: passed to WeakPDELibrary
+    sindy_kwargs: passed to run_ensemble_sindy (e.g., n_models, optimizer args)
+    """
+    if lib is None:
+        lib = ps.PolynomialLibrary(degree=degree, include_bias=False)
+
+    lib_kwargs = {} if lib_kwargs is None else dict(lib_kwargs)
+    sindy_kwargs = {} if sindy_kwargs is None else dict(sindy_kwargs)
+
     # Build library once
     library = ps.feature_library.WeakPDELibrary(
         lib,
-        derivative_order=d_order,
         spatiotemporal_grid=grid,
-        p=2, K=K,
+        p=2,
+        **lib_kwargs
     )
 
-    model_hf, opt_hf = run_ensemble_sindy(X_hf, t_hf, threshold=threshold, library=library)
-    model_lf, opt_lf = run_ensemble_sindy(X_lf, t_lf, threshold=threshold, library=library)
+    model_hf, opt_hf = run_ensemble_sindy(
+        X_hf, t_hf, threshold=threshold, library=library,
+    )
+    model_lf, opt_lf = run_ensemble_sindy(
+        X_lf, t_lf, threshold=threshold, library=library,
+    )
+
     X_mf, t_mf = X_hf + X_lf, t_hf + t_lf
-    model_mf, opt_mf = run_ensemble_sindy(X_mf, t_mf, threshold=threshold, library=library, weights=weights)
+    model_mf, opt_mf = run_ensemble_sindy(
+        X_mf, t_mf, threshold=threshold, library=library, weights=weights,
+    )
 
     return dict(hf=(model_hf, opt_hf), lf=(model_lf, opt_lf), mf=(model_mf, opt_mf))
 
@@ -64,32 +85,48 @@ def evaluate_mf_sindy(
     noise_level_hf=0.01,
     noise_level_lf=0.1,
     runs: int = 100,
-    K = 100,
     T: float = 0.1,
     dt: float = 1e-3,
     threshold: float = 0.5,
     degree: int = 2,
     out_dir: str = "./Results",
     C_true=None,
-    seed=1,
-    T_test=10,
+    seed: int = 1,
+    T_test: float = 10.0,
     lib=None,
-    d_order=0,
+    d_order: int = 0,
+    *,
+    # ---- kwargs passthroughs ----
+    gen_kwargs: dict | None = None,       # defaults shared across all generator calls
+    gen_hf_kwargs: dict | None = None,    # overrides for HF only
+    gen_lf_kwargs: dict | None = None,    # overrides for LF only
+    gen_test_kwargs: dict | None = None,  # overrides for test trajectory
+    lib_kwargs: dict | None = None,       # passed into WeakPDELibrary
 ):
     """
-    Generic multi-fidelity SINDy evaluation loop (compact version).
+    Generic multi-fidelity SINDy evaluation loop with kwargs passthrough.
+
+    The kwargs logic merges dictionaries with increasing precedence:
+    shared (gen_kwargs) < fidelity-specific (gen_hf_kwargs / gen_lf_kwargs) < call-time fixed args.
     """
-    out_dir = Path(out_dir) / system_name
-    out_dir.mkdir(parents=True, exist_ok=True)
+    # Output directory
+    out_path = Path(out_dir) / system_name
+    out_path.mkdir(parents=True, exist_ok=True)
 
     # Preallocate metric arrays
     shape = (len(n_lf_vals), len(n_hf_vals))
     score, mad, dis = _init_metrics(shape), _init_metrics(shape), _init_metrics(shape)
 
-    # Prepare a clean test trajectory for evaluating R²
-    X_test, _, _ = generator(n_traj=5, noise_level=0.0, seed=999, T=T_test)
-    std_per_dim = np.std(X_test[0])
-    print(std_per_dim)
+    # ---- Build kwargs for generator calls ----
+    gen_kwargs = {} if gen_kwargs is None else dict(gen_kwargs)
+    gen_hf_kwargs = {} if gen_hf_kwargs is None else dict(gen_hf_kwargs)
+    gen_lf_kwargs = {} if gen_lf_kwargs is None else dict(gen_lf_kwargs)
+    gen_test_kwargs = {} if gen_test_kwargs is None else dict(gen_test_kwargs)
+
+    # Clean test trajectory for R²
+    test_call = {**gen_kwargs, **gen_test_kwargs}
+    X_test, _, _ = generator(n_traj=5, noise_level=0.0, seed=999, T=T_test, **test_call)
+    std_scale = float(np.std(X_test))  # scale for noise
 
     for i, n_lf in enumerate(tqdm(n_lf_vals, desc=f"{system_name}: LF grid")):
         for j, n_hf in enumerate(n_hf_vals):
@@ -101,27 +138,40 @@ def evaluate_mf_sindy(
             }
 
             for run in range(runs):
-                X_hf, grid_hf, t_hf = generator(n_traj=n_hf, noise_level=noise_level_hf * std_per_dim, T=T, seed=run*seed)
-                X_lf, _, t_lf = generator(n_lf, noise_level=noise_level_lf * std_per_dim, T=T, seed=run*seed + 100)
+                # HF/LF-specific kwargs (on top of shared)
+                hf_call = {**gen_kwargs, **gen_hf_kwargs}
+                lf_call = {**gen_kwargs, **gen_lf_kwargs}
+
+                X_hf, grid_hf, t_hf = generator(
+                    n_traj=n_hf,
+                    noise_level=noise_level_hf * std_scale,
+                    T=T,
+                    seed=run * seed,
+                    **hf_call
+                )
+                X_lf, _, t_lf = generator(
+                    n_traj=n_lf,
+                    noise_level=noise_level_lf * std_scale,
+                    T=T,
+                    seed=run * seed + 100,
+                    **lf_call
+                )
+
+                # Weights can still be overridden by sindy_kwargs if desired
                 weights = [(1 / noise_level_hf) ** 2] * n_hf + [(1 / noise_level_lf) ** 2] * n_lf
 
-                models = _train_models(X_lf, 
-                                       t_lf, 
-                                       X_hf,
-                                       t_hf, 
-                                       grid_hf, 
-                                       degree, 
-                                       threshold, 
-                                       K=K, 
-                                       d_order=d_order,
-                                       lib=lib, 
-                                       weights=weights)
+                models = _train_models(
+                    X_lf, t_lf, X_hf, t_hf, grid_hf, degree, threshold,
+                    d_order=d_order, lib=lib, weights=weights,
+                    lib_kwargs=lib_kwargs,
+                )
+
                 metrics = _evaluate_models(models, X_hf[0], dt, X_test, C_true)
 
                 for metric_name in ("r2", "mad", "dis"):
                     for fidelity in metrics[metric_name]:
                         all_runs[metric_name][fidelity].append(metrics[metric_name][fidelity])
-                        
+
             agg_r2 = _aggregate_runs(all_runs["r2"], "r2")
             agg_mad = _aggregate_runs(all_runs["mad"], "mad")
             agg_dis = _aggregate_runs(all_runs["dis"], "dis")
@@ -146,7 +196,7 @@ def evaluate_mf_sindy(
                 mad["dhf"][i, j] = agg_mad["mf"] - agg_mad["hf"]
 
     np.savez_compressed(
-        out_dir / f"{system_name}_results.npz",
+        out_path / f"{system_name}_results.npz",
         n_lf_vals=n_lf_vals,
         n_hf_vals=n_hf_vals,
         **{
@@ -156,4 +206,4 @@ def evaluate_mf_sindy(
         },
     )
 
-    print(f"Completed {system_name} evaluation → results saved in {out_dir}")
+    print(f"Completed {system_name} evaluation → results saved in {out_path}")
