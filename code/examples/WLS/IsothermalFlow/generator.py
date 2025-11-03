@@ -339,3 +339,71 @@ def compare_trajectories(trajectories, t, L, component=0, idx=None):
 
     plt.tight_layout()
     plt.show()
+
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib import cm
+from mpl_toolkits.mplot3d import Axes3D
+
+
+def plot_velocity_magnitude_surface_minimal(u_field, L, idx=0):
+    """
+    Minimal, clean 3D surface plot of the velocity magnitude |u|
+    at a given time index (default: initial condition).
+    """
+    N = u_field.shape[0]
+    x = np.linspace(0, L, N, endpoint=False)
+    y = np.linspace(0, L, N, endpoint=False)
+    X, Y = np.meshgrid(x, y, indexing="ij")
+
+    # Velocity magnitude
+    u = u_field[:, :, idx, 0]
+    v = u_field[:, :, idx, 1]
+    vel_mag = np.sqrt(u**2 + v**2)
+
+    fig = plt.figure(figsize=(5, 4), dpi=350)
+    ax = fig.add_subplot(111, projection="3d")
+
+    # Surface plot
+    ax.plot_surface(
+        X, Y, vel_mag,
+        cmap=cm.viridis,
+        rstride=1, cstride=1,
+        linewidth=0,
+        antialiased=True,
+        alpha=0.9
+    )
+
+    # Remove grid, ticks, frame
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_zticks([])
+    ax.set_xlabel("")
+    ax.set_ylabel("")
+    ax.set_zlabel("")
+    ax.set_box_aspect((1, 1, 0.4))  # flatter visual profile
+    ax.grid(False)
+
+    # Remove pane colors for clean white background
+    ax.xaxis.pane.fill = False
+    ax.yaxis.pane.fill = False
+    ax.zaxis.pane.fill = False
+    ax.xaxis.pane.set_edgecolor("w")
+    ax.yaxis.pane.set_edgecolor("w")
+    ax.zaxis.pane.set_edgecolor("w")
+
+    plt.tight_layout()
+    plt.savefig("compressible_u_magnitude_initial_minimal.svg", dpi=400, bbox_inches="tight", transparent=True)
+    plt.show()
+
+
+# Example usage
+if __name__ == "__main__":
+    trajectories, grid, ts = generate_compressible_flow(
+        n_traj=1, N=64, Nt=11, L=5, T=0.1,
+        mu=1.0, RT=1.0, noise_level=0.05,
+        seed=1, initial_condition="taylor-green"
+    )
+
+    u_field = trajectories[0]
+    plot_velocity_magnitude_surface_minimal(u_field, L=5, idx=1)

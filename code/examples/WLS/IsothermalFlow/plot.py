@@ -6,13 +6,40 @@ sys.path.append("../../../")
 from utils.plot import plot_heatmap
 
 system_name = "isothermal-flow"
-in_dir = "./Results1"
-out_dir = "./Figures"
+base_dirs = [f"./Results{i}" for i in range(1, 6)]  # Results1–5
+out_dir = Path("./Figures")
+out_dir.mkdir(parents=True, exist_ok=True)
 
-# Define grid and parameters
+# Grids
 n_lf_vals = np.arange(10, 101, 10)
 n_hf_vals = np.arange(1, 11, 1)
-data = np.load(Path(in_dir) / system_name / f"{system_name}_results.npz")
+
+# ---------------------------------------------------------------------
+# Load all available result files
+# ---------------------------------------------------------------------
+arrays = []
+for d in base_dirs:
+    path = Path(d) / system_name / f"{system_name}_results.npz"
+    if path.exists():
+        arrays.append(np.load(path))
+        print(f"Loaded {path}")
+    else:
+        print(f"⚠️ Missing file: {path}")
+
+if not arrays:
+    raise FileNotFoundError("No results found in any Results directories.")
+
+# ---------------------------------------------------------------------
+# Compute average over all runs
+# ---------------------------------------------------------------------
+keys = arrays[0].files
+data = {k: np.mean([a[k] for a in arrays], axis=0) for k in keys}
+
+# Optionally: save the averaged results
+avg_path = out_dir / f"{system_name}_avg_results.npz"
+np.savez_compressed(avg_path, **data)
+print(f"\n✅ Averaged results saved to {avg_path}")
+
 
 # Example plots
 plot_heatmap(np.clip(data["mf_score"], 0, None), n_lf_vals, n_hf_vals,

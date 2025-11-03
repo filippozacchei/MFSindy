@@ -150,47 +150,150 @@ def generate_dataset(
 
     return all, t, t_all
     
+import numpy as np
+import matplotlib.pyplot as plt
+
+
+
+def generate_double_pendulum_reference_and_fidelities(
+    y0,
+    T_ref=20.0, dt_ref=1e-3,
+    T_short=3.0, dt_hf=1e-3, dt_lf=5e-3,
+    noise_hf=0.03, noise_lf=0.15,
+    seed=0
+):
+    rng = np.random.default_rng(seed)
+
+    # Reference long trajectory (smooth background)
+    t_ref, Y_ref = simulate(y0, T=T_ref, dt=dt_ref)
+
+    # High fidelity short trajectory
+    t_hf, Y_hf = simulate(y0, T=T_short, dt=dt_hf)
+    Y_hf_noisy = Y_hf + rng.normal(scale=noise_hf, size=Y_hf.shape)
+
+    # Low fidelity short trajectory (coarser time + larger noise)
+    t_lf, Y_lf = simulate(y0, T=T_short, dt=dt_lf)
+    Y_lf_noisy = Y_lf + rng.normal(scale=noise_lf, size=Y_lf.shape)
+
+    return (Y_ref, Y_hf_noisy, Y_lf_noisy)
+
+import numpy as np
+import matplotlib.pyplot as plt
+
+import numpy as np
+import matplotlib.pyplot as plt
+
+# --- Convert (theta1, theta2) → Cartesian coordinates ---
+def to_cartesian(Y, L=1.0):
+    th1, th2 = Y[:,0], Y[:,1]
+    x1 = L * np.sin(th1)
+    y1 = -L * np.cos(th1)
+    x2 = x1 + L * np.sin(th2)
+    y2 = y1 - L * np.cos(th2)
+    return x1, y1, x2, y2
+
+def extract_theta(Y):
+    """Return θ1(t) and θ2(t) from state trajectory Y."""
+    return Y[:, 0], Y[:, 1]
+
 if __name__ == "__main__":
-    # Parameters
-    rng = np.random.default_rng(0)
-    n_ic = 125
-    n_lf = 10
-    n_hf = 1
-    noise_lf = 0.5
-    noise_hf = 0.05
-    T = 5.0
-    dt = 1 / 1000
+    # Reference chaotic trajectory (long)
+    y0 = np.array([.76241, -.43242413, 0.543214, -1.243214312])
+    t_ref, Y_ref = simulate(y0, T=20.0, dt=1/300)
 
-    # Random initial conditions: [θ₁, θ₂, ω₁, ω₂]
-    y0s = [
-        rng.uniform(low=[-np.pi/2, -np.pi/2, -np.pi/2, -np.pi/2], high=[np.pi/2, np.pi/2, np.pi/2, np.pi/2])
-        for _ in range(n_ic)
-    ]
+    # HF & LF short trajectories
+    t_hf, Y_hf = simulate(y0, T=2.0, dt=1/1000)
+    t_lf, Y_lf = simulate(y0, T=2.0, dt=1/250)
 
-    # Generate dataset
-    data = generate_dataset(
-        y0s=y0s,
-        n_hf=n_hf,
-        n_lf=n_lf,
-        noise_lf=noise_lf,
-        noise_hf=noise_hf,
-        T=T,
-        dt=dt,
-        out_path="./data/double_pendulum_dataset.npz",
-    )
+    rng = np.random.default_rng()
+    Y_hf += rng.normal(scale=0.001, size=Y_hf.shape)
+    Y_lf += rng.normal(scale=0.05, size=Y_lf.shape)
 
-    # Save metadata for reproducibility
-    meta = dict(
-        n_ic=n_ic,
-        n_hf=n_hf,
-        n_lf=n_lf,
-        noise_hf=noise_hf,
-        noise_lf=noise_lf,
-        T=T,
-        dt=dt,
-        seed=int(rng.bit_generator.state["state"]["state"]),
-    )
-    Path("./data").mkdir(exist_ok=True)
-    with open("./data/metadata.json", "w") as f:
-        json.dump(meta, f, indent=4)
-    print("Saved metadata → ./data/metadata.json")
+    # Convert
+    x1_ref, y1_ref, x2_ref, y2_ref = to_cartesian(Y_ref)
+    x1_hf, y1_hf, x2_hf, y2_hf = to_cartesian(Y_hf)
+    x1_lf, y1_lf, x2_lf, y2_lf = to_cartesian(Y_lf)
+
+    # --- Plot ---
+    plt.rcParams.update({"font.size": 14})
+    fig, ax = plt.subplots(figsize=(4.2, 4.2), dpi=350)
+
+    # Background long trajectory
+    ax.plot(x2_ref, y2_ref, color="lightgray", lw=0.9, alpha=0.6, zorder=1)
+
+    # Draw the pendulum at the initial condition
+    x1_0, y1_0, x2_0, y2_0 = x1_ref[0], y1_ref[0], x2_ref[0], y2_ref[0]
+    ax.plot([0, x1_0], [0, y1_0], color="black", lw=2.0, zorder=3)
+    ax.plot([x1_0, x2_0], [y1_0, y2_0], color="black", lw=2.0, zorder=3)
+    ax.scatter([0, x1_0, x2_0], [0, y1_0, y2_0], color="black", s=28, zorder=4)
+
+    # Low Fidelity (LF): slightly larger, hollow squares
+    ax.scatter(x2_lf, y2_lf, marker=".", color="#e31a1c", linewidth=1.2, zorder=5, s=1)
+    
+    # High Fidelity (HF): clean points, solid circles
+    ax.scatter(x2_hf, y2_hf, color="#1f78b4", alpha=0.9, marker=".", zorder=6, s=1)
+    
+    # Aesthetic cleanup
+    ax.set_aspect("equal")
+    ax.set_xticks([]); ax.set_yticks([])
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+
+    plt.tight_layout()
+    plt.savefig("double_pendulum_multifidelity_tip.png",
+                dpi=450, bbox_inches="tight", transparent=True)
+    
+    y0 = np.array([1.3241, -0.143242413, 0.543214, -1.243214312])
+
+    # Reference clean trajectory
+    t_ref, Y_ref = simulate(y0, T=2.0, dt=1/1000)
+    theta1_ref, theta2_ref = extract_theta(Y_ref)
+
+    # High fidelity (same resolution, small noise)
+    t_hf, Y_hf = simulate(y0, T=2.0, dt=1/1000)
+    rng = np.random.default_rng()
+    Y_hf = Y_hf + rng.normal(scale=0.01, size=Y_hf.shape)
+    theta1_hf, theta2_hf = extract_theta(Y_hf)
+
+    # Low fidelity (coarser, noisy)
+    t_lf, Y_lf = simulate(y0, T=2.0, dt=1/100)
+    Y_lf = Y_lf + rng.normal(scale=0.05, size=Y_lf.shape)
+    theta1_lf, theta2_lf = extract_theta(Y_lf)
+
+    # -------------------------------------------------
+    # PLOT
+    # -------------------------------------------------
+    plt.rcParams.update({
+        "font.size": 16,
+        "axes.labelsize": 18,
+        "legend.fontsize": 14,
+        "xtick.labelsize": 14,
+        "ytick.labelsize": 14,
+    })
+
+    fig, ax = plt.subplots(figsize=(6.2, 3.8), dpi=350)
+
+    # Low-fidelity
+    ax.plot(t_lf, theta1_lf, linestyle="--", lw=1.8,
+            marker="o", markersize=4,
+            markerfacecolor="none", markeredgecolor="#e31a1c",
+            color="#e31a1c", alpha=0.9)
+    ax.plot(t_lf, theta2_lf, linestyle="--", lw=1.8,
+            marker="o", markersize=4,
+            markerfacecolor="none", markeredgecolor="#e31a1c",
+            color="#e31a1c", alpha=0.9, label="Low fidelity")
+    
+        # High-fidelity
+    ax.plot(t_hf, theta1_hf, color="#1f78b4", lw=2.2, alpha=0.95)
+    ax.plot(t_hf, theta2_hf, color="#1f78b4", lw=2.2, alpha=0.95, label="High fidelity")
+
+    # Labels
+    ax.set_xlabel("Time")
+    ax.set_ylabel(r"$\theta_1(t),\, \theta_2(t)$")
+
+    # Minimal legend (no frame)
+    ax.legend(loc="upper right", frameon=False)
+
+    plt.tight_layout()
+    plt.savefig("double_pendulum_theta_time_multifidelity.png",
+                dpi=450, bbox_inches="tight", transparent=True)
