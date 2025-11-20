@@ -139,156 +139,278 @@ def animate_lorenz(X, t, save_path="lorenz.gif"):
     anim.save(save_path, writer="pillow", fps=30)
     plt.close(fig)
 
-
-# if __name__ == "__main__":
-
-#     # -----------------------------------------------------------
-#     # Background attractor (long, noise-free)
-#     # -----------------------------------------------------------
-#     t_ref, X_ref, _ = generate_lorenz_trajectory(
-#         y0=np.array([1.0, 1.0, 20.0]),
-#         T=40.0, dt=1e-3, noise_level=0.0, seed=0
-#     )
-
-#     # -----------------------------------------------------------
-#     # Two distinct initial conditions for HF and LF
-#     # -----------------------------------------------------------
-#     y0_hf = np.array([-4.0, -4.0, 25.0])
-#     y0_lf = np.array([5.0, 5.0, 22.0])
-
-#     # High fidelity: fine resolution, low noise
-#     t_hf, X_hf, _ = generate_lorenz_trajectory(
-#         y0=y0_hf, T=1.0, dt=2e-3, noise_level=0.01, seed=10
-#     )
-
-#     # Low fidelity: coarse resolution, higher noise
-#     t_lf, X_lf, _ = generate_lorenz_trajectory(
-#         y0=y0_lf, T=1.0, dt=1e-2, noise_level=0.08, seed=10
-#     )
-
-#     # Highlight last part of each trajectory for comparison
-#     n_seg = 200
-#     X_hf_seg = X_hf[-n_seg:, :]
-#     X_lf_seg = X_lf[-n_seg:, :]
-
-#     # -----------------------------------------------------------
-#     # Aesthetic settings
-#     # -----------------------------------------------------------
-#     col_hf = "#2d4f8b"   # HF: deep cool blue
-#     col_lf = "#d95f02"   # LF: warm orange
-#     col_bg = "gray" # background attractor
-
-#     plt.rcParams.update({
-#         "axes.facecolor": "white",
-#         "savefig.transparent": True,
-#         "lines.solid_capstyle": "round",
-#         "lines.solid_joinstyle": "round",
-#     })
-
-#     # *** Smaller figure: suitable for 1-column layouts ***
-#     fig, ax = plt.subplots(figsize=(4.0, 3.3), dpi=350)
-
-#     # Background attractor
-#     ax.plot(X_ref[:,0], X_ref[:,1],
-#             color=col_bg, lw=0.5, alpha=0.55, zorder=1)
-
-#     # High fidelity (smooth curve)
-#     ax.plot(X_hf_seg[:,0], X_hf_seg[:,1],
-#             color=col_hf, lw=2.0, alpha=0.9, zorder=3)
-
-#     # Low fidelity (dots over smooth, contrast highlight)
-#     ax.plot(X_lf_seg[:,0], X_lf_seg[:,1],
-#             color=col_lf, lw=2.3, alpha=0.35, zorder=2)
-#     ax.plot(X_lf_seg[:,0], X_lf_seg[:,1],
-#             ".", color=col_lf, ms=4.5, alpha=0.85, zorder=4)
-
-#     # Remove axes and borders
-#     ax.set_xticks([])
-#     ax.set_yticks([])
-#     for spine in ax.spines.values():
-#         spine.set_visible(False)
-
-#     plt.tight_layout()
-#     plt.savefig("lorenz_multifidelity_clean_small.svg",
-#                 format="svg", dpi=350, bbox_inches="tight", transparent=True)
-#     plt.show()
+from mpl_toolkits.mplot3d import Axes3D
 import matplotlib.pyplot as plt
 import numpy as np
 
-# New color palette — consistent across figures
-colors = ["#0C3B5D", "#3A7CA5", "#F28F3B"]   # HF → MF → LF
+"""
+Multi-Fidelity Lorenz Trajectory Visualization (3D)
+"""
 
-# Noise levels corresponding to the three fidelities
-lorenz_noise_levels = [1, 25, 50]  # (HF lowest noise → LF highest noise)
-
-# --- Long clean attractor (background) ---
-t_ref, X_ref, _ = generate_lorenz_trajectory(
-    y0=np.array([1.0, 1.0, 20.0]),
-    T=40.0, dt=1e-3,
-    noise_level=0.0, seed=42
-)
-
-fig, ax = plt.subplots(figsize=(8,6))
-
-ax.plot(X_ref[:,0], X_ref[:,1],
-        color="lightgray", lw=0.7, alpha=0.8, zorder=1)
-
-# --- Multi-fidelity short segments ---
-for nl, c in zip(lorenz_noise_levels, colors):
-
-    t_noisy, X_noisy, _ = generate_lorenz_trajectory(
-        T=100, dt=1e-3, noise_level=nl*0.01, seed=nl*153330
-    )
-
-    t_clean, X_clean, _ = generate_lorenz_trajectory(
-        T=100, dt=1e-3, noise_level=0.0, seed=nl*153330
-    )
-
-    ax.plot(X_clean[-300:,0], X_clean[-300:,1],
-            color=c, lw=4, alpha=0.6, zorder=2)
-
-    ax.plot(X_noisy[-300:,0], X_noisy[-300:,1],
-            ".", ms=5, alpha=0.9, color=c, zorder=3)
-
-ax.set_xticks([]); ax.set_yticks([])
-for spine in ax.spines.values():
-    spine.set_visible(False)
-
-plt.tight_layout()
-plt.savefig("lorenz_multifidelity_projection_clean.svg",
-            format="svg", dpi=300, bbox_inches="tight", transparent=True)
-plt.show()
-
-import matplotlib.pyplot as plt
 import numpy as np
+from scipy.integrate import solve_ivp
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 
-lorenz_noise_levels = [1, 25, 50]
-colors = ["#0C3B5D", "#3A7CA5", "#F28F3B"]
 
-fig, ax = plt.subplots(figsize=(8,5))
+# # ---------------------------------------------------------------------
+# # Lorenz system
+# # ---------------------------------------------------------------------
+# def lorenz(t, state, sigma=10, rho=28, beta=8/3):
+#     x, y, z = state
+#     return [
+#         sigma * (y - x),
+#         x * (rho - z) - y,
+#         x * y - beta * z
+#     ]
 
-for nl, c in zip(lorenz_noise_levels, colors):
 
-    t, X_noisy, _ = generate_lorenz_trajectory(
-        T=0.3, dt=1e-3, noise_level=nl*0.01, seed=nl-1
-    )
+# # ---------------------------------------------------------------------
+# # Single trajectory generator
+# # ---------------------------------------------------------------------
+# def generate_lorenz_trajectory(T, dt, noise_level=0.0, seed=None):
+#     rng = np.random.default_rng(seed)
+#     t = np.arange(0, T, dt)
+#     y0 = rng.uniform([-10, -10, 20], [10, 10, 30])
 
-    _, X_clean, _ = generate_lorenz_trajectory(
-        T=0.3, dt=1e-3, noise_level=0.0, seed=nl-1
-    )
+#     sol = solve_ivp(lorenz, (0, T), y0, t_eval=t,
+#                     method="LSODA", rtol=1e-10, atol=1e-12)
+#     X = sol.y.T
 
-    ax.plot(t, X_clean[:,0], lw=1.5, ls="--", color=c, alpha=0.6, zorder=1)
-    ax.plot(t, X_noisy[:,0], lw=2.0,  color=c, alpha=0.9, zorder=2,
-            label=f"Noise level = {nl}%")
+#     if noise_level > 0:
+#         X += rng.normal(0, noise_level, X.shape)
 
-ax.set_xlabel("Time", fontsize=20, weight="bold")
-ax.set_ylabel(r"$x(t)$", fontsize=20, weight="bold", rotation=-90, labelpad=30)
-ax.yaxis.set_label_position("right")
+#     return X
 
-ax.legend(frameon=False, fontsize=16, loc='upper left')
-ax.grid(True, linestyle="--", alpha=0.6)
 
-plt.tight_layout()
-plt.savefig("lorenz_x_time_clean.svg",
-            format="svg", dpi=300, bbox_inches="tight", transparent=True)
-plt.show()
+# # ---------------------------------------------------------------------
+# # Fidelity parameters
+# # ---------------------------------------------------------------------
+# T = 1
+
+# # High fidelity:
+# n_hf = 5
+# dt_hf = 1e-3
+# noise_hf = 0.0
+
+# # Multi-fidelity continuum:
+# n_levels = 5   # number of fidelity levels
+# dt_lf = 1e-3
+# noise_levels = np.linspace(0.0, 2.0, n_levels)   # increasing noise
+
+
+# # ---------------------------------------------------------------------
+# # Generate HF trajectories
+# # ---------------------------------------------------------------------
+# hf_trajs = [
+#     generate_lorenz_trajectory(T=T*5, dt=dt_hf, noise_level=noise_hf, seed=200+k)
+#     for k in range(n_hf)
+# ]
+
+# # ---------------------------------------------------------------------
+# # Generate multiple noisy fidelity trajectories
+# # ---------------------------------------------------------------------
+# multi_fidelity_trajs = [
+#     generate_lorenz_trajectory(T=T, dt=dt_lf, noise_level=nl, seed=200+i)
+#     for i, nl in enumerate(noise_levels)
+# ]
+
+# plt.rcParams.update({
+#     "figure.facecolor": "white",
+#     "axes.facecolor": "white",
+#     "font.size": 14,
+# })
+
+# # Colormap with stronger perceptual separation LF -> HF
+# cmap = plt.cm.plasma
+# color_values = np.linspace(0.0, 0.75, n_levels)
+
+# fig = plt.figure(figsize=(6, 5), dpi=350)
+# ax = fig.add_subplot(111, projection="3d")
+
+# # ------------------------------------------------------------
+# # 1) True HF reference underlay (light gray, smooth, subtle)
+# # ------------------------------------------------------------
+# for X in hf_trajs:
+#     ax.plot(X[:,0], X[:,1], X[:,2],
+#             lw=1.1, alpha=0.30, color="#A9A9A9", zorder=1)
+
+# # ------------------------------------------------------------
+# # 2) Multi-fidelity trajectories (dots, ordered LF → HF visually)
+# # ------------------------------------------------------------
+# # Reverse order so low-fidelity (noisier) appears below HF-like
+# for X, c in zip(multi_fidelity_trajs[::-1], color_values):
+#     ax.plot(X[:,0], X[:,1], X[:,2],
+#             ".", markersize=1.8, alpha=0.75, color=cmap(c), zorder=3)
+
+# # ------------------------------------------------------------
+# # Axes formatting
+# # ------------------------------------------------------------
+
+# # ------------------------------------------------------------
+# # Remove default 3D axes completely
+# # ------------------------------------------------------------
+# ax.set_axis_off()
+
+# # Remove ticks
+# ax.set_xticks([])
+# ax.set_yticks([])
+# ax.set_zticks([])
+
+# # ------------------------------------------------------------
+# # Custom 3D Axis Triad (drawn manually)
+# # ------------------------------------------------------------
+# # Choose a center point slightly below the cloud (auto guess)
+# all_pts = np.vstack(multi_fidelity_trajs + hf_trajs)
+# # Original center (median of point cloud)
+# center = np.median(all_pts, axis=0)
+
+# # Shift triad down-left-backwards a bit
+# shift = np.array([-0.5, -0.5, -0.5])   # adjust strength here
+# center = center + shift * np.ptp(all_pts, axis=0)
+
+# axis_len = np.linalg.norm(all_pts.max(axis=0) - all_pts.min(axis=0)) * 0.15
+
+# # Axis endpoints
+# x_end = center + np.array([axis_len, 0, 0])
+# y_end = center + np.array([0, axis_len, 0])
+# z_end = center + np.array([0, 0, axis_len])
+
+# # Draw lines (thin, behind dots)
+# ax.plot([center[0], x_end[0]], [center[1], x_end[1]], [center[2], x_end[2]],
+#         color="black", lw=0.9, alpha=0.7, zorder=0)
+# ax.plot([center[0], y_end[0]], [center[1], y_end[1]], [center[2], y_end[2]],
+#         color="black", lw=0.9, alpha=0.7, zorder=0)
+# ax.plot([center[0], z_end[0]], [center[1], z_end[1]], [center[2], z_end[2]],
+#         color="black", lw=0.9, alpha=0.7, zorder=0)
+
+# # Arrowheads (tiny, minimal)
+# arrow_size = axis_len * 0.04
+# ax.quiver(*x_end, *(x_end-center), color="black", length=arrow_size, normalize=True)
+# ax.quiver(*y_end, *(y_end-center), color="black", length=arrow_size, normalize=True)
+# ax.quiver(*z_end, *(z_end-center), color="black", length=arrow_size, normalize=True)
+
+# # Axis labels (small + offset)
+# ax.text(*(x_end + 0.03*axis_len), 'x', fontsize=12)
+# ax.text(*(y_end + 0.03*axis_len), 'y', fontsize=12)
+# ax.text(*(z_end + 0.03*axis_len), 'z', fontsize=12)
+# # Remove grid
+# ax.grid(False)
+
+# # Remove background pane surfaces (the "gray volume")
+# ax.xaxis.pane.set_visible(False)
+# ax.yaxis.pane.set_visible(False)
+# ax.zaxis.pane.set_visible(False)
+
+
+# # Do not adjust limits — preserved exactly
+# ax.view_init(elev=22, azim=-60)
+
+# plt.tight_layout()
+# plt.savefig("lorenz_multifidelity_3d.png",
+#             format="png", dpi=600, bbox_inches="tight")
+
+# # ------------------------------------------------------------
+# # SECOND FIGURE: x(t) comparison across fidelities (clean aesthetic)
+# # ------------------------------------------------------------
+
+# plt.rcParams.update({
+#     "figure.facecolor": "white",
+#     "axes.facecolor": "white",
+#     "font.size": 13,
+#     "lines.solid_capstyle": "round",
+#     "lines.solid_joinstyle": "round",
+# })
+
+# # Time vectors
+# t_hf = np.arange(0, T*5, dt_hf)
+# t_lf = np.arange(0, T, dt_lf)
+
+# fig2, ax2 = plt.subplots(figsize=(5.8, 3.2), dpi=400)
+
+# # --- LF noisy trajectories (soft with colormap gradient) ---
+# for X, c in zip(multi_fidelity_trajs[::-1], color_values):
+#     ax2.plot(t_lf, X[:,0],
+#              lw=1.0, alpha=0.65, color=cmap(c))
+
+# # --- HF reference (subtle, thin, dashed) ---
+# for X in hf_trajs:
+#     n_match = min(len(t_lf), len(X[:,0]))
+#     ax2.plot(t_lf[:n_match], X[:n_match,0],
+#              linestyle="--", lw=0.5, alpha=0.95, color="black")
+
+# # ------------------------------------------------------------
+# # Aesthetic axes formatting
+# # ------------------------------------------------------------
+# ax2.set_xlabel(r"$t$", labelpad=4)
+# ax2.set_ylabel(r"$x(t)$", labelpad=8, rotation=0)
+# ax2.yaxis.set_label_position("right")  # Label on the right for balance
+
+# # Remove default spines
+# ax2.spines['top'].set_visible(False)
+# ax2.spines['right'].set_visible(False)
+# ax2.spines['left'].set_visible(False)
+# ax2.spines['bottom'].set_visible(False)
+
+# # Draw custom x-axis line
+# x_min, x_max = ax2.get_xlim()
+# y_zero = ax2.get_ylim()[0] - 0.02*(ax2.get_ylim()[1]-ax2.get_ylim()[0])  # small shift down
+
+# ax2.plot([x_min, x_max], [y_zero, y_zero], color="black", lw=1.0)
+
+# # Draw arrowhead
+# ax2.annotate("",
+#     xy=(x_max, y_zero), xytext=(x_max - 0.04*(x_max-x_min), y_zero),
+#     arrowprops=dict(arrowstyle="->", lw=1.0, color="black")
+# )
+
+# # Replace x-label (moved upward slightly)
+# ax2.set_xlabel(r"$t$", labelpad=-2)
+
+# # Place y-label on the right (as before)
+# ax2.set_ylabel(r"$x(t)$", labelpad=8, rotation=0)
+# ax2.yaxis.set_label_position("left")
+
+# ax2.grid(False)
+# ax2.set_xticks([])
+# ax2.set_yticks([])
+
+# # --- LF noisy trajectories (soft with colormap gradient) ---
+# line_handles = []
+# for j, (X, c) in enumerate(zip(multi_fidelity_trajs[::-1], color_values)):
+#     (ln,) = ax2.plot(t_lf, X[:,0],
+#                      lw=1.0, alpha=0.65, color=cmap(c))
+#     line_handles.append(ln)
+
+# import matplotlib as mpl
+
+# # Discrete colors sampled from the same colormap
+# # Reverse both color values and noise levels to match visual order
+# noise_levels_disp = noise_levels
+# color_values_disp = color_values
+
+# # Build discrete colormap in *displayed* order
+# colors_discrete = [cmap(c) for c in color_values_disp]
+# cmap_discrete = mpl.colors.ListedColormap(colors_discrete)
+
+# # Define boundaries for each region
+# bounds = np.linspace(noise_levels_disp.min(), noise_levels_disp.max(), n_levels+1)
+# norm = mpl.colors.BoundaryNorm(bounds, cmap_discrete.N)
+
+# # Create the discrete colorbar
+# sm = mpl.cm.ScalarMappable(norm=norm, cmap=cmap_discrete)
+# sm.set_array([])
+
+# cbar = fig2.colorbar(sm, ax=ax2, fraction=0.045, pad=0.0,
+#                      ticks=noise_levels_disp)
+
+# # Tick labels (choose one style below)
+# # Numerical labels:
+# cbar.set_ticklabels([f"{lvl:.2f}" for lvl in noise_levels_disp])
+
+# cbar.set_ticks([])
+# cbar.ax.tick_params(length=0)
+
+# plt.tight_layout()
+# plt.savefig("lorenz_multifidelity_xt_clean.png",
+#             format="png", dpi=600, bbox_inches="tight")

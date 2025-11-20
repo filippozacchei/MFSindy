@@ -265,6 +265,11 @@ INPUT ./Figure/heatmap_mf_r2.png
 INPUT ./Figure/heatmap_mf_r2.png
 INPUT /usr/local/texlive/2024/texmf-dist/fonts/tfm/public/cm/cmbx7.tfm
 INPUT /usr/local/texlive/2024/texmf-dist/fonts/tfm/public/cm/cmbx5.tfm
+INPUT ./Figure/figure2.png
+INPUT ./Figure/figure2.png
+INPUT ./Figure/figure2.png
+INPUT ./Figure/figure2.png
+INPUT ./Figure/figure2.png
 INPUT ./main.bbl
 INPUT ./main.bbl
 INPUT main.bbl

@@ -1,14 +1,14 @@
 # Fdb version 4
-["bibtex main"] 1760560673.68363 "main.aux" "main.bbl" "main" 1760560677.10599 0
+["bibtex main"] 1761689208.82817 "main.aux" "main.bbl" "main" 1761689212.85863 0
   "./references.bib" 1760463888.03142 0 d41d8cd98f00b204e9800998ecf8427e ""
   "/usr/local/texlive/2024/texmf-dist/bibtex/bst/base/unsrt.bst" 1292289607 18030 1376b4b231b50c66211e47e42eda2875 ""
-  "main.aux" 1760560676.77144 2368 fea5cd74366626a6fe715922affb1a57 "pdflatex"
+  "main.aux" 1761689212.55805 2368 35556b4b28528b32277fe8c77459ea2e "pdflatex"
   (generated)
   "main.bbl"
   "main.blg"
   (rewritten before read)
-["pdflatex"] 1760560673.83114 "/Users/filippozacchei/Library/CloudStorage/OneDrive-PolitecnicodiMilano/Documenti/Projects/2025_visiting/Paper/main.tex" "main.pdf" "main" 1760560677.10611 0
-  "/Users/filippozacchei/Library/CloudStorage/OneDrive-PolitecnicodiMilano/Documenti/Projects/2025_visiting/Paper/main.tex" 1760560670.0514 5319 4150ccf7a76aec39da1de6b3cd63ec12 ""
+["pdflatex"] 1761689209.0041 "/Users/filippozacchei/Library/CloudStorage/OneDrive-PolitecnicodiMilano/Documenti/Projects/2025_visiting/Paper/main.tex" "main.pdf" "main" 1761689212.85872 0
+  "/Users/filippozacchei/Library/CloudStorage/OneDrive-PolitecnicodiMilano/Documenti/Projects/2025_visiting/Paper/main.tex" 1761689207.13572 5504 ed416c2417deb6e6cf144f1f9b1b51cc ""
   "/usr/local/texlive/2024/texmf-dist/fonts/enc/dvips/cm-super/cm-super-ts1.enc" 1136849721 2900 1537cc8184ad1792082cd229ecc269f4 ""
   "/usr/local/texlive/2024/texmf-dist/fonts/map/fontname/texfonts.map" 1577235249 3524 cb3e574dea2d1052e39280babc910dc8 ""
   "/usr/local/texlive/2024/texmf-dist/fonts/tfm/jknappen/ec/tcrm1000.tfm" 1136768653 1536 e07581a4bb3136ece9eeb4c3ffab8233 ""
@@ -127,7 +127,8 @@
   "/usr/local/texlive/2024/texmf-var/web2c/pdftex/pdflatex.fmt" 1736619761 8221421 b3d0d4a67dac63b7b08daf7e996803da ""
   "/usr/local/texlive/2024/texmf.cnf" 1710266656 577 e590dabc9e28c5b61546e15f63eebcdf ""
   "Figure/doublependulum_multifidelity.png" 1760553177.42562 495198 15f28ac84d0bc0048f4e48c1e0fcfd4a ""
-  "Figure/figure1.png" 1760549327.56225 506994 5acf90b84881de31e13355ce7bd114de ""
+  "Figure/figure1.png" 1761689112.12393 762126 a5f95faa661c22a1a2fbf81351b19b14 ""
+  "Figure/figure2.png" 1761689151.50625 816237 e79227ee104bb60ef413360e4db1ca77 ""
   "Figure/heatmap_hf_r2.png" 1760554196.76793 97730 c8733a645cbc4970b9217ffea80143d3 ""
   "Figure/heatmap_lf_r2.png" 1760554196.77117 97674 55ffe28432d564daa416ff1b27f618ec ""
   "Figure/heatmap_mf_r2.png" 1760554196.77357 99037 9b9a6cead9670badbeb917e9d9d5eabd ""
@@ -136,11 +137,11 @@
   "Figure/lorenzdy.png" 1760549778.73307 25957 1adaf0a42f9cc5727e912491f8277e42 ""
   "Figure/lorenzdz.png" 1760549778.74169 28502 edc513e09c5244268e7107ee959f68b9 ""
   "abstract.tex" 1760558573.45123 1669 fa1f74e82ca6ee0d02e42e9e14216a32 ""
-  "main.aux" 1760560676.77144 2368 fea5cd74366626a6fe715922affb1a57 "pdflatex"
-  "main.bbl" 1760560673.82815 49 0eba253fc001332e731e8aba3f23127b "bibtex main"
-  "main.out" 1760560676.77207 1956 52d212f33d822af4df6b1d8939c92df7 "pdflatex"
-  "main.spl" 1760560674.06805 0 d41d8cd98f00b204e9800998ecf8427e "pdflatex"
-  "main.tex" 1760560670.0514 5319 4150ccf7a76aec39da1de6b3cd63ec12 ""
+  "main.aux" 1761689212.55805 2368 35556b4b28528b32277fe8c77459ea2e "pdflatex"
+  "main.bbl" 1761689209.00319 49 0eba253fc001332e731e8aba3f23127b "bibtex main"
+  "main.out" 1761689212.55872 1956 52d212f33d822af4df6b1d8939c92df7 "pdflatex"
+  "main.spl" 1761689209.22307 0 d41d8cd98f00b204e9800998ecf8427e "pdflatex"
+  "main.tex" 1761689207.13572 5504 ed416c2417deb6e6cf144f1f9b1b51cc ""
   "result.tex" 1760554273.55063 4506 aeb025d8f98f5cc8dffba095172f010d ""
   (generated)
   "main.aux"
