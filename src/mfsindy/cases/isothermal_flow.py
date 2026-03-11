@@ -24,7 +24,16 @@ from scipy.integrate import solve_ivp
 import pysindy as ps
 from pysindy.feature_library import WeakPDELibrary
 
-from mfsindy.cases.common import coefficient_errors, run_monte_carlo_experiment
+from mfsindy.cases.common import (
+    EnsembleConfigMixin,
+    GLSRunArtifacts,
+    MonteCarloConfig,
+    MultiFidelityBatch,
+    coefficient_errors,
+    run_gls_pipeline,
+    run_monte_carlo_experiment,
+    run_multi_fidelity_pipeline,
+)
 from mfsindy.weighted_weak_pde_library import WeightedWeakPDELibrary
 
 
@@ -302,13 +311,11 @@ def compute_reference_coefficients(
 # ---------------------------------------------------------------------------
 
 @dataclass
-class NSIsothermalMFConfig:
+class NSIsothermalMFConfig(MonteCarloConfig, EnsembleConfigMixin):
     """
     Configuration for the isothermal NS multi-fidelity SINDy experiment
     (Part 1: HF / LF / MF / MF_w).
     """
-
-    n_runs: int = 10
 
     # multi-fidelity settings
     n_lf: int = 4
@@ -346,186 +353,59 @@ class NSIsothermalMFConfig:
     seed_base: int = 1
 
     # output
-    results_dir: str = "results"
     results_filename: str = "ns_isothermal_mf_errors.csv"
 
+    def stlsq_kwargs(self) -> Dict[str, Any]:
+        return {"alpha": self.stlsq_alpha}
 
-def _build_ensemble_models_ns(
-    X_hf: List[np.ndarray],
-    X_lf: List[np.ndarray],
-    grid: np.ndarray,
-    t: np.ndarray,
+
+def _ns_dataset_batch(
+    run_idx: int,
     cfg: NSIsothermalMFConfig,
     noise_hf_abs: float,
     noise_lf_abs: float,
-):
-    """
-    Build four ensemble SINDy models for NS:
-
-        - HF   : HF trajectories only
-        - LF   : LF trajectories only
-        - MF   : HF + LF concatenated (unweighted)
-        - MF_w : HF + LF with variance-based scaling
-    """
-    base_library = _build_custom_library()
-
-    weak_lib = WeakPDELibrary(
-        function_library=base_library,
-        derivative_order=cfg.derivative_order,
-        spatiotemporal_grid=grid,
-        K=cfg.K,
-        # H_xt=[cfg.L / 10.0, cfg.L / 10.0, cfg.T / 10.0],
-        include_bias=cfg.include_bias,
-    )
-
-    def make_optimizer() -> ps.EnsembleOptimizer:
-        return ps.EnsembleOptimizer(
-            ps.STLSQ(threshold=cfg.stlsq_threshold, alpha=cfg.stlsq_alpha),
-            bagging=True,
-            n_models=cfg.n_ensemble_models,
-        )
-
-    opt_hf   = make_optimizer()
-    opt_lf   = make_optimizer()
-    opt_mf   = make_optimizer()
-    opt_mf_w = make_optimizer()
-
-    model_hf   = ps.SINDy(feature_library=weak_lib, optimizer=opt_hf)
-    model_lf   = ps.SINDy(feature_library=weak_lib, optimizer=opt_lf)
-    model_mf   = ps.SINDy(feature_library=weak_lib, optimizer=opt_mf)
-    model_mf_w = ps.SINDy(feature_library=weak_lib, optimizer=opt_mf_w)
-
-    # HF-only fit
-    model_hf.fit(X_hf, t=t)
-    model_hf.print()
-
-    # LF-only fit
-    model_lf.fit(X_lf, t=t)
-    model_lf.print()
-
-    # MF unweighted
-    X_mf = list(X_hf) + list(X_lf)
-    model_mf.fit(X_mf, t=t)
-    model_mf.print()
-
-    # MF weighted by inverse variance (homoscedastic noise per fidelity)
-    eps_hf = max(noise_hf_abs, 1e-12)
-    eps_lf = max(noise_lf_abs, 1e-12)
-
-    w_hf = (1.0 / eps_hf) ** 2
-    print(w_hf)
-    w_lf = (1.0 / eps_lf) ** 2
-    print(w_lf)
-    
-
-    weights_hf = [w_hf for _ in X_hf]
-    weights_lf = [w_lf for _ in X_lf]
-    weights_mf = weights_hf + weights_lf
-
-    model_mf_w.fit(X_mf, t=t, sample_weight=weights_mf)
-    model_mf_w.print()
-
-    return (
-        model_hf,
-        model_lf,
-        model_mf,
-        model_mf_w,
-        opt_hf,
-        opt_lf,
-        opt_mf,
-        opt_mf_w,
-    )
-
-
-def _run_single_ns_mf_run(
-    run_idx: int,
-    cfg: NSIsothermalMFConfig,
-    C_true: np.ndarray,
+    *,
     grid: np.ndarray,
     t: np.ndarray,
-    state_std: float,
-) -> Dict[str, Tuple[float, float]]:
-    """
-    One Monte Carlo run of the NS multi-fidelity experiment.
-
-    HF / LF differ only in homoscedastic noise level.
-    """
+) -> MultiFidelityBatch:
     rng = np.random.default_rng(cfg.seed_base + 100 * run_idx)
 
-    noise_hf_abs = cfg.noise_hf_rel * state_std
-    noise_lf_abs = cfg.noise_lf_rel * state_std
+    def _sample(n_traj: int, noise_abs: float, offset: int) -> list[np.ndarray]:
+        data: list[np.ndarray] = []
+        for j in range(n_traj):
+            U_clean, _, _ = generate_isothermal_ns_dataset(
+                N=cfg.N,
+                Nt=cfg.Nt,
+                L=cfg.L,
+                T=cfg.T,
+                mu=cfg.mu,
+                RT=cfg.RT,
+                seed=cfg.seed_base + run_idx * 1000 + offset + j,
+                ic_type="taylor-green",
+            )
+            noise = noise_abs * rng.standard_normal(size=U_clean.shape)
+            data.append(U_clean + noise)
+        return data
 
-    # HF trajectories
-    X_hf: List[np.ndarray] = []
-    for j in range(cfg.n_hf):
-        U_clean, _, _ = generate_isothermal_ns_dataset(
-            N=cfg.N,
-            Nt=cfg.Nt,
-            L=cfg.L,
-            T=cfg.T,
-            mu=cfg.mu,
-            RT=cfg.RT,
-            seed=cfg.seed_base + run_idx * 1000 + j,
-            ic_type="taylor-green",
-        )
-        U_noisy = U_clean + noise_hf_abs * rng.standard_normal(size=U_clean.shape)
-        X_hf.append(U_noisy)
-    print("HF Generated")
-    
+    hf_data = _sample(cfg.n_hf, noise_hf_abs, offset=0)
+    lf_data = _sample(cfg.n_lf, noise_lf_abs, offset=10_000)
 
-    # LF trajectories
-    X_lf: List[np.ndarray] = []
-    for j in range(cfg.n_lf):
-        U_clean, _, _ = generate_isothermal_ns_dataset(
-            N=cfg.N,
-            Nt=cfg.Nt,
-            L=cfg.L,
-            T=cfg.T,
-            mu=cfg.mu,
-            RT=cfg.RT,
-            seed=cfg.seed_base + run_idx * 1000 + 10000 + j,
-            ic_type="taylor-green",
-        )
-        U_noisy = U_clean + noise_lf_abs * rng.standard_normal(size=U_clean.shape)
-        X_lf.append(U_noisy)
-    print("LF Generated")
-
-    (
-        model_hf,
-        model_lf,
-        model_mf,
-        model_mf_w,
-        opt_hf,
-        opt_lf,
-        opt_mf,
-        opt_mf_w,
-    ) = _build_ensemble_models_ns(
-        X_hf=X_hf,
-        X_lf=X_lf,
-        grid=grid,
-        t=t,
-        cfg=cfg,
-        noise_hf_abs=noise_hf_abs,
-        noise_lf_abs=noise_lf_abs,
+    return MultiFidelityBatch(
+        hf=hf_data,
+        lf=lf_data,
+        t_argument=t,
+        metadata={"grid": grid},
     )
 
-    # Ensemble median coefficients: (n_states, n_terms)
-    coefs_hf   = opt_hf.coef_   
-    coefs_lf   = opt_lf.coef_
-    coefs_mf   = opt_mf.coef_
-    coefs_mf_w = opt_mf_w.coef_
 
-    mae_hf,   l0_hf   = coefficient_errors(coefs_hf,   C_true, relative_to_true_support=True)
-    mae_lf,   l0_lf   = coefficient_errors(coefs_lf,   C_true, relative_to_true_support=True)
-    mae_mf,   l0_mf   = coefficient_errors(coefs_mf,   C_true, relative_to_true_support=True)
-    mae_mf_w, l0_mf_w = coefficient_errors(coefs_mf_w, C_true, relative_to_true_support=True)
-
-    return {
-        "HF":   (mae_hf,   l0_hf),
-        "LF":   (mae_lf,   l0_lf),
-        "MF":   (mae_mf,   l0_mf),
-        "MF_w": (mae_mf_w, l0_mf_w),
-    }
+def _ns_library(batch: MultiFidelityBatch, cfg: NSIsothermalMFConfig):
+    return WeakPDELibrary(
+        function_library=_build_custom_library(),
+        derivative_order=cfg.derivative_order,
+        spatiotemporal_grid=batch.metadata["grid"],
+        K=cfg.K,
+        include_bias=cfg.include_bias,
+    )
 
 
 def run_ns_isothermal_mf_experiment(
@@ -551,7 +431,7 @@ def run_ns_isothermal_mf_experiment(
     noise_lf_abs : absolute LF noise level
     """
     # Reference clean dataset for state_std and "truth"
-    C_true, U_ref, t_ref, grid_ref, _ = compute_reference_coefficients(
+    C_true, _, _, _, _ = compute_reference_coefficients(
         N=cfg.N,
         Nt=cfg.Nt_std,
         L=cfg.L,
@@ -581,34 +461,28 @@ def run_ns_isothermal_mf_experiment(
 
 
     state_std = float(np.std(U_ref))
-    noise_hf_abs = cfg.noise_hf_rel * state_std
-    noise_lf_abs = cfg.noise_lf_rel * state_std
+    def _reference_state_std(_: NSIsothermalMFConfig) -> float:
+        return state_std
 
-    models = ["HF", "LF", "MF", "MF_w"]
-
-    def single_run(run_idx: int):
-        return _run_single_ns_mf_run(
-            run_idx=run_idx,
-            cfg=cfg,
-            C_true=C_true,
+    def _dataset_builder(run_idx: int, cfg: NSIsothermalMFConfig, noise_hf: float, noise_lf: float):
+        return _ns_dataset_batch(
+            run_idx,
+            cfg,
+            noise_hf,
+            noise_lf,
             grid=grid_ref,
             t=t_ref,
-            state_std=state_std,
         )
 
-    df_errors, mae_errors, l0_errors = run_monte_carlo_experiment(
-        n_runs=cfg.n_runs,
-        methods=models,
-        single_run_fn=single_run,
-        results_dir=cfg.results_dir,
-        results_filename=cfg.results_filename,
-        metric1_name="MAE",
-        metric2_name="L0",
-        source_col="model",
+    return run_multi_fidelity_pipeline(
+        cfg,
+        reference_state_std=_reference_state_std,
+        dataset_builder=_dataset_builder,
+        library_builder=_ns_library,
+        true_coefficients=lambda _batch, _cfg: C_true,
+        optimizer_factory=cfg.make_optimizer,
         progress_desc="MC isothermal NS MF",
     )
-
-    return df_errors, mae_errors, l0_errors, state_std, noise_hf_abs, noise_lf_abs
 
 
 # ---------------------------------------------------------------------------
@@ -616,13 +490,11 @@ def run_ns_isothermal_mf_experiment(
 # ---------------------------------------------------------------------------
 
 @dataclass
-class NSIsothermalGLSConfig:
+class NSIsothermalGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
     """
     Configuration for heteroscedastic GLS experiment on
     isothermal compressible Navier–Stokes (Part 2).
     """
-
-    n_runs: int = 20
 
     # grid / time
     N: int = 64
@@ -650,27 +522,19 @@ class NSIsothermalGLSConfig:
     stlsq_alpha: float = 1e-8
     n_ensemble_models: int = 100
 
-    # randomness
-    seed_base: int = 1
-
-    # output
-    results_dir: str = "results"
     results_filename: str = "ns_isothermal_weighted_errors.csv"
 
 
-def _run_single_ns_gls_run(
+def _build_ns_gls_artifacts(
     run_idx: int,
     cfg: NSIsothermalGLSConfig,
-    C_true: np.ndarray,
+    rng: np.random.Generator,
+    *,
     grid: np.ndarray,
     base_library: ps.CustomLibrary,
-) -> Dict[str, Tuple[float, float]]:
-    """
-    One Monte Carlo run of the heteroscedastic NS GLS experiment.
-
-    Uses the derivative-based heteroscedastic noise model.
-    """
-    rng = np.random.default_rng(cfg.seed_base + 100 * run_idx)
+    true_coefficients: np.ndarray,
+) -> GLSRunArtifacts:
+    """Construct noisy NS data + weak libraries for one GLS run."""
 
     U_clean, t, _ = generate_isothermal_ns_dataset(
         N=cfg.N,
@@ -682,15 +546,16 @@ def _run_single_ns_gls_run(
         seed=cfg.seed_base + run_idx + 1,
         ic_type="taylor-green",
     )
-    print("HF Generated")
 
     U_noisy, variance = add_heteroscedastic_noise_temporal_derivative(
         U_clean, t, sigma0=cfg.sigma0, alpha=cfg.alpha, rng=rng
     )
 
     variance_scaled = variance / np.mean(variance)
+    tf_seed = cfg.seed_base + 1000 + run_idx
+    h_xt = [cfg.L / 10.0, cfg.L / 10.0, cfg.T / 40.0]
 
-    np.random.seed(cfg.seed_base + 1000 + run_idx)
+    np.random.seed(tf_seed)
     weak_lib = WeakPDELibrary(
         function_library=base_library,
         derivative_order=cfg.derivative_order,
@@ -698,11 +563,11 @@ def _run_single_ns_gls_run(
         is_uniform=True,
         K=cfg.K,
         p=cfg.p,
-        H_xt=[cfg.L / 10.0, cfg.L / 10.0, cfg.T / 40.0],
+        H_xt=h_xt,
         include_bias=cfg.include_bias,
     )
 
-    np.random.seed(cfg.seed_base + 1000 + run_idx)
+    np.random.seed(tf_seed)
     weighted_weak_lib_var = WeightedWeakPDELibrary(
         function_library=base_library,
         derivative_order=cfg.derivative_order,
@@ -711,11 +576,11 @@ def _run_single_ns_gls_run(
         is_uniform=True,
         K=cfg.K,
         p=cfg.p,
-        H_xt=[cfg.L / 10.0, cfg.L / 10.0, cfg.T / 40.0],
+        H_xt=h_xt,
         include_bias=cfg.include_bias,
     )
 
-    np.random.seed(cfg.seed_base + 1000 + run_idx)
+    np.random.seed(tf_seed)
     weighted_weak_lib_ones = WeightedWeakPDELibrary(
         function_library=base_library,
         derivative_order=cfg.derivative_order,
@@ -724,47 +589,22 @@ def _run_single_ns_gls_run(
         is_uniform=True,
         K=cfg.K,
         p=cfg.p,
-        H_xt=[cfg.L / 10.0, cfg.L / 10.0, cfg.T / 40.0],
+        H_xt=h_xt,
         include_bias=cfg.include_bias,
     )
 
-    def make_optimizer() -> ps.EnsembleOptimizer:
-        return ps.EnsembleOptimizer(
-            ps.STLSQ(threshold=cfg.stlsq_threshold, alpha=cfg.stlsq_alpha),
-            bagging=True,
-            n_models=cfg.n_ensemble_models,
-        )
-
-    opt_std = make_optimizer()
-    opt_var = make_optimizer()
-    opt_ones = make_optimizer()
-
-    model_std = ps.SINDy(feature_library=weak_lib, optimizer=opt_std)
-    model_var = ps.SINDy(feature_library=weighted_weak_lib_var, optimizer=opt_var)
-    model_ones = ps.SINDy(feature_library=weighted_weak_lib_ones, optimizer=opt_ones)
-
-    model_std.fit(U_noisy, t=t)
-    model_std.print()
-    model_var.fit(U_noisy, t=t)
-    model_var.print()
-    model_ones.fit(U_noisy, t=t)
-    model_ones.print()
-
-    C_std = np.array(model_std.optimizer.coef_)
-    C_var = np.array(model_var.optimizer.coef_)
-    C_ones = np.array(model_ones.optimizer.coef_)
-
-    L1_std, L0_std = coefficient_errors(C_std, C_true, relative_to_true_support=True)
-    L1_var, L0_var = coefficient_errors(C_var, C_true, relative_to_true_support=True)
-    L1_ones, L0_ones = coefficient_errors(
-        C_ones, C_true, relative_to_true_support=True
-    )
-
-    return {
-        "No weighting": (L1_std, L0_std),
-        "Variance GLS": (L1_var, L0_var),
-        "Ones GLS": (L1_ones, L0_ones),
+    libraries = {
+        "No weighting": weak_lib,
+        "Variance GLS": weighted_weak_lib_var,
+        "Ones GLS": weighted_weak_lib_ones,
     }
+
+    return GLSRunArtifacts(
+        data=U_noisy,
+        t_argument=t,
+        libraries=libraries,
+        true_coefficients=true_coefficients,
+    )
 
 
 def run_ns_isothermal_gls_experiment(
@@ -787,27 +627,20 @@ def run_ns_isothermal_gls_experiment(
         K_ref=cfg.K_ref,
     )
 
-    methods = ["No weighting", "Variance GLS", "Ones GLS"]
-
-    def single_run(run_idx: int):
-        return _run_single_ns_gls_run(
-            run_idx=run_idx,
-            cfg=cfg,
-            C_true=C_true,
+    def builder(run_idx: int, cfg: NSIsothermalGLSConfig) -> GLSRunArtifacts:
+        rng = np.random.default_rng(cfg.seed_base + 100 * run_idx)
+        return _build_ns_gls_artifacts(
+            run_idx,
+            cfg,
+            rng,
             grid=grid_ref,
             base_library=base_library,
+            true_coefficients=C_true,
         )
 
-    df_errors, L1_errors, L0_errors = run_monte_carlo_experiment(
-        n_runs=cfg.n_runs,
-        methods=methods,
-        single_run_fn=single_run,
-        results_dir=cfg.results_dir,
-        results_filename=cfg.results_filename,
-        metric1_name="L1",
-        metric2_name="L0",
-        source_col="method",
+    return run_gls_pipeline(
+        cfg,
+        run_builder=builder,
         progress_desc="MC isothermal NS GLS",
+        coefficient_error_kwargs=lambda _method: {"relative_to_true_support": True},
     )
-
-    return df_errors, L1_errors, L0_errors

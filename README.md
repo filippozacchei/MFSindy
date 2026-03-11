@@ -28,7 +28,7 @@ pip install -e .[dev]   # installs mfsindy plus dev tooling
 # or: pip install -r requirements.txt for a minimal runtime env
 ```
 
-The package exposes utilities such as `mfsindy.evaluate_mf_sindy`, plotting helpers, and the custom `WeightedWeakPDELibrary` implementation.
+The package exposes reusable case modules (`mfsindy.cases.*`), plotting helpers, and the custom `WeightedWeakPDELibrary` implementation.
 
 ## Documentation & Research Assets
 

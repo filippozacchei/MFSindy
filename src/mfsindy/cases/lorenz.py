@@ -15,7 +15,16 @@ from scipy.integrate import solve_ivp
 import pysindy as ps
 from pysindy.feature_library import WeakPDELibrary
 
-from mfsindy.cases.common import coefficient_errors, run_monte_carlo_experiment
+from mfsindy.cases.common import (
+    EnsembleConfigMixin,
+    GLSRunArtifacts,
+    MonteCarloConfig,
+    MultiFidelityBatch,
+    coefficient_errors,
+    run_gls_pipeline,
+    run_monte_carlo_experiment,
+    run_multi_fidelity_pipeline,
+)
 from mfsindy.weighted_weak_pde_library import WeightedWeakPDELibrary
 
 
@@ -163,10 +172,8 @@ def build_true_coefficient_matrix() -> np.ndarray:
 # ---------------------------------------------------------------------------
 
 @dataclass
-class LorenzMFConfig:
+class LorenzMFConfig(MonteCarloConfig, EnsembleConfigMixin):
     """Configuration for the Lorenz multi-fidelity SINDy experiment."""
-
-    n_runs: int = 25
 
     # multi-fidelity settings
     n_lf: int = 100
@@ -192,109 +199,30 @@ class LorenzMFConfig:
     seed_forecast_ic: int = 999
 
     # output
-    results_dir: str = "results"
     results_filename: str = "lorenz_mf_errors.csv"
 
 
-def build_ensemble_sindy_models_lorenz(
-    X_hf: list[np.ndarray],
-    X_lf: list[np.ndarray],
-    t: np.ndarray,
-    cfg: LorenzMFConfig,
-    noise_hf_abs: float,
-    noise_lf_abs: float,
-):
-    """
-    Build four ensemble SINDy models for Lorenz:
+def _lorenz_reference_state_std(cfg: LorenzMFConfig) -> float:
+    """Reference standard deviation used to scale HF/LF noise levels."""
 
-    - HF   : HF trajectories only
-    - LF   : LF trajectories only
-    - MF   : HF + LF concatenated (unweighted)
-    - MF_w : HF + LF with variance-based scaling
-    """
-    poly_lib = ps.PolynomialLibrary(
-        degree=cfg.poly_degree,
-        include_bias=False,
+    X_true_list, _, _ = generate_lorenz_dataset(
+        n_traj=1,
+        T=cfg.T_true,
+        dt=cfg.dt,
+        noise_level=0.0,
+        seed=cfg.seed_base,
     )
-
-    # Weak library on 1D time grid
-    weak_lib = WeakPDELibrary(
-        function_library=poly_lib,
-        spatiotemporal_grid=t,
-    )
-
-    def make_optimizer() -> ps.EnsembleOptimizer:
-        return ps.EnsembleOptimizer(
-            ps.STLSQ(threshold=cfg.stlsq_threshold),
-            bagging=True,
-            n_models=cfg.n_ensemble_models,
-        )
-
-    opt_hf   = make_optimizer()
-    opt_lf   = make_optimizer()
-    opt_mf   = make_optimizer()
-    opt_mf_w = make_optimizer()
-
-    model_hf = ps.SINDy(feature_library=weak_lib, optimizer=opt_hf)
-    model_lf = ps.SINDy(feature_library=weak_lib, optimizer=opt_lf)
-    model_mf = ps.SINDy(feature_library=weak_lib, optimizer=opt_mf)
-    model_mf_w = ps.SINDy(feature_library=weak_lib, optimizer=opt_mf_w)
-
-    # HF-only fit
-    model_hf.fit(X_hf, t=cfg.dt)
-
-    # LF-only fit
-    model_lf.fit(X_lf, t=cfg.dt)
-
-    # MF unweighted
-    X_mf = list(X_hf) + list(X_lf)
-    model_mf.fit(X_mf, t=cfg.dt)
-
-    # MF weighted: inverse variance weights
-    eps_hf = max(noise_hf_abs, 1e-12)
-    eps_lf = max(noise_lf_abs, 1e-12)
-
-    w_hf = (1.0 / eps_hf) ** 2
-    w_lf = (1.0 / eps_lf) ** 2
-
-    def _expand_weights(data_list: list[np.ndarray], weight: float) -> list[np.ndarray]:
-        weights = []
-        for traj in data_list:
-            w = np.full(traj.shape[:-1], weight)
-            if w.ndim == traj.ndim - 1:
-                w = w[..., None]
-            weights.append(w)
-        return weights
-
-    weights_hf = _expand_weights(X_hf, w_hf)
-    weights_lf = _expand_weights(X_lf, w_lf)
-    weights_mf = weights_hf + weights_lf
-
-    model_mf_w.fit(X_mf, t=cfg.dt, sample_weight=weights_mf)
-
-    return (
-        model_hf,
-        model_lf,
-        model_mf,
-        model_mf_w,
-        poly_lib,
-        opt_hf,
-        opt_lf,
-        opt_mf,
-        opt_mf_w,
-    )
+    return float(np.std(X_true_list[0]))
 
 
-def _run_single_lorenz_mf_run(
+def _lorenz_batch(
     run_idx: int,
     cfg: LorenzMFConfig,
     noise_hf_abs: float,
     noise_lf_abs: float,
-) -> Dict[str, Tuple[float, float]]:
-    """
-    One Monte Carlo run of the Lorenz multi-fidelity experiment.
-    """
-    # HF training set
+) -> MultiFidelityBatch:
+    """Build the HF/LF training batch for a single Monte Carlo run."""
+
     X_hf, t_train, _ = generate_lorenz_dataset(
         n_traj=cfg.n_hf,
         T=cfg.T_train,
@@ -302,8 +230,6 @@ def _run_single_lorenz_mf_run(
         noise_level=noise_hf_abs,
         seed=cfg.seed_base + run_idx,
     )
-
-    # LF training set (independent seeds)
     X_lf, _, _ = generate_lorenz_dataset(
         n_traj=cfg.n_lf,
         T=cfg.T_train,
@@ -311,55 +237,29 @@ def _run_single_lorenz_mf_run(
         noise_level=noise_lf_abs,
         seed=cfg.seed_base + 100 + run_idx,
     )
-
-    (
-        _model_hf,
-        _model_lf,
-        _model_mf,
-        _model_mf_w,
-        _poly_lib,
-        opt_hf,
-        opt_lf,
-        opt_mf,
-        opt_mf_w,
-    ) = build_ensemble_sindy_models_lorenz(
-        X_hf=X_hf,
-        X_lf=X_lf,
-        t=t_train,
-        cfg=cfg,
-        noise_hf_abs=noise_hf_abs,
-        noise_lf_abs=noise_lf_abs,
+    return MultiFidelityBatch(
+        hf=X_hf,
+        lf=X_lf,
+        t_argument=cfg.dt,
+        metadata={"t_grid": t_train},
     )
 
-    coefs_hf   = np.array(opt_hf.coef_list)   # (n_models, n_targets, n_features)
-    coefs_lf   = np.array(opt_lf.coef_list)
-    coefs_mf   = np.array(opt_mf.coef_list)
-    coefs_mf_w = np.array(opt_mf_w.coef_list)
 
-    coef_med_hf   = np.median(coefs_hf,   axis=0)   # (n_targets, n_features)
-    coef_med_lf   = np.median(coefs_lf,   axis=0)
-    coef_med_mf   = np.median(coefs_mf,   axis=0)
-    coef_med_mf_w = np.median(coefs_mf_w, axis=0)
+def _lorenz_library(batch: MultiFidelityBatch, cfg: LorenzMFConfig):
+    """Shared weak-form library for all fidelity variants."""
 
-    # (n_features, n_targets)
-    C_pred_hf   = coef_med_hf.T
-    C_pred_lf   = coef_med_lf.T
-    C_pred_mf   = coef_med_mf.T
-    C_pred_mf_w = coef_med_mf_w.T
+    poly_lib = ps.PolynomialLibrary(
+        degree=cfg.poly_degree,
+        include_bias=False,
+    )
+    return WeakPDELibrary(
+        function_library=poly_lib,
+        spatiotemporal_grid=batch.metadata["t_grid"],
+    )
 
-    C_true = build_true_coefficient_matrix()
 
-    mae_hf,   l0_hf   = coefficient_errors(C_pred_hf,   C_true, relative_to_true_support=False)
-    mae_lf,   l0_lf   = coefficient_errors(C_pred_lf,   C_true, relative_to_true_support=False)
-    mae_mf,   l0_mf   = coefficient_errors(C_pred_mf,   C_true, relative_to_true_support=False)
-    mae_mf_w, l0_mf_w = coefficient_errors(C_pred_mf_w, C_true, relative_to_true_support=False)
-
-    return {
-        "HF":   (mae_hf,   l0_hf),
-        "LF":   (mae_lf,   l0_lf),
-        "MF":   (mae_mf,   l0_mf),
-        "MF_w": (mae_mf_w, l0_mf_w),
-    }
+def _lorenz_true_coefficients(_: MultiFidelityBatch, cfg: LorenzMFConfig) -> np.ndarray:
+    return build_true_coefficient_matrix()
 
 
 def run_lorenz_mf_experiment(
@@ -384,53 +284,24 @@ def run_lorenz_mf_experiment(
     noise_hf_abs : absolute HF noise level
     noise_lf_abs : absolute LF noise level
     """
-    # Reference trajectory for noise scaling
-    X_true_list, t_true, _ = generate_lorenz_dataset(
-        n_traj=1,
-        T=cfg.T_true,
-        dt=cfg.dt,
-        noise_level=0.0,
-        seed=cfg.seed_base,
-    )
-    X_true = X_true_list[0]
-    state_std = float(np.std(X_true))
-
-    noise_hf_abs = cfg.noise_hf_rel * state_std
-    noise_lf_abs = cfg.noise_lf_rel * state_std
-
-    models = ["HF", "LF", "MF", "MF_w"]
-
-    def single_run(run_idx: int):
-        return _run_single_lorenz_mf_run(
-            run_idx=run_idx,
-            cfg=cfg,
-            noise_hf_abs=noise_hf_abs,
-            noise_lf_abs=noise_lf_abs,
-        )
-
-    df_errors, mae_errors, l0_errors = run_monte_carlo_experiment(
-        n_runs=cfg.n_runs,
-        methods=models,
-        single_run_fn=single_run,
-        results_dir=cfg.results_dir,
-        results_filename=cfg.results_filename,
-        metric1_name="MAE",
-        metric2_name="L0",
-        source_col="model",
+    return run_multi_fidelity_pipeline(
+        cfg,
+        reference_state_std=_lorenz_reference_state_std,
+        dataset_builder=_lorenz_batch,
+        library_builder=_lorenz_library,
+        true_coefficients=_lorenz_true_coefficients,
+        optimizer_factory=cfg.make_optimizer,
+        coef_postprocess=lambda arr: arr.T,
         progress_desc="Monte Carlo Lorenz MF",
     )
-
-    return df_errors, mae_errors, l0_errors, state_std, noise_hf_abs, noise_lf_abs
 
 # ---------------------------------------------------------------------------
 # Lorenz heteroscedastic GLS experiment (weak / weighted-weak SINDy)
 # ---------------------------------------------------------------------------
 
 @dataclass
-class LorenzGLSConfig:
+class LorenzGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
     """Configuration for the heteroscedastic Lorenz GLS experiment."""
-
-    n_runs: int = 1000
 
     # time discretisation
     t0: float = 0.0
@@ -456,23 +327,15 @@ class LorenzGLSConfig:
     seed_base: int = 0
 
     # output
-    results_dir: str = "results"
     results_filename: str = "lorenz_weighted_errors.csv"
 
 
-def _run_single_lorenz_gls_run(
+def _make_lorenz_gls_artifacts(
     run_idx: int,
     cfg: LorenzGLSConfig,
     rng: np.random.Generator,
-) -> Dict[str, Tuple[float, float]]:
-    """
-    One Monte Carlo run of the heteroscedastic Lorenz GLS experiment.
-
-    Returns
-    -------
-    errors : dict[str, (L1_error, L0_error)]
-        Keys: "No weighting", "Variance GLS", "Ones GLS".
-    """
+) -> GLSRunArtifacts:
+    """Build data and libraries for one Lorenz GLS run."""
     # 1) Clean trajectory from random initial condition
     u0 = rng.uniform(-20.0, 20.0, size=3)
     T = cfg.t1 - cfg.t0
@@ -544,44 +407,20 @@ def _run_single_lorenz_gls_run(
         include_bias=cfg.include_bias,
     )
 
-    # 4) Ensemble optimizers
-    def make_optimizer() -> ps.EnsembleOptimizer:
-        return ps.EnsembleOptimizer(
-            ps.STLSQ(threshold=cfg.stlsq_threshold),
-            bagging=True,
-            n_models=cfg.n_ensemble_models,
-        )
-
-    opt_std = make_optimizer()
-    opt_var = make_optimizer()
-    opt_ones = make_optimizer()
-
-    model_std = ps.SINDy(feature_library=weak_lib, optimizer=opt_std)
-    model_var = ps.SINDy(feature_library=weighted_weak_lib_var, optimizer=opt_var)
-    model_ones = ps.SINDy(feature_library=weighted_weak_lib_ones, optimizer=opt_ones)
-
-    model_std.fit(U_noisy, t=t_eval)
-    model_var.fit(U_noisy, t=t_eval)
-    model_ones.fit(U_noisy, t=t_eval)
-    
-    model_var.print()
-
-    # 5) True coefficients and errors
     C_true = build_true_coefficient_matrix()
 
-    C_std = np.array(model_std.optimizer.coef_).T
-    C_var = np.array(model_var.optimizer.coef_).T
-    C_ones = np.array(model_ones.optimizer.coef_).T
-
-    L1_std, L0_std = coefficient_errors(C_std, C_true, relative_to_true_support=True)
-    L1_var, L0_var = coefficient_errors(C_var, C_true, relative_to_true_support=True)
-    L1_ones, L0_ones = coefficient_errors(C_ones, C_true, relative_to_true_support=True)
-
-    return {
-        "No weighting": (L1_std, L0_std),
-        "Variance GLS": (L1_var, L0_var),
-        "Ones GLS": (L1_ones, L0_ones),
+    libraries = {
+        "No weighting": weak_lib,
+        "Variance GLS": weighted_weak_lib_var,
+        "Ones GLS": weighted_weak_lib_ones,
     }
+
+    return GLSRunArtifacts(
+        data=U_noisy,
+        t_argument=t_eval,
+        libraries=libraries,
+        true_coefficients=C_true,
+    )
 
 
 def run_lorenz_gls_experiment(
@@ -589,29 +428,16 @@ def run_lorenz_gls_experiment(
 ) -> tuple[pd.DataFrame, Dict[str, np.ndarray], Dict[str, np.ndarray]]:
     """
     Full heteroscedastic Lorenz GLS experiment.
-
-    Returns
-    -------
-    df_errors  : long-format DataFrame (run, method, metric, value)
-    L1_errors  : dict[method] -> array of L1 errors
-    L0_errors  : dict[method] -> array of L0 errors
     """
-    methods = ["No weighting", "Variance GLS", "Ones GLS"]
     rng = np.random.default_rng(cfg.seed_base)
 
-    def single_run(run_idx: int):
-        return _run_single_lorenz_gls_run(run_idx=run_idx, cfg=cfg, rng=rng)
+    def builder(run_idx: int, cfg: LorenzGLSConfig) -> GLSRunArtifacts:
+        return _make_lorenz_gls_artifacts(run_idx, cfg, rng)
 
-    df_errors, L1_errors, L0_errors = run_monte_carlo_experiment(
-        n_runs=cfg.n_runs,
-        methods=methods,
-        single_run_fn=single_run,
-        results_dir=cfg.results_dir,
-        results_filename=cfg.results_filename,
-        metric1_name="L1",
-        metric2_name="L0",
-        source_col="method",
+    return run_gls_pipeline(
+        cfg,
+        run_builder=builder,
         progress_desc="Monte Carlo Lorenz GLS",
+        coef_postprocess=lambda coef, _method: np.asarray(coef).T,
+        coefficient_error_kwargs=lambda _method: {"relative_to_true_support": True},
     )
-
-    return df_errors, L1_errors, L0_errors
