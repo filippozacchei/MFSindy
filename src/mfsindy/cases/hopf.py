@@ -14,7 +14,7 @@ import pandas as pd
 import pysindy as ps
 from pysindy.feature_library import WeakPDELibrary
 
-from mfsindy.cases.common import (
+from mfsindy.experiments import (
     EnsembleConfigMixin,
     IntraTrajectoryGLSData,
     MonteCarloConfig,

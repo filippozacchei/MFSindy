@@ -15,7 +15,7 @@ from scipy.integrate import solve_ivp
 import pysindy as ps
 from pysindy.feature_library import WeakPDELibrary
 
-from mfsindy.cases.common import (
+from mfsindy.experiments import (
     EnsembleConfigMixin,
     IntraTrajectoryGLSData,
     MonteCarloConfig,
