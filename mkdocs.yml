@@ -1,0 +1,27 @@
+site_name: MF-SINDy Docs
+site_url: https://filippozacchei.github.io/2025_visiting/
+repo_url: https://github.com/filippozacchei/2025_visiting
+theme:
+  name: material
+  features:
+    - navigation.instant
+    - navigation.tabs
+    - content.code.copy
+  palette:
+    - scheme: default
+      primary: blue
+      accent: pink
+markdown_extensions:
+  - admonition
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.inlinehilite
+nav:
+  - Overview: index.md
+  - Examples: examples.md
+  - API Reference: api.md
+  - Methodology: methodology.md
+extra_css: []
+extra_javascript: []

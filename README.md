@@ -32,7 +32,7 @@ The package exposes reusable case modules (`mfsindy.cases.*`), plotting helpers,
 
 ## Documentation & Research Assets
 
-- `docs/README.md` summarises the available notebooks (GLS/WLS case studies), figures, and how to regenerate them.
+- [Hosted documentation](https://filippozacchei.github.io/2025_visiting/) (MkDocs Material) mirrors the Markdown under `docs/`. Use `mkdocs serve` for local previews; `.github/workflows/docs.yml` guards the build, while `.github/workflows/mkdocs-deploy.yml` publishes to GitHub Pages.
 - `paper/` contains the LaTeX sources (`main.tex`, `abstract.tex`, `result.tex`, etc.). Use `latexmk -pdf main.tex` from inside `paper/` to build the manuscript.
 - `presentations/` stores slide decks, Manim scripts, and supporting figures.
 - `videos/` centralises all rendered animations (presentations, generated scenes, and raw partials) so large binaries stay out of the core package.
