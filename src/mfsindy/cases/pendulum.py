@@ -16,11 +16,11 @@ from typing import Dict, Tuple, List, Callable
 
 import numpy as np
 import pandas as pd
-from tqdm import tqdm
 
 import pysindy as ps
 from pysindy.feature_library import WeakPDELibrary
 
+from mfsindy.cases.common import coefficient_errors, run_monte_carlo_experiment
 from mfsindy.weighted_weak_pde_library import WeightedWeakPDELibrary
 
 # ---------------------------------------------------------------------------
@@ -200,121 +200,6 @@ def build_true_pendulum_coefficients(
     C[1, 1] = -c         # omega
 
     return C
-
-
-# ---------------------------------------------------------------------------
-# Generic coefficient error function + MC wrapper
-# ---------------------------------------------------------------------------
-
-
-def coefficient_errors(
-    C_est: np.ndarray,
-    C_true: np.ndarray,
-    tol_support: float = 1e-6,
-    relative_to_true_support: bool = False,
-) -> tuple[float, float]:
-    """
-    Error on coefficients and L0 (support) mismatch.
-
-    Parameters
-    ----------
-    C_est, C_true : arrays of same shape
-    tol_support : float
-        Threshold for deciding nonzero support.
-    relative_to_true_support : bool
-        If False: MAE over all entries.
-        If True : MAE over entries where |C_true| > tol_support
-                  (L1 on true support).
-
-    Returns
-    -------
-    err : float
-        Mean absolute error (as defined above).
-    l0_err : float
-        Mean support mismatch (zero vs non-zero pattern).
-    """
-    C_est = np.asarray(C_est)
-    C_true = np.asarray(C_true)
-
-    if C_est.shape != C_true.shape:
-        raise ValueError(
-            f"Shape mismatch in coefficient_errors: "
-            f"C_est {C_est.shape}, C_true {C_true.shape}"
-        )
-
-    # L0 support mismatch
-    supp_true = np.abs(C_true) > tol_support
-    supp_est = np.abs(C_est) > tol_support
-    l0_mismatch = np.not_equal(supp_true, supp_est).astype(float)
-    l0_err = float(np.mean(l0_mismatch))
-
-    # Error value
-    if relative_to_true_support:
-        if np.any(supp_true):
-            C_true_nz = C_true[supp_true]
-            C_est_nz = C_est[supp_true]
-            err = float(np.mean(np.abs(C_est_nz - C_true_nz)))
-        else:
-            err = 0.0
-    else:
-        err = float(np.mean(np.abs(C_est - C_true)))
-
-    return err, l0_err
-
-
-def _run_monte_carlo_experiment(
-    n_runs: int,
-    methods: List[str],
-    single_run_fn: Callable[[int], Dict[str, Tuple[float, float]]],
-    *,
-    results_dir: str,
-    results_filename: str,
-    metric1_name: str,
-    metric2_name: str,
-    source_col: str,
-    progress_desc: str,
-) -> tuple[pd.DataFrame, Dict[str, np.ndarray], Dict[str, np.ndarray]]:
-    """
-    Generic Monte Carlo loop:
-
-    - calls `single_run_fn(run_idx)` for run_idx = 0, ..., n_runs - 1,
-      where each call returns a dict[method] -> (metric1, metric2)
-    - accumulates errors into dicts of arrays
-    - saves long-format CSV with schema (run, source_col, metric, value)
-    - returns DataFrame and error dicts for plotting.
-    """
-    metric1_errors: Dict[str, List[float]] = {m: [] for m in methods}
-    metric2_errors: Dict[str, List[float]] = {m: [] for m in methods}
-
-    for k in tqdm(range(n_runs), desc=progress_desc):
-        errs = single_run_fn(k)
-        for m in methods:
-            e1, e2 = errs[m]
-            metric1_errors[m].append(e1)
-            metric2_errors[m].append(e2)
-
-    os.makedirs(results_dir, exist_ok=True)
-    errors_path = os.path.join(results_dir, results_filename)
-
-    rows = []
-    for m in methods:
-        m1_arr = np.asarray(metric1_errors[m])
-        m2_arr = np.asarray(metric2_errors[m])
-        for run_id, (e1, e2) in enumerate(zip(m1_arr, m2_arr)):
-            rows.append(
-                {"run": run_id, source_col: m, "metric": metric1_name, "value": e1}
-            )
-            rows.append(
-                {"run": run_id, source_col: m, "metric": metric2_name, "value": e2}
-            )
-
-    df_errors = pd.DataFrame(rows)
-    df_errors.to_csv(errors_path, index=False)
-
-    metric1_arrs = {m: np.asarray(metric1_errors[m]) for m in methods}
-    metric2_arrs = {m: np.asarray(metric2_errors[m]) for m in methods}
-
-    return df_errors, metric1_arrs, metric2_arrs
 
 
 # ---------------------------------------------------------------------------
@@ -577,7 +462,7 @@ def run_pendulum_mf_experiment(
             noise_lf_abs=noise_lf_abs,
         )
 
-    df_errors, mae_errors, l0_errors = _run_monte_carlo_experiment(
+    df_errors, mae_errors, l0_errors = run_monte_carlo_experiment(
         n_runs=cfg.n_runs,
         methods=models,
         single_run_fn=single_run,
@@ -787,7 +672,7 @@ def run_pendulum_gls_experiment(
     def single_run(run_idx: int):
         return _run_single_pendulum_gls_run(run_idx=run_idx, cfg=cfg, rng=rng)
 
-    df_errors, L1_errors, L0_errors = _run_monte_carlo_experiment(
+    df_errors, L1_errors, L0_errors = run_monte_carlo_experiment(
         n_runs=cfg.n_runs,
         methods=methods,
         single_run_fn=single_run,

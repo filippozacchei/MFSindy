@@ -11,11 +11,11 @@ from typing import Callable, Dict, List, Tuple
 import numpy as np
 import pandas as pd
 from scipy.integrate import solve_ivp
-from tqdm import tqdm
 
 import pysindy as ps
 from pysindy.feature_library import WeakPDELibrary
 
+from mfsindy.cases.common import coefficient_errors, run_monte_carlo_experiment
 from mfsindy.weighted_weak_pde_library import WeightedWeakPDELibrary
 
 
@@ -157,114 +157,6 @@ def build_true_coefficient_matrix() -> np.ndarray:
     return C
 
 
-def coefficient_errors(
-    C_est: np.ndarray,
-    C_true: np.ndarray,
-    tol_support: float = 1e-6,
-    relative_to_true_support: bool = False,
-) -> tuple[float, float]:
-    """
-    Error on coefficients and L0 (support) mismatch.
-
-    Parameters
-    ----------
-    C_est, C_true : arrays of same shape
-    tol_support : float
-        Threshold for deciding nonzero support.
-    relative_to_true_support : bool
-        If False: MAE over all entries.
-        If True : MAE over entries where |C_true| > tol_support
-                  (L1 on true support).
-
-    Returns
-    -------
-    err : float
-        Mean absolute error (as defined above).
-    l0_err : float
-        Mean support mismatch (zero vs non-zero pattern).
-    """
-    C_est = np.asarray(C_est)
-    C_true = np.asarray(C_true)
-
-    if C_est.shape != C_true.shape:
-        raise ValueError(
-            f"Shape mismatch in coefficient_errors: "
-            f"C_est {C_est.shape}, C_true {C_true.shape}"
-        )
-
-    # L0 support mismatch
-    supp_true = np.abs(C_true) > tol_support
-    supp_est = np.abs(C_est) > tol_support
-    l0_mismatch = np.not_equal(supp_true, supp_est).astype(float)
-    l0_err = float(np.mean(l0_mismatch))
-
-    # Error value
-    if relative_to_true_support:
-        if np.any(supp_true):
-            C_true_nz = C_true[supp_true]
-            C_est_nz = C_est[supp_true]
-            err = float(np.mean(np.abs(C_est_nz - C_true_nz)))
-        else:
-            err = 0.0
-    else:
-        err = float(np.mean(np.abs(C_est - C_true)))
-
-    return err, l0_err
-
-def _run_monte_carlo_experiment(
-    n_runs: int,
-    methods: List[str],
-    single_run_fn: Callable[[int], Dict[str, Tuple[float, float]]],
-    *,
-    results_dir: str,
-    results_filename: str,
-    metric1_name: str,
-    metric2_name: str,
-    source_col: str,
-    progress_desc: str,
-) -> tuple[pd.DataFrame, Dict[str, np.ndarray], Dict[str, np.ndarray]]:
-    """
-    Generic Monte Carlo loop:
-
-    - calls `single_run_fn(run_idx)` for run_idx = 0, ..., n_runs - 1,
-      where each call returns a dict[method] -> (metric1, metric2)
-    - accumulates errors into dicts of arrays
-    - saves long-format CSV with schema (run, source_col, metric, value)
-    - returns DataFrame and error dicts for plotting.
-    """
-    metric1_errors: Dict[str, List[float]] = {m: [] for m in methods}
-    metric2_errors: Dict[str, List[float]] = {m: [] for m in methods}
-
-    for k in tqdm(range(n_runs), desc=progress_desc):
-        errs = single_run_fn(k)
-        for m in methods:
-            e1, e2 = errs[m]
-            metric1_errors[m].append(e1)
-            metric2_errors[m].append(e2)
-
-    os.makedirs(results_dir, exist_ok=True)
-    errors_path = os.path.join(results_dir, results_filename)
-
-    rows = []
-    for m in methods:
-        m1_arr = np.asarray(metric1_errors[m])
-        m2_arr = np.asarray(metric2_errors[m])
-        for run_id, (e1, e2) in enumerate(zip(m1_arr, m2_arr)):
-            rows.append(
-                {"run": run_id, source_col: m, "metric": metric1_name, "value": e1}
-            )
-            rows.append(
-                {"run": run_id, source_col: m, "metric": metric2_name, "value": e2}
-            )
-
-    df_errors = pd.DataFrame(rows)
-    df_errors.to_csv(errors_path, index=False)
-
-    metric1_arrs = {m: np.asarray(metric1_errors[m]) for m in methods}
-    metric2_arrs = {m: np.asarray(metric2_errors[m]) for m in methods}
-
-    return df_errors, metric1_arrs, metric2_arrs
-
 
 # ---------------------------------------------------------------------------
 # Lorenz multi-fidelity experiment (HF / LF / MF / MF_w)
@@ -365,8 +257,17 @@ def build_ensemble_sindy_models_lorenz(
     w_hf = (1.0 / eps_hf) ** 2
     w_lf = (1.0 / eps_lf) ** 2
 
-    weights_hf = [w_hf for _ in X_hf]
-    weights_lf = [w_lf for _ in X_lf]
+    def _expand_weights(data_list: list[np.ndarray], weight: float) -> list[np.ndarray]:
+        weights = []
+        for traj in data_list:
+            w = np.full(traj.shape[:-1], weight)
+            if w.ndim == traj.ndim - 1:
+                w = w[..., None]
+            weights.append(w)
+        return weights
+
+    weights_hf = _expand_weights(X_hf, w_hf)
+    weights_lf = _expand_weights(X_lf, w_lf)
     weights_mf = weights_hf + weights_lf
 
     model_mf_w.fit(X_mf, t=cfg.dt, sample_weight=weights_mf)
@@ -507,7 +408,7 @@ def run_lorenz_mf_experiment(
             noise_lf_abs=noise_lf_abs,
         )
 
-    df_errors, mae_errors, l0_errors = _run_monte_carlo_experiment(
+    df_errors, mae_errors, l0_errors = run_monte_carlo_experiment(
         n_runs=cfg.n_runs,
         methods=models,
         single_run_fn=single_run,
@@ -701,7 +602,7 @@ def run_lorenz_gls_experiment(
     def single_run(run_idx: int):
         return _run_single_lorenz_gls_run(run_idx=run_idx, cfg=cfg, rng=rng)
 
-    df_errors, L1_errors, L0_errors = _run_monte_carlo_experiment(
+    df_errors, L1_errors, L0_errors = run_monte_carlo_experiment(
         n_runs=cfg.n_runs,
         methods=methods,
         single_run_fn=single_run,
@@ -714,275 +615,3 @@ def run_lorenz_gls_experiment(
     )
 
     return df_errors, L1_errors, L0_errors
-
-# import numpy as np
-# from scipy.integrate import solve_ivp
-# import pysindy as ps
-
-
-# def lorenz(t, state, sigma=10.0, rho=28.0, beta=8.0 / 3.0):
-#     """Standard Lorenz system."""
-#     x, y, z = state
-#     dxdt = sigma * (y - x)
-#     dydt = x * (rho - z) - y
-#     dzdt = x * y - beta * z
-#     return [dxdt, dydt, dzdt]
-
-
-# def generate_lorenz_trajectory(
-#     y0=None,
-#     T=10.0,
-#     dt=1e-3,
-#     sigma=10.0,
-#     rho=28.0,
-#     beta=8.0 / 3.0,
-#     noise_level=0.0,
-#     seed=None,
-# ):
-#     """
-#     Generate a single Lorenz trajectory and its derivatives.
-
-#     Parameters
-#     ----------
-#     y0 : array-like or None
-#         Initial condition. If None, sampled from a box.
-#     T : float
-#         Final time.
-#     dt : float
-#         Time step.
-#     noise_level : float
-#         Standard deviation of additive Gaussian noise on the states.
-#     seed : int or None
-#         RNG seed.
-
-#     Returns
-#     -------
-#     t : ndarray, shape (N,)
-#         Time vector.
-#     X : ndarray, shape (N, 3)
-#         State trajectory (possibly noisy).
-#     Xdot : ndarray, shape (N, 3)
-#         True derivatives (noise-free).
-#     """
-#     rng = np.random.default_rng(seed)
-#     t = np.arange(0, T, dt)
-
-#     if y0 is None:
-#         y0 = rng.uniform([-20, -20, 20], [20, 20, 30])
-
-#     sol = solve_ivp(
-#         lorenz,
-#         (t[0], t[-1]),
-#         y0,
-#         t_eval=t,
-#         args=(sigma, rho, beta),
-#         method="LSODA",
-#         rtol=1e-10,
-#         atol=1e-12,
-#     )
-
-#     X = sol.y.T
-#     Xdot = np.array([lorenz(ti, xi, sigma, rho, beta) for ti, xi in zip(sol.t, X)])
-
-#     if noise_level > 0:
-#         X += rng.normal(0, noise_level, size=X.shape)
-
-#     return t, X, Xdot
-
-
-# def generate_lorenz_dataset(
-#     n_traj=1,
-#     T=10.0,
-#     dt=1e-3,
-#     noise_level=0.0,
-#     seed=42,
-#     sigma=10.0,
-#     rho=28.0,
-#     beta=8.0 / 3.0,
-# ):
-#     """
-#     Generate multiple Lorenz trajectories (list-of-trajectories format).
-
-#     Returns
-#     -------
-#     trajs : list of ndarray, each (N, 3)
-#     t_shared : ndarray, shape (N,)
-#     times : list of ndarray (time vectors, all identical here)
-#     """
-#     rng = np.random.default_rng(seed)
-
-#     trajs, derivs, times = [], [], []
-#     for i in range(n_traj):
-#         y0 = rng.uniform([-10, -10, 20], [10, 10, 30])
-#         t, X, Xdot = generate_lorenz_trajectory(
-#             y0=y0,
-#             T=T,
-#             dt=dt,
-#             sigma=sigma,
-#             rho=rho,
-#             beta=beta,
-#             noise_level=noise_level,
-#             seed=seed + i,
-#         )
-#         trajs.append(X)
-#         derivs.append(Xdot)
-#         times.append(t)
-
-#     # all trajectories share the same time vector
-#     return trajs, times[0], times
-
-
-# def build_true_coefficient_matrix():
-#     """
-#     True polynomial coefficient matrix for the Lorenz system.
-
-#     Polynomial terms (no bias):
-#     [x, y, z, x^2, x y, x z, y^2, y z, z^2]
-
-#     Returns
-#     -------
-#     C : ndarray, shape (9, 3)
-#         Coefficient matrix such that dX/dt = Theta(X) @ C.
-#     """
-#     C = np.zeros((9, 3))
-
-#     # dx/dt = -10 x + 10 y
-#     C[0, 0] = -10.0  # x
-#     C[1, 0] = 10.0   # y
-
-#     # dy/dt = 28 x - x z - y
-#     C[0, 1] = 28.0   # x
-#     C[5, 1] = -1.0   # x z
-#     C[1, 1] = -1.0   # y
-
-#     # dz/dt = x y - (8/3) z
-#     C[4, 2] = 1.0          # x y
-#     C[2, 2] = -8.0 / 3.0   # z
-
-#     return C
-
-
-# def coefficient_errors(C_pred, C_true, tol=1e-3):
-#     """
-#     Compare predicted coefficient matrix C_pred to true coefficients C_true.
-
-#     Parameters
-#     ----------
-#     C_pred : ndarray, shape (n_features, n_targets)
-#     C_true : ndarray, shape (n_features, n_targets)
-#     tol : float
-#         Threshold for deciding "non-zero" in the L0 support.
-
-#     Returns
-#     -------
-#     mae : float
-#         Mean absolute error over all entries.
-#     l0_err : float
-#         Mean L0 support error: fraction of entries where the zero / nonzero
-#         pattern differs.
-#     """
-#     # MAE over all entries
-#     mae = np.mean(np.abs(C_pred - C_true))
-
-#     # L0 support mismatch
-#     support_true = np.abs(C_true) > tol
-#     support_pred = np.abs(C_pred) > tol
-#     mismatches = np.logical_xor(support_true, support_pred)
-#     l0_err = mismatches.mean()
-
-#     return mae, l0_err
-
-
-# def build_ensemble_sindy_models(X_hf, X_lf, t, dt, cfg):
-#     """
-#     Build and fit ensemble SINDy models for:
-#       - HF only
-#       - LF only
-#       - MF (HF+LF, unweighted)
-#       - MF_w (HF+LF, inverse-variance weighting)
-
-#     Parameters
-#     ----------
-#     X_hf : list of ndarray
-#         High-fidelity trajectories.
-#     X_lf : list of ndarray
-#         Low-fidelity trajectories.
-#     t : ndarray
-#         Shared time grid for WeakPDELibrary (spatiotemporal_grid).
-#     dt : float
-#         Time step.
-#     cfg : Config
-#         Configuration object with SINDy hyperparameters.
-
-#     Returns
-#     -------
-#     model_hf, model_lf, model_mf, model_mf_w, poly_lib, opt_hf, opt_lf, opt_mf, opt_mf_w
-#     """
-#     poly_lib = ps.PolynomialLibrary(
-#         degree=cfg.poly_degree,
-#         include_bias=False,
-#     )
-#     weak_lib = ps.feature_library.WeakPDELibrary(
-#         poly_lib,
-#         spatiotemporal_grid=t,
-#     )
-
-#     optimizer_factory = lambda: ps.STLSQ(threshold=cfg.stlsq_threshold)
-
-#     opt_hf = ps.EnsembleOptimizer(
-#         optimizer_factory(),
-#         n_models=cfg.n_ensemble_models,
-#         bagging=True,
-#     )
-#     opt_lf = ps.EnsembleOptimizer(
-#         optimizer_factory(),
-#         n_models=cfg.n_ensemble_models,
-#         bagging=True,
-#     )
-#     opt_mf = ps.EnsembleOptimizer(
-#         optimizer_factory(),
-#         n_models=cfg.n_ensemble_models,
-#         bagging=True,
-#     )
-#     opt_mf_w = ps.EnsembleOptimizer(
-#         optimizer_factory(),
-#         n_models=cfg.n_ensemble_models,
-#         bagging=True,
-#     )
-
-#     model_hf = ps.SINDy(feature_library=weak_lib, optimizer=opt_hf)
-#     model_lf = ps.SINDy(feature_library=weak_lib, optimizer=opt_lf)
-#     model_mf = ps.SINDy(feature_library=weak_lib, optimizer=opt_mf)
-#     model_mf_w = ps.SINDy(feature_library=weak_lib, optimizer=opt_mf_w)
-
-#     # HF-only fit
-#     model_hf.fit(X_hf, t=dt)
-
-#     # LF-only fit
-#     model_lf.fit(X_lf, t=dt)
-
-#     # MF unweighted
-#     X_mf = X_hf + X_lf
-#     model_mf.fit(X_mf, t=dt)
-
-#     # MF weighted: inverse variance weights (HF higher weight than LF)
-#     w_hf = (1.0 / cfg.noise_hf_rel) ** 2
-#     w_lf = (1.0 / cfg.noise_lf_rel) ** 2
-
-#     weights_hf = [w_hf for _ in X_hf]
-#     weights_lf = [w_lf for _ in X_lf]
-#     weights_mf = weights_hf + weights_lf
-
-#     model_mf_w.fit(X_mf, t=dt, sample_weight=weights_mf)
-
-#     return (
-#         model_hf,
-#         model_lf,
-#         model_mf,
-#         model_mf_w,
-#         poly_lib,
-#         opt_hf,
-#         opt_lf,
-#         opt_mf,
-#         opt_mf_w,
-#     )

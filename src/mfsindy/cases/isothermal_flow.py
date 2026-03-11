@@ -19,12 +19,12 @@ from typing import Dict, Tuple, List, Callable
 
 import numpy as np
 import pandas as pd
-from tqdm import tqdm
 from scipy.integrate import solve_ivp
 
 import pysindy as ps
 from pysindy.feature_library import WeakPDELibrary
 
+from mfsindy.cases.common import coefficient_errors, run_monte_carlo_experiment
 from mfsindy.weighted_weak_pde_library import WeightedWeakPDELibrary
 
 
@@ -219,97 +219,6 @@ def add_heteroscedastic_noise_temporal_derivative(
     U_noisy = U_clean + noise
 
     return U_noisy, variance
-
-
-# ---------------------------------------------------------------------------
-# Coefficient errors + generic MC wrapper
-# ---------------------------------------------------------------------------
-
-def coefficient_errors(
-    C_est: np.ndarray,
-    C_true: np.ndarray,
-    tol_support: float = 1e-6,
-    relative_to_true_support: bool = True,
-) -> tuple[float, float]:
-    """
-    Mean absolute error on coefficients + L0 (support) mismatch.
-
-    Shapes of C_est, C_true must match.
-    """
-    C_est = np.asarray(C_est)
-    C_true = np.asarray(C_true)
-
-    if C_est.shape != C_true.shape:
-        raise ValueError(
-            f"Shape mismatch in coefficient_errors: "
-            f"C_est {C_est.shape}, C_true {C_true.shape}"
-        )
-
-    supp_true = np.abs(C_true) > tol_support
-    supp_est = np.abs(C_est) > tol_support
-    l0_mismatch = np.not_equal(supp_true, supp_est).astype(float)
-    l0_err = float(np.mean(l0_mismatch))
-
-    if relative_to_true_support:
-        if np.any(supp_true):
-            C_true_nz = C_true[supp_true]
-            C_est_nz = C_est[supp_true]
-            err = float(np.mean(np.abs(C_est_nz - C_true_nz)))
-        else:
-            err = 0.0
-    else:
-        err = float(np.mean(np.abs(C_est - C_true)))
-
-    return err, l0_err
-
-
-def _run_monte_carlo_experiment(
-    n_runs: int,
-    methods: List[str],
-    single_run_fn: Callable[[int], Dict[str, Tuple[float, float]]],
-    *,
-    results_dir: str,
-    results_filename: str,
-    metric1_name: str,
-    metric2_name: str,
-    source_col: str,
-    progress_desc: str,
-) -> tuple[pd.DataFrame, Dict[str, np.ndarray], Dict[str, np.ndarray]]:
-    """
-    Generic Monte Carlo loop (same pattern as Hopf/Pendulum).
-    """
-    metric1_errors: Dict[str, List[float]] = {m: [] for m in methods}
-    metric2_errors: Dict[str, List[float]] = {m: [] for m in methods}
-
-    for k in tqdm(range(n_runs), desc=progress_desc):
-        errs = single_run_fn(k)
-        for m in methods:
-            e1, e2 = errs[m]
-            metric1_errors[m].append(e1)
-            metric2_errors[m].append(e2)
-
-    os.makedirs(results_dir, exist_ok=True)
-    errors_path = os.path.join(results_dir, results_filename)
-
-    rows = []
-    for m in methods:
-        m1_arr = np.asarray(metric1_errors[m])
-        m2_arr = np.asarray(metric2_errors[m])
-        for run_id, (e1, e2) in enumerate(zip(m1_arr, m2_arr)):
-            rows.append(
-                {"run": run_id, source_col: m, "metric": metric1_name, "value": e1}
-            )
-            rows.append(
-                {"run": run_id, source_col: m, "metric": metric2_name, "value": e2}
-            )
-
-    df_errors = pd.DataFrame(rows)
-    df_errors.to_csv(errors_path, index=False)
-
-    metric1_arrs = {m: np.asarray(metric1_errors[m]) for m in methods}
-    metric2_arrs = {m: np.asarray(metric2_errors[m]) for m in methods}
-
-    return df_errors, metric1_arrs, metric2_arrs
 
 
 # ---------------------------------------------------------------------------
@@ -687,7 +596,7 @@ def run_ns_isothermal_mf_experiment(
             state_std=state_std,
         )
 
-    df_errors, mae_errors, l0_errors = _run_monte_carlo_experiment(
+    df_errors, mae_errors, l0_errors = run_monte_carlo_experiment(
         n_runs=cfg.n_runs,
         methods=models,
         single_run_fn=single_run,
@@ -889,7 +798,7 @@ def run_ns_isothermal_gls_experiment(
             base_library=base_library,
         )
 
-    df_errors, L1_errors, L0_errors = _run_monte_carlo_experiment(
+    df_errors, L1_errors, L0_errors = run_monte_carlo_experiment(
         n_runs=cfg.n_runs,
         methods=methods,
         single_run_fn=single_run,
