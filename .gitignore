@@ -1,21 +1,80 @@
-*data/
-*results/
-*.ipynb_checkpoints/
-*Old*
-*OLD/*
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.so
+*.pyd
 *.mp4
 *.gif
-*.log
+*.jpg
+*.pdf
+*.png
+*.svg
+*.mov
+*.tex
+*.key
+*.csv
+*.npz
+
+*partial_movie_files*
+*.npy
+
+# Packaging / build
+build/
+dist/
+*.egg-info/
+.eggs/
+.installed.cfg
+*.egg
+
+# Virtual environments
+.venv/
+.env/
+venv/
+
+# Tooling caches
+.mypy_cache/
+.pytest_cache/
+.nox/
+.coverage
+htmlcov/
+.ipynb_checkpoints/
+
+# OS noise
+.DS_Store
+Thumbs.db
+
+# Simulation outputs
+results/
+**/Results/
+**/results/
+**/output/
+data/
 *.job
 *.err
-*.csv
-Presentations/*
-*.DS_Store
-*__pycache__*
-*.ipynb
-*.png
-*.pdf
-*.jpeg
-*.svg
-*media*
-examples/WLS/Lorenz/lorenz_sindy.py
+*.log
+examples/**/Old/
+examples/**/old/
+
+# Generated media (raw renders)
+videos/generated/**
+!videos/generated/.gitkeep
+videos/presentations/**
+!videos/presentations/.gitkeep
+
+# Paper build artefacts
+paper/*.aux
+paper/*.bbl
+paper/*.blg
+paper/*.fdb_latexmk
+paper/*.fls
+paper/*.log
+paper/*.out
+paper/*.synctex.gz
+paper/*.spl
+
+# Archives
+*.zip
+
+# Legacy snapshots
+OLD/
+OLD/**
