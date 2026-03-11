@@ -24,14 +24,14 @@ from pysindy.feature_library import WeakPDELibrary
 
 from mfsindy.cases.common import (
     EnsembleConfigMixin,
-    GLSRunArtifacts,
+    IntraTrajectoryGLSData,
     MonteCarloConfig,
-    MultiFidelityBatch,
+    MultiTrajectoryGLSData,
     coefficient_errors,
-    fit_gls_models,
-    run_gls_pipeline,
+    fit_intra_trajectory_gls_models,
+    run_intra_trajectory_gls_experiment,
     run_monte_carlo_experiment,
-    run_multi_fidelity_pipeline,
+    run_multi_trajectory_gls_experiment,
 )
 from mfsindy.weighted_weak_pde_library import WeightedWeakPDELibrary
 
@@ -204,7 +204,7 @@ def _build_burgers_gls_artifacts(
     run_idx: int,
     cfg: BurgersConfig,
     rng: np.random.Generator,
-) -> GLSRunArtifacts:
+) -> IntraTrajectoryGLSData:
     """Construct data + weak libraries for a single Burgers GLS run."""
     x, t = make_space_time_grid(cfg)
     dx = x[1] - x[0]
@@ -283,7 +283,7 @@ def _build_burgers_gls_artifacts(
         "Ones GLS": weighted_weak_lib_ones,
     }
 
-    return GLSRunArtifacts(
+    return IntraTrajectoryGLSData(
         data=U_noisy,
         t_argument=t,
         libraries=libraries,
@@ -299,10 +299,10 @@ def run_burgers_experiment(
     """
     rng = np.random.default_rng(cfg.seed_base)
 
-    def builder(run_idx: int, cfg: BurgersConfig) -> GLSRunArtifacts:
+    def builder(run_idx: int, cfg: BurgersConfig) -> IntraTrajectoryGLSData:
         return _build_burgers_gls_artifacts(run_idx, cfg, rng)
 
-    return run_gls_pipeline(
+    return run_intra_trajectory_gls_experiment(
         cfg,
         run_builder=builder,
         progress_desc="Monte Carlo Burgers GLS",
@@ -376,7 +376,7 @@ def _burgers_batch(
     cfg: BurgersMFConfig,
     noise_hf_abs: float,
     noise_lf_abs: float,
-) -> MultiFidelityBatch:
+) -> MultiTrajectoryGLSData:
     """Return HF/LF training trajectories for a single Monte Carlo run."""
 
     X_hf, t_train, x_grid, _ = generate_burgers_dataset(
@@ -399,7 +399,7 @@ def _burgers_batch(
         noise_level=noise_lf_abs,
         seed=cfg.seed_base + 100 + run_idx,
     )
-    return MultiFidelityBatch(
+    return MultiTrajectoryGLSData(
         hf=X_hf,
         lf=X_lf,
         t_argument=cfg.dt,
@@ -407,7 +407,7 @@ def _burgers_batch(
     )
 
 
-def _burgers_library(batch: MultiFidelityBatch, cfg: BurgersMFConfig):
+def _burgers_library(batch: MultiTrajectoryGLSData, cfg: BurgersMFConfig):
     """Shared weak-form Burgers library."""
 
     x = batch.metadata["x"]
@@ -430,7 +430,7 @@ def _burgers_library(batch: MultiFidelityBatch, cfg: BurgersMFConfig):
     )
 
 
-def _burgers_true_coefficients(_: MultiFidelityBatch, cfg: BurgersMFConfig) -> np.ndarray:
+def _burgers_true_coefficients(_: MultiTrajectoryGLSData, cfg: BurgersMFConfig) -> np.ndarray:
     return build_true_burgers_coefficients(cfg.nu)
 
 
@@ -456,7 +456,7 @@ def run_burgers_mf_experiment(
     noise_hf_abs : absolute HF noise level
     noise_lf_abs : absolute LF noise level
     """
-    return run_multi_fidelity_pipeline(
+    return run_multi_trajectory_gls_experiment(
         cfg,
         reference_state_std=_burgers_reference_state_std,
         dataset_builder=_burgers_batch,
@@ -497,7 +497,7 @@ def get_burgers_gls_coefficients(
     )
 
     methods = ["No weighting", "Variance GLS", "Ones GLS"]
-    coef_map = fit_gls_models(cfg, artifacts, methods)
+    coef_map = fit_intra_trajectory_gls_models(cfg, artifacts, methods)
 
     C_true = artifacts.true_coefficients.ravel()
     C_std = coef_map["No weighting"].ravel()

@@ -16,13 +16,13 @@ from pysindy.feature_library import WeakPDELibrary
 
 from mfsindy.cases.common import (
     EnsembleConfigMixin,
-    GLSRunArtifacts,
+    IntraTrajectoryGLSData,
     MonteCarloConfig,
-    MultiFidelityBatch,
+    MultiTrajectoryGLSData,
     coefficient_errors,
-    run_gls_pipeline,
+    run_intra_trajectory_gls_experiment,
     run_monte_carlo_experiment,
-    run_multi_fidelity_pipeline,
+    run_multi_trajectory_gls_experiment,
 )
 from mfsindy.weighted_weak_pde_library import WeightedWeakPDELibrary
 
@@ -213,7 +213,7 @@ def _hopf_batch(
     cfg: HopfMFConfig,
     noise_hf_abs: float,
     noise_lf_abs: float,
-) -> MultiFidelityBatch:
+) -> MultiTrajectoryGLSData:
     X_hf, t_train, _ = generate_hopf_dataset(
         n_traj=cfg.n_hf,
         T=cfg.T_train,
@@ -232,7 +232,7 @@ def _hopf_batch(
         mu=cfg.mu,
         omega=cfg.omega,
     )
-    return MultiFidelityBatch(
+    return MultiTrajectoryGLSData(
         hf=X_hf,
         lf=X_lf,
         t_argument=cfg.dt,
@@ -240,7 +240,7 @@ def _hopf_batch(
     )
 
 
-def _hopf_library(batch: MultiFidelityBatch, cfg: HopfMFConfig):
+def _hopf_library(batch: MultiTrajectoryGLSData, cfg: HopfMFConfig):
     base_library = ps.PolynomialLibrary(
         degree=cfg.poly_degree,
         include_bias=False,
@@ -251,7 +251,7 @@ def _hopf_library(batch: MultiFidelityBatch, cfg: HopfMFConfig):
     )
 
 
-def _hopf_true_coefficients(_: MultiFidelityBatch, cfg: HopfMFConfig) -> np.ndarray:
+def _hopf_true_coefficients(_: MultiTrajectoryGLSData, cfg: HopfMFConfig) -> np.ndarray:
     return build_true_hopf_coefficients(mu=cfg.mu, omega=cfg.omega)
 
 
@@ -277,7 +277,7 @@ def run_hopf_mf_experiment(
     noise_hf_abs : absolute HF noise level
     noise_lf_abs : absolute LF noise level
     """
-    return run_multi_fidelity_pipeline(
+    return run_multi_trajectory_gls_experiment(
         cfg,
         reference_state_std=_hopf_reference_state_std,
         dataset_builder=_hopf_batch,
@@ -331,7 +331,7 @@ def _build_hopf_gls_artifacts(
     run_idx: int,
     cfg: HopfGLSConfig,
     rng: np.random.Generator,
-) -> GLSRunArtifacts:
+) -> IntraTrajectoryGLSData:
     """Construct data/libraries for one Hopf GLS run."""
     T = cfg.t1 - cfg.t0
     t_eval, U_clean = generate_hopf_trajectory(
@@ -411,7 +411,7 @@ def _build_hopf_gls_artifacts(
         "Ones GLS": weighted_weak_lib_ones,
     }
 
-    return GLSRunArtifacts(
+    return IntraTrajectoryGLSData(
         data=U_noisy,
         t_argument=t_eval,
         libraries=libraries,
@@ -427,10 +427,10 @@ def run_hopf_gls_experiment(
     """
     rng = np.random.default_rng(cfg.seed_base)
 
-    def builder(run_idx: int, cfg: HopfGLSConfig) -> GLSRunArtifacts:
+    def builder(run_idx: int, cfg: HopfGLSConfig) -> IntraTrajectoryGLSData:
         return _build_hopf_gls_artifacts(run_idx, cfg, rng)
 
-    return run_gls_pipeline(
+    return run_intra_trajectory_gls_experiment(
         cfg,
         run_builder=builder,
         progress_desc="Monte Carlo Hopf GLS",

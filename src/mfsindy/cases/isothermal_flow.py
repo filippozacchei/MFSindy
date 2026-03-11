@@ -26,13 +26,13 @@ from pysindy.feature_library import WeakPDELibrary
 
 from mfsindy.cases.common import (
     EnsembleConfigMixin,
-    GLSRunArtifacts,
+    IntraTrajectoryGLSData,
     MonteCarloConfig,
-    MultiFidelityBatch,
+    MultiTrajectoryGLSData,
     coefficient_errors,
-    run_gls_pipeline,
+    run_intra_trajectory_gls_experiment,
     run_monte_carlo_experiment,
-    run_multi_fidelity_pipeline,
+    run_multi_trajectory_gls_experiment,
 )
 from mfsindy.weighted_weak_pde_library import WeightedWeakPDELibrary
 
@@ -367,7 +367,7 @@ def _ns_dataset_batch(
     *,
     grid: np.ndarray,
     t: np.ndarray,
-) -> MultiFidelityBatch:
+) -> MultiTrajectoryGLSData:
     rng = np.random.default_rng(cfg.seed_base + 100 * run_idx)
 
     def _sample(n_traj: int, noise_abs: float, offset: int) -> list[np.ndarray]:
@@ -390,7 +390,7 @@ def _ns_dataset_batch(
     hf_data = _sample(cfg.n_hf, noise_hf_abs, offset=0)
     lf_data = _sample(cfg.n_lf, noise_lf_abs, offset=10_000)
 
-    return MultiFidelityBatch(
+    return MultiTrajectoryGLSData(
         hf=hf_data,
         lf=lf_data,
         t_argument=t,
@@ -398,7 +398,7 @@ def _ns_dataset_batch(
     )
 
 
-def _ns_library(batch: MultiFidelityBatch, cfg: NSIsothermalMFConfig):
+def _ns_library(batch: MultiTrajectoryGLSData, cfg: NSIsothermalMFConfig):
     return WeakPDELibrary(
         function_library=_build_custom_library(),
         derivative_order=cfg.derivative_order,
@@ -474,7 +474,7 @@ def run_ns_isothermal_mf_experiment(
             t=t_ref,
         )
 
-    return run_multi_fidelity_pipeline(
+    return run_multi_trajectory_gls_experiment(
         cfg,
         reference_state_std=_reference_state_std,
         dataset_builder=_dataset_builder,
@@ -533,7 +533,7 @@ def _build_ns_gls_artifacts(
     grid: np.ndarray,
     base_library: ps.CustomLibrary,
     true_coefficients: np.ndarray,
-) -> GLSRunArtifacts:
+) -> IntraTrajectoryGLSData:
     """Construct noisy NS data + weak libraries for one GLS run."""
 
     U_clean, t, _ = generate_isothermal_ns_dataset(
@@ -599,7 +599,7 @@ def _build_ns_gls_artifacts(
         "Ones GLS": weighted_weak_lib_ones,
     }
 
-    return GLSRunArtifacts(
+    return IntraTrajectoryGLSData(
         data=U_noisy,
         t_argument=t,
         libraries=libraries,
@@ -627,7 +627,7 @@ def run_ns_isothermal_gls_experiment(
         K_ref=cfg.K_ref,
     )
 
-    def builder(run_idx: int, cfg: NSIsothermalGLSConfig) -> GLSRunArtifacts:
+    def builder(run_idx: int, cfg: NSIsothermalGLSConfig) -> IntraTrajectoryGLSData:
         rng = np.random.default_rng(cfg.seed_base + 100 * run_idx)
         return _build_ns_gls_artifacts(
             run_idx,
@@ -638,7 +638,7 @@ def run_ns_isothermal_gls_experiment(
             true_coefficients=C_true,
         )
 
-    return run_gls_pipeline(
+    return run_intra_trajectory_gls_experiment(
         cfg,
         run_builder=builder,
         progress_desc="MC isothermal NS GLS",

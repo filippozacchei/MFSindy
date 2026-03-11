@@ -17,13 +17,13 @@ from pysindy.feature_library import WeakPDELibrary
 
 from mfsindy.cases.common import (
     EnsembleConfigMixin,
-    GLSRunArtifacts,
+    IntraTrajectoryGLSData,
     MonteCarloConfig,
-    MultiFidelityBatch,
+    MultiTrajectoryGLSData,
     coefficient_errors,
-    run_gls_pipeline,
+    run_intra_trajectory_gls_experiment,
     run_monte_carlo_experiment,
-    run_multi_fidelity_pipeline,
+    run_multi_trajectory_gls_experiment,
 )
 from mfsindy.weighted_weak_pde_library import WeightedWeakPDELibrary
 
@@ -220,7 +220,7 @@ def _lorenz_batch(
     cfg: LorenzMFConfig,
     noise_hf_abs: float,
     noise_lf_abs: float,
-) -> MultiFidelityBatch:
+) -> MultiTrajectoryGLSData:
     """Build the HF/LF training batch for a single Monte Carlo run."""
 
     X_hf, t_train, _ = generate_lorenz_dataset(
@@ -237,7 +237,7 @@ def _lorenz_batch(
         noise_level=noise_lf_abs,
         seed=cfg.seed_base + 100 + run_idx,
     )
-    return MultiFidelityBatch(
+    return MultiTrajectoryGLSData(
         hf=X_hf,
         lf=X_lf,
         t_argument=cfg.dt,
@@ -245,7 +245,7 @@ def _lorenz_batch(
     )
 
 
-def _lorenz_library(batch: MultiFidelityBatch, cfg: LorenzMFConfig):
+def _lorenz_library(batch: MultiTrajectoryGLSData, cfg: LorenzMFConfig):
     """Shared weak-form library for all fidelity variants."""
 
     poly_lib = ps.PolynomialLibrary(
@@ -258,7 +258,7 @@ def _lorenz_library(batch: MultiFidelityBatch, cfg: LorenzMFConfig):
     )
 
 
-def _lorenz_true_coefficients(_: MultiFidelityBatch, cfg: LorenzMFConfig) -> np.ndarray:
+def _lorenz_true_coefficients(_: MultiTrajectoryGLSData, cfg: LorenzMFConfig) -> np.ndarray:
     return build_true_coefficient_matrix()
 
 
@@ -284,7 +284,7 @@ def run_lorenz_mf_experiment(
     noise_hf_abs : absolute HF noise level
     noise_lf_abs : absolute LF noise level
     """
-    return run_multi_fidelity_pipeline(
+    return run_multi_trajectory_gls_experiment(
         cfg,
         reference_state_std=_lorenz_reference_state_std,
         dataset_builder=_lorenz_batch,
@@ -334,7 +334,7 @@ def _make_lorenz_gls_artifacts(
     run_idx: int,
     cfg: LorenzGLSConfig,
     rng: np.random.Generator,
-) -> GLSRunArtifacts:
+) -> IntraTrajectoryGLSData:
     """Build data and libraries for one Lorenz GLS run."""
     # 1) Clean trajectory from random initial condition
     u0 = rng.uniform(-20.0, 20.0, size=3)
@@ -415,7 +415,7 @@ def _make_lorenz_gls_artifacts(
         "Ones GLS": weighted_weak_lib_ones,
     }
 
-    return GLSRunArtifacts(
+    return IntraTrajectoryGLSData(
         data=U_noisy,
         t_argument=t_eval,
         libraries=libraries,
@@ -431,10 +431,10 @@ def run_lorenz_gls_experiment(
     """
     rng = np.random.default_rng(cfg.seed_base)
 
-    def builder(run_idx: int, cfg: LorenzGLSConfig) -> GLSRunArtifacts:
+    def builder(run_idx: int, cfg: LorenzGLSConfig) -> IntraTrajectoryGLSData:
         return _make_lorenz_gls_artifacts(run_idx, cfg, rng)
 
-    return run_gls_pipeline(
+    return run_intra_trajectory_gls_experiment(
         cfg,
         run_builder=builder,
         progress_desc="Monte Carlo Lorenz GLS",
