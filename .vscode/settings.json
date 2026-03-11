@@ -3,5 +3,7 @@
     "workbench.preferredDarkColorTheme": "Abyss",
     "workbench.preferredHighContrastColorTheme": "Atom One Light",
     "workbench.preferredHighContrastLightColorTheme": "Abyss",
-    "workbench.preferredLightColorTheme": "Atom One Light"
+    "workbench.preferredLightColorTheme": "Atom One Light",
+    "python-envs.defaultEnvManager": "ms-python.python:conda",
+    "python-envs.defaultPackageManager": "ms-python.python:conda"
 }
