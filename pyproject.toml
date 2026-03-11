@@ -25,7 +25,7 @@ dependencies = [
   "numpy==2.2.6",
   "pandas==2.3.0",
   "pillow==11.3.0",
-  "pysindy @ file:///Users/filippozacchei/Library/CloudStorage/OneDrive-PolitecnicodiMilano/Documenti/Projects/PySINDy",
+  "pysindy @ git+https://github.com/filippozacchei/pysindy.git",
   "scikit-learn==1.7.0",
   "scipy==1.15.3",
   "tqdm==4.67.1"
