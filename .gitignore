@@ -60,6 +60,9 @@ videos/generated/**
 !videos/generated/.gitkeep
 videos/presentations/**
 !videos/presentations/.gitkeep
+# Allow specific documentation assets
+!docs/assets/images/method.pdf
+!docs/assets/images/method.png
 
 # Paper build artefacts
 paper/*.aux

@@ -32,7 +32,7 @@ The package exposes reusable case modules (`mfsindy.cases.*`), plotting helpers,
 
 ## Documentation & Research Assets
 
-- `docs/README.md` summarises the available notebooks (GLS/WLS case studies), figures, and how to regenerate them.
+- `docs/README.md` is the canonical documentation hub (quickstart, notebook index, tutorials, API reference, and methodology snapshot). A dedicated GitHub Action (`.github/workflows/docs.yml`) checks that those sections stay present on every push/PR.
 - `paper/` contains the LaTeX sources (`main.tex`, `abstract.tex`, `result.tex`, etc.). Use `latexmk -pdf main.tex` from inside `paper/` to build the manuscript.
 - `presentations/` stores slide decks, Manim scripts, and supporting figures.
 - `videos/` centralises all rendered animations (presentations, generated scenes, and raw partials) so large binaries stay out of the core package.
