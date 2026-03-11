@@ -23,8 +23,8 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 
 from pendulum_utils import (
-    PendulumMFConfig,
-    run_pendulum_mf_experiment,
+    PendulumMultiTrajectoryGLSConfig,
+    run_pendulum_multi_trajectory_gls_experiment,
     generate_pendulum_dataset,
 )
 from plot_utils import bubble_hist
@@ -36,7 +36,7 @@ sns.set(context="paper", style="white", font_scale=1.1)
 # Configuration and reference datasets (optional visualisation)
 # ---------------------------------------------------------------------
 
-cfg = PendulumMFConfig(
+cfg = PendulumMultiTrajectoryGLSConfig(
     n_runs=1,
     T_train=0.1,
     T_true=10.0,
@@ -90,7 +90,7 @@ print(f"LF (ref): {len(X_lf_ref)} trajectories, length {X_lf_ref[0].shape[0]}")
     state_std,
     noise_hf_abs,
     noise_lf_abs,
-) = run_pendulum_mf_experiment(cfg)
+) = run_pendulum_multi_trajectory_gls_experiment(cfg)
 
 print("Reference state std (scalar):", state_std)
 print("HF noise (abs):", noise_hf_abs)

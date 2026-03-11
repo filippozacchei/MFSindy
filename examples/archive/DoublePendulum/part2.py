@@ -22,7 +22,7 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 
-from pendulum_utils import PendulumGLSConfig, run_pendulum_gls_experiment
+from pendulum_utils import PendulumIntraTrajectoryGLSConfig, run_pendulum_intra_trajectory_gls_experiment
 from plot_utils import bubble_hist
 
 warnings.filterwarnings("ignore")
@@ -32,7 +32,7 @@ sns.set(context="paper", style="white", font_scale=1.1)
 # Configuration and experiment
 # ---------------------------------------------------------------------
 
-cfg = PendulumGLSConfig(
+cfg = PendulumIntraTrajectoryGLSConfig(
     n_runs=100,
     t0=0.0,
     t1=10.0,
@@ -57,7 +57,7 @@ cfg = PendulumGLSConfig(
 
 print(f"Running heteroscedastic pendulum GLS experiment with {cfg.n_runs} runs.")
 
-# df_errors, L1_errors_in_mem, L0_errors_in_mem = run_pendulum_gls_experiment(cfg)
+# df_errors, L1_errors_in_mem, L0_errors_in_mem = run_pendulum_intra_trajectory_gls_experiment(cfg)
 
 # ---------------------------------------------------------------------
 # Reload CSV and reconstruct error dicts for plotting

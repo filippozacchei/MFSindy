@@ -218,7 +218,7 @@ def build_true_pendulum_coefficients(
 
 @dataclass
 @dataclass
-class PendulumMFConfig(MonteCarloConfig, EnsembleConfigMixin):
+class PendulumMultiTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
     """Configuration for the pendulum multi-fidelity SINDy experiment."""
 
     # multi-fidelity settings
@@ -251,7 +251,7 @@ class PendulumMFConfig(MonteCarloConfig, EnsembleConfigMixin):
     results_filename: str = "pendulum_mf_errors.csv"
 
 
-def _pendulum_reference_state_std(cfg: PendulumMFConfig) -> float:
+def _pendulum_reference_state_std(cfg: PendulumMultiTrajectoryGLSConfig) -> float:
     X_ref_list, _, _ = generate_pendulum_dataset(
         n_traj=1,
         T=cfg.T_true,
@@ -267,7 +267,7 @@ def _pendulum_reference_state_std(cfg: PendulumMFConfig) -> float:
 
 def _pendulum_batch(
     run_idx: int,
-    cfg: PendulumMFConfig,
+    cfg: PendulumMultiTrajectoryGLSConfig,
     noise_hf_abs: float,
     noise_lf_abs: float,
 ) -> MultiTrajectoryGLSData:
@@ -299,7 +299,7 @@ def _pendulum_batch(
     )
 
 
-def _pendulum_library(batch: MultiTrajectoryGLSData, cfg: PendulumMFConfig):
+def _pendulum_library(batch: MultiTrajectoryGLSData, cfg: PendulumMultiTrajectoryGLSConfig):
     base_library = ps.PolynomialLibrary(
         degree=cfg.poly_degree,
         include_bias=False,
@@ -310,12 +310,12 @@ def _pendulum_library(batch: MultiTrajectoryGLSData, cfg: PendulumMFConfig):
     )
 
 
-def _pendulum_true_coefficients(_: MultiTrajectoryGLSData, cfg: PendulumMFConfig) -> np.ndarray:
+def _pendulum_true_coefficients(_: MultiTrajectoryGLSData, cfg: PendulumMultiTrajectoryGLSConfig) -> np.ndarray:
     return build_true_pendulum_coefficients(g=cfg.g, L=cfg.L, c=cfg.c)
 
 
-def run_pendulum_mf_experiment(
-    cfg: PendulumMFConfig,
+def run_pendulum_multi_trajectory_gls_experiment(
+    cfg: PendulumMultiTrajectoryGLSConfig,
 ) -> tuple[
     pd.DataFrame,
     Dict[str, np.ndarray],
@@ -352,7 +352,7 @@ def run_pendulum_mf_experiment(
 # Pendulum heteroscedastic GLS experiment (weak / weighted-weak SINDy)
 # ---------------------------------------------------------------------------
 @dataclass
-class PendulumGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
+class PendulumIntraTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
     """Configuration for the heteroscedastic pendulum GLS experiment."""
 
     # time discretisation
@@ -386,7 +386,7 @@ class PendulumGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
 
 def _build_pendulum_gls_artifacts(
     run_idx: int,
-    cfg: PendulumGLSConfig,
+    cfg: PendulumIntraTrajectoryGLSConfig,
     rng: np.random.Generator,
 ) -> IntraTrajectoryGLSData:
     """Build noisy trajectory and weak libraries for a pendulum GLS run."""
@@ -481,15 +481,15 @@ def _build_pendulum_gls_artifacts(
     )
 
 
-def run_pendulum_gls_experiment(
-    cfg: PendulumGLSConfig,
+def run_pendulum_intra_trajectory_gls_experiment(
+    cfg: PendulumIntraTrajectoryGLSConfig,
 ) -> tuple[pd.DataFrame, Dict[str, np.ndarray], Dict[str, np.ndarray]]:
     """
     Full heteroscedastic pendulum GLS experiment.
     """
     rng = np.random.default_rng(cfg.seed_base)
 
-    def builder(run_idx: int, cfg: PendulumGLSConfig) -> IntraTrajectoryGLSData:
+    def builder(run_idx: int, cfg: PendulumIntraTrajectoryGLSConfig) -> IntraTrajectoryGLSData:
         return _build_pendulum_gls_artifacts(run_idx, cfg, rng)
 
     return run_intra_trajectory_gls_experiment(

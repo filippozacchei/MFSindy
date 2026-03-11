@@ -321,7 +321,7 @@ def _run_monte_carlo_experiment(
 
 
 @dataclass
-class PendulumMFConfig:
+class PendulumMultiTrajectoryGLSConfig:
     """Configuration for the pendulum multi-fidelity SINDy experiment."""
 
     n_runs: int = 25
@@ -361,7 +361,7 @@ def build_ensemble_sindy_models_pendulum(
     X_hf: list[np.ndarray],
     X_lf: list[np.ndarray],
     t: np.ndarray,
-    cfg: PendulumMFConfig,
+    cfg: PendulumMultiTrajectoryGLSConfig,
     noise_hf_abs: float,
     noise_lf_abs: float,
 ):
@@ -442,7 +442,7 @@ def build_ensemble_sindy_models_pendulum(
 
 def _run_single_pendulum_mf_run(
     run_idx: int,
-    cfg: PendulumMFConfig,
+    cfg: PendulumMultiTrajectoryGLSConfig,
     noise_hf_abs: float,
     noise_lf_abs: float,
 ) -> Dict[str, Tuple[float, float]]:
@@ -526,8 +526,8 @@ def _run_single_pendulum_mf_run(
     }
 
 
-def run_pendulum_mf_experiment(
-    cfg: PendulumMFConfig,
+def run_pendulum_multi_trajectory_gls_experiment(
+    cfg: PendulumMultiTrajectoryGLSConfig,
 ) -> tuple[
     pd.DataFrame,
     Dict[str, np.ndarray],
@@ -596,7 +596,7 @@ def run_pendulum_mf_experiment(
 
 
 @dataclass
-class PendulumGLSConfig:
+class PendulumIntraTrajectoryGLSConfig:
     """Configuration for the heteroscedastic pendulum GLS experiment."""
 
     n_runs: int = 100
@@ -637,7 +637,7 @@ class PendulumGLSConfig:
 
 def _run_single_pendulum_gls_run(
     run_idx: int,
-    cfg: PendulumGLSConfig,
+    cfg: PendulumIntraTrajectoryGLSConfig,
     rng: np.random.Generator,
 ) -> Dict[str, Tuple[float, float]]:
     """
@@ -767,8 +767,8 @@ def _run_single_pendulum_gls_run(
     }
 
 
-def run_pendulum_gls_experiment(
-    cfg: PendulumGLSConfig,
+def run_pendulum_intra_trajectory_gls_experiment(
+    cfg: PendulumIntraTrajectoryGLSConfig,
 ) -> tuple[pd.DataFrame, Dict[str, np.ndarray], Dict[str, np.ndarray]]:
     """
     Full heteroscedastic pendulum GLS experiment.

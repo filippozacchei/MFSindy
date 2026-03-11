@@ -172,7 +172,7 @@ def build_true_coefficient_matrix() -> np.ndarray:
 # ---------------------------------------------------------------------------
 
 @dataclass
-class LorenzMFConfig(MonteCarloConfig, EnsembleConfigMixin):
+class LorenzMultiTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
     """Configuration for the Lorenz multi-fidelity SINDy experiment."""
 
     # multi-fidelity settings
@@ -202,7 +202,7 @@ class LorenzMFConfig(MonteCarloConfig, EnsembleConfigMixin):
     results_filename: str = "lorenz_mf_errors.csv"
 
 
-def _lorenz_reference_state_std(cfg: LorenzMFConfig) -> float:
+def _lorenz_reference_state_std(cfg: LorenzMultiTrajectoryGLSConfig) -> float:
     """Reference standard deviation used to scale HF/LF noise levels."""
 
     X_true_list, _, _ = generate_lorenz_dataset(
@@ -217,7 +217,7 @@ def _lorenz_reference_state_std(cfg: LorenzMFConfig) -> float:
 
 def _lorenz_batch(
     run_idx: int,
-    cfg: LorenzMFConfig,
+    cfg: LorenzMultiTrajectoryGLSConfig,
     noise_hf_abs: float,
     noise_lf_abs: float,
 ) -> MultiTrajectoryGLSData:
@@ -245,7 +245,7 @@ def _lorenz_batch(
     )
 
 
-def _lorenz_library(batch: MultiTrajectoryGLSData, cfg: LorenzMFConfig):
+def _lorenz_library(batch: MultiTrajectoryGLSData, cfg: LorenzMultiTrajectoryGLSConfig):
     """Shared weak-form library for all fidelity variants."""
 
     poly_lib = ps.PolynomialLibrary(
@@ -258,12 +258,12 @@ def _lorenz_library(batch: MultiTrajectoryGLSData, cfg: LorenzMFConfig):
     )
 
 
-def _lorenz_true_coefficients(_: MultiTrajectoryGLSData, cfg: LorenzMFConfig) -> np.ndarray:
+def _lorenz_true_coefficients(_: MultiTrajectoryGLSData, cfg: LorenzMultiTrajectoryGLSConfig) -> np.ndarray:
     return build_true_coefficient_matrix()
 
 
-def run_lorenz_mf_experiment(
-    cfg: LorenzMFConfig,
+def run_lorenz_multi_trajectory_gls_experiment(
+    cfg: LorenzMultiTrajectoryGLSConfig,
 ) -> tuple[
     pd.DataFrame,
     Dict[str, np.ndarray],
@@ -300,7 +300,7 @@ def run_lorenz_mf_experiment(
 # ---------------------------------------------------------------------------
 
 @dataclass
-class LorenzGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
+class LorenzIntraTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
     """Configuration for the heteroscedastic Lorenz GLS experiment."""
 
     # time discretisation
@@ -332,7 +332,7 @@ class LorenzGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
 
 def _make_lorenz_gls_artifacts(
     run_idx: int,
-    cfg: LorenzGLSConfig,
+    cfg: LorenzIntraTrajectoryGLSConfig,
     rng: np.random.Generator,
 ) -> IntraTrajectoryGLSData:
     """Build data and libraries for one Lorenz GLS run."""
@@ -423,15 +423,15 @@ def _make_lorenz_gls_artifacts(
     )
 
 
-def run_lorenz_gls_experiment(
-    cfg: LorenzGLSConfig,
+def run_lorenz_intra_trajectory_gls_experiment(
+    cfg: LorenzIntraTrajectoryGLSConfig,
 ) -> tuple[pd.DataFrame, Dict[str, np.ndarray], Dict[str, np.ndarray]]:
     """
     Full heteroscedastic Lorenz GLS experiment.
     """
     rng = np.random.default_rng(cfg.seed_base)
 
-    def builder(run_idx: int, cfg: LorenzGLSConfig) -> IntraTrajectoryGLSData:
+    def builder(run_idx: int, cfg: LorenzIntraTrajectoryGLSConfig) -> IntraTrajectoryGLSData:
         return _make_lorenz_gls_artifacts(run_idx, cfg, rng)
 
     return run_intra_trajectory_gls_experiment(

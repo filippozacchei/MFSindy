@@ -66,7 +66,7 @@ class BurgersConfig:
 
 
 @dataclass
-class BurgersMFConfig:
+class BurgersMultiTrajectoryGLSConfig:
     """Configuration container for the Burgers multi-fidelity experiment."""
 
     # Monte Carlo
@@ -524,7 +524,7 @@ def build_ensemble_sindy_models_burgers(
     X_lf,
     t,
     x,
-    cfg: BurgersMFConfig,
+    cfg: BurgersMultiTrajectoryGLSConfig,
     noise_hf_abs: float,
     noise_lf_abs: float,
 ):
@@ -618,7 +618,7 @@ def build_ensemble_sindy_models_burgers(
 
 def _run_single_mf_run(
     run_idx: int,
-    cfg: BurgersMFConfig,
+    cfg: BurgersMultiTrajectoryGLSConfig,
     noise_hf_abs: float,
     noise_lf_abs: float,
 ) -> Dict[str, Tuple[float, float]]:
@@ -703,8 +703,8 @@ def _run_single_mf_run(
     return errors
 
 
-def run_burgers_mf_experiment(
-    cfg: BurgersMFConfig,
+def run_burgers_multi_trajectory_gls_experiment(
+    cfg: BurgersMultiTrajectoryGLSConfig,
 ) -> tuple[
     pd.DataFrame,
     Dict[str, np.ndarray],

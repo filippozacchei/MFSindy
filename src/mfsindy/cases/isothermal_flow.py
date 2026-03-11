@@ -311,7 +311,7 @@ def compute_reference_coefficients(
 # ---------------------------------------------------------------------------
 
 @dataclass
-class NSIsothermalMFConfig(MonteCarloConfig, EnsembleConfigMixin):
+class NSIsothermalMultiTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
     """
     Configuration for the isothermal NS multi-fidelity SINDy experiment
     (Part 1: HF / LF / MF / MF_w).
@@ -361,7 +361,7 @@ class NSIsothermalMFConfig(MonteCarloConfig, EnsembleConfigMixin):
 
 def _ns_dataset_batch(
     run_idx: int,
-    cfg: NSIsothermalMFConfig,
+    cfg: NSIsothermalMultiTrajectoryGLSConfig,
     noise_hf_abs: float,
     noise_lf_abs: float,
     *,
@@ -398,7 +398,7 @@ def _ns_dataset_batch(
     )
 
 
-def _ns_library(batch: MultiTrajectoryGLSData, cfg: NSIsothermalMFConfig):
+def _ns_library(batch: MultiTrajectoryGLSData, cfg: NSIsothermalMultiTrajectoryGLSConfig):
     return WeakPDELibrary(
         function_library=_build_custom_library(),
         derivative_order=cfg.derivative_order,
@@ -408,8 +408,8 @@ def _ns_library(batch: MultiTrajectoryGLSData, cfg: NSIsothermalMFConfig):
     )
 
 
-def run_ns_isothermal_mf_experiment(
-    cfg: NSIsothermalMFConfig,
+def run_ns_isothermal_multi_trajectory_gls_experiment(
+    cfg: NSIsothermalMultiTrajectoryGLSConfig,
 ) -> tuple[
     pd.DataFrame,
     Dict[str, np.ndarray],
@@ -461,10 +461,10 @@ def run_ns_isothermal_mf_experiment(
 
 
     state_std = float(np.std(U_ref))
-    def _reference_state_std(_: NSIsothermalMFConfig) -> float:
+    def _reference_state_std(_: NSIsothermalMultiTrajectoryGLSConfig) -> float:
         return state_std
 
-    def _dataset_builder(run_idx: int, cfg: NSIsothermalMFConfig, noise_hf: float, noise_lf: float):
+    def _dataset_builder(run_idx: int, cfg: NSIsothermalMultiTrajectoryGLSConfig, noise_hf: float, noise_lf: float):
         return _ns_dataset_batch(
             run_idx,
             cfg,
@@ -490,7 +490,7 @@ def run_ns_isothermal_mf_experiment(
 # ---------------------------------------------------------------------------
 
 @dataclass
-class NSIsothermalGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
+class NSIsothermalIntraTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
     """
     Configuration for heteroscedastic GLS experiment on
     isothermal compressible Navier–Stokes (Part 2).
@@ -527,7 +527,7 @@ class NSIsothermalGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
 
 def _build_ns_gls_artifacts(
     run_idx: int,
-    cfg: NSIsothermalGLSConfig,
+    cfg: NSIsothermalIntraTrajectoryGLSConfig,
     rng: np.random.Generator,
     *,
     grid: np.ndarray,
@@ -607,8 +607,8 @@ def _build_ns_gls_artifacts(
     )
 
 
-def run_ns_isothermal_gls_experiment(
-    cfg: NSIsothermalGLSConfig,
+def run_ns_isothermal_intra_trajectory_gls_experiment(
+    cfg: NSIsothermalIntraTrajectoryGLSConfig,
 ) -> tuple[pd.DataFrame, Dict[str, np.ndarray], Dict[str, np.ndarray]]:
     """
     Full heteroscedastic NS GLS experiment (Part 2).
@@ -627,7 +627,7 @@ def run_ns_isothermal_gls_experiment(
         K_ref=cfg.K_ref,
     )
 
-    def builder(run_idx: int, cfg: NSIsothermalGLSConfig) -> IntraTrajectoryGLSData:
+    def builder(run_idx: int, cfg: NSIsothermalIntraTrajectoryGLSConfig) -> IntraTrajectoryGLSData:
         rng = np.random.default_rng(cfg.seed_base + 100 * run_idx)
         return _build_ns_gls_artifacts(
             run_idx,

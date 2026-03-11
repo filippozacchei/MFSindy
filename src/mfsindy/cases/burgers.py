@@ -73,7 +73,7 @@ class BurgersConfig(MonteCarloConfig, EnsembleConfigMixin):
 
 
 @dataclass
-class BurgersMFConfig(MonteCarloConfig, EnsembleConfigMixin):
+class BurgersMultiTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
     """Configuration container for the Burgers multi-fidelity experiment."""
 
     # spatial / temporal discretization
@@ -355,7 +355,7 @@ def generate_burgers_dataset(
     return X_list, t, x, nu
 
 
-def _burgers_reference_state_std(cfg: BurgersMFConfig) -> float:
+def _burgers_reference_state_std(cfg: BurgersMultiTrajectoryGLSConfig) -> float:
     """Reference state std used to convert relative noise to absolute values."""
 
     X_ref_list, _, _, _ = generate_burgers_dataset(
@@ -373,7 +373,7 @@ def _burgers_reference_state_std(cfg: BurgersMFConfig) -> float:
 
 def _burgers_batch(
     run_idx: int,
-    cfg: BurgersMFConfig,
+    cfg: BurgersMultiTrajectoryGLSConfig,
     noise_hf_abs: float,
     noise_lf_abs: float,
 ) -> MultiTrajectoryGLSData:
@@ -407,7 +407,7 @@ def _burgers_batch(
     )
 
 
-def _burgers_library(batch: MultiTrajectoryGLSData, cfg: BurgersMFConfig):
+def _burgers_library(batch: MultiTrajectoryGLSData, cfg: BurgersMultiTrajectoryGLSConfig):
     """Shared weak-form Burgers library."""
 
     x = batch.metadata["x"]
@@ -430,12 +430,12 @@ def _burgers_library(batch: MultiTrajectoryGLSData, cfg: BurgersMFConfig):
     )
 
 
-def _burgers_true_coefficients(_: MultiTrajectoryGLSData, cfg: BurgersMFConfig) -> np.ndarray:
+def _burgers_true_coefficients(_: MultiTrajectoryGLSData, cfg: BurgersMultiTrajectoryGLSConfig) -> np.ndarray:
     return build_true_burgers_coefficients(cfg.nu)
 
 
-def run_burgers_mf_experiment(
-    cfg: BurgersMFConfig,
+def run_burgers_multi_trajectory_gls_experiment(
+    cfg: BurgersMultiTrajectoryGLSConfig,
 ) -> tuple[
     pd.DataFrame,
     Dict[str, np.ndarray],

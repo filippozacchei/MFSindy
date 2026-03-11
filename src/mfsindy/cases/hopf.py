@@ -164,7 +164,7 @@ def build_true_hopf_coefficients(mu: float = 1.0, omega: float = 1.0) -> np.ndar
 # Hopf multi-fidelity experiment (HF / LF / MF / MF_w)
 # ---------------------------------------------------------------------------
 @dataclass
-class HopfMFConfig(MonteCarloConfig, EnsembleConfigMixin):
+class HopfMultiTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
     """Configuration for the Hopf multi-fidelity SINDy experiment."""
 
     # multi-fidelity settings
@@ -195,7 +195,7 @@ class HopfMFConfig(MonteCarloConfig, EnsembleConfigMixin):
     # output
     results_filename: str = "hopf_mf_errors.csv"
 
-def _hopf_reference_state_std(cfg: HopfMFConfig) -> float:
+def _hopf_reference_state_std(cfg: HopfMultiTrajectoryGLSConfig) -> float:
     X_ref_list, _, _ = generate_hopf_dataset(
         n_traj=1,
         T=cfg.T_true,
@@ -210,7 +210,7 @@ def _hopf_reference_state_std(cfg: HopfMFConfig) -> float:
 
 def _hopf_batch(
     run_idx: int,
-    cfg: HopfMFConfig,
+    cfg: HopfMultiTrajectoryGLSConfig,
     noise_hf_abs: float,
     noise_lf_abs: float,
 ) -> MultiTrajectoryGLSData:
@@ -240,7 +240,7 @@ def _hopf_batch(
     )
 
 
-def _hopf_library(batch: MultiTrajectoryGLSData, cfg: HopfMFConfig):
+def _hopf_library(batch: MultiTrajectoryGLSData, cfg: HopfMultiTrajectoryGLSConfig):
     base_library = ps.PolynomialLibrary(
         degree=cfg.poly_degree,
         include_bias=False,
@@ -251,12 +251,12 @@ def _hopf_library(batch: MultiTrajectoryGLSData, cfg: HopfMFConfig):
     )
 
 
-def _hopf_true_coefficients(_: MultiTrajectoryGLSData, cfg: HopfMFConfig) -> np.ndarray:
+def _hopf_true_coefficients(_: MultiTrajectoryGLSData, cfg: HopfMultiTrajectoryGLSConfig) -> np.ndarray:
     return build_true_hopf_coefficients(mu=cfg.mu, omega=cfg.omega)
 
 
-def run_hopf_mf_experiment(
-    cfg: HopfMFConfig,
+def run_hopf_multi_trajectory_gls_experiment(
+    cfg: HopfMultiTrajectoryGLSConfig,
 ) -> tuple[
     pd.DataFrame,
     Dict[str, np.ndarray],
@@ -294,7 +294,7 @@ def run_hopf_mf_experiment(
 
 @dataclass
 @dataclass
-class HopfGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
+class HopfIntraTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
     """Configuration for the heteroscedastic Hopf GLS experiment."""
 
     n_runs: int = 100
@@ -329,7 +329,7 @@ class HopfGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
     
 def _build_hopf_gls_artifacts(
     run_idx: int,
-    cfg: HopfGLSConfig,
+    cfg: HopfIntraTrajectoryGLSConfig,
     rng: np.random.Generator,
 ) -> IntraTrajectoryGLSData:
     """Construct data/libraries for one Hopf GLS run."""
@@ -419,15 +419,15 @@ def _build_hopf_gls_artifacts(
     )
 
 
-def run_hopf_gls_experiment(
-    cfg: HopfGLSConfig,
+def run_hopf_intra_trajectory_gls_experiment(
+    cfg: HopfIntraTrajectoryGLSConfig,
 ) -> tuple[pd.DataFrame, Dict[str, np.ndarray], Dict[str, np.ndarray]]:
     """
     Full heteroscedastic Hopf GLS experiment.
     """
     rng = np.random.default_rng(cfg.seed_base)
 
-    def builder(run_idx: int, cfg: HopfGLSConfig) -> IntraTrajectoryGLSData:
+    def builder(run_idx: int, cfg: HopfIntraTrajectoryGLSConfig) -> IntraTrajectoryGLSData:
         return _build_hopf_gls_artifacts(run_idx, cfg, rng)
 
     return run_intra_trajectory_gls_experiment(
