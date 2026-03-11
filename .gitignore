@@ -74,6 +74,7 @@ paper/*.log
 paper/*.out
 paper/*.synctex.gz
 paper/*.spl
+site/
 
 # Archives
 *.zip
