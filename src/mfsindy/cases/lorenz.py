@@ -439,5 +439,4 @@ def run_lorenz_intra_trajectory_gls_experiment(
         run_builder=builder,
         progress_desc="Monte Carlo Lorenz GLS",
         coef_postprocess=lambda coef, _method: np.asarray(coef).T,
-        coefficient_error_kwargs=lambda _method: {"relative_to_true_support": True},
     )

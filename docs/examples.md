@@ -10,6 +10,7 @@ Every case lives in `examples/<case>/` with three artefacts: `part1.ipynb`, `par
 | Hopf | `examples/hopf/part1.ipynb` | `examples/hopf/part2.ipynb` |
 | Pendulum | `examples/pendulum/part1.ipynb` | `examples/pendulum/part2.ipynb` |
 | Isothermal flow | `examples/isothermal_flow/part1.ipynb` | `examples/isothermal_flow/part2.ipynb` |
+| Incompressible vorticity | `examples/incompressible_vorticity/part1.ipynb` | – |
 
 Each notebook follows the same storyline:
 

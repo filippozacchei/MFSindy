@@ -16,9 +16,8 @@ def coefficient_errors(
     C_est: np.ndarray,
     C_true: np.ndarray,
     tol_support: float = 1e-6,
-    relative_to_true_support: bool = False,
 ) -> tuple[float, float]:
-    """Mean absolute error + support mismatch for sparse coefficient matrices."""
+    """Mean L1 coefficient error + normalized support mismatch for sparse coefficients."""
 
     C_est = np.asarray(C_est)
     C_true = np.asarray(C_true)
@@ -31,12 +30,13 @@ def coefficient_errors(
 
     supp_true = np.abs(C_true) > tol_support
     supp_est = np.abs(C_est) > tol_support
-    l0_err = float(np.mean(np.not_equal(supp_true, supp_est)))
 
-    if relative_to_true_support and np.any(supp_true):
-        err = float(np.mean(np.abs(C_est[supp_true] - C_true[supp_true])))
+    err = float(np.mean(np.abs(C_est - C_true)))
+    n_active_terms = int(np.count_nonzero(supp_true))
+    if n_active_terms == 0:
+        l0_err = 0.0 if not np.any(supp_est) else float(np.count_nonzero(supp_est))
     else:
-        err = float(np.mean(np.abs(C_est - C_true)))
+        l0_err = float(np.count_nonzero(np.logical_xor(supp_true, supp_est)) / n_active_terms)
 
     return err, l0_err
 

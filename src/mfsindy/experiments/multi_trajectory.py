@@ -65,10 +65,15 @@ def fit_multi_trajectory_gls_models(
     model_mf_w = make_model()
 
     model_hf.fit(batch.hf, t=t_argument)
+    print("MODEL HF:")
+    model_hf.print()
     model_lf.fit(batch.lf, t=t_argument)
-
+    print("MODEL LF:")
+    model_lf.print()
     trajectories = list(batch.hf) + list(batch.lf)
     model_mf.fit(trajectories, t=t_argument)
+    print("MODEL MF:")
+    model_mf.print()
 
     eps_hf = max(float(noise_hf_abs), 1e-12)
     eps_lf = max(float(noise_lf_abs), 1e-12)
@@ -76,7 +81,8 @@ def fit_multi_trajectory_gls_models(
         batch.lf, (1.0 / eps_lf) ** 2
     )
     model_mf_w.fit(trajectories, t=t_argument, sample_weight=weights)
-
+    print("MODEL MFW:")
+    model_mf_w.print()
     return {
         "HF": _median_coefficients(model_hf.optimizer),
         "LF": _median_coefficients(model_lf.optimizer),
@@ -121,7 +127,7 @@ def run_multi_trajectory_gls_experiment(
             coef_map = {k: coef_postprocess(v) for k, v in coef_map.items()}
         C_true = true_coefficients(batch, cfg)
         return {
-            method: coefficient_errors(coef_map[method], C_true, relative_to_true_support=False)
+            method: coefficient_errors(coef_map[method], C_true)
             for method in methods
         }
 

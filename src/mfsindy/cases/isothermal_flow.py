@@ -292,7 +292,7 @@ def compute_reference_coefficients(
         spatiotemporal_grid=grid,
         K=K_ref,
         p=p,
-        # H_xt=[L / 10.0, L / 10.0, T / 10.0],
+        H_xt=[L / 10.0, L / 10.0, T / 10.0],
         include_bias=include_bias,
     )
 
@@ -473,7 +473,7 @@ def run_ns_isothermal_multi_trajectory_gls_experiment(
             grid=grid_ref,
             t=t_ref,
         )
-
+    print(C_true)
     return run_multi_trajectory_gls_experiment(
         cfg,
         reference_state_std=_reference_state_std,
@@ -553,7 +553,7 @@ def _build_ns_gls_artifacts(
 
     variance_scaled = variance / np.mean(variance)
     tf_seed = cfg.seed_base + 1000 + run_idx
-    h_xt = [cfg.L / 10.0, cfg.L / 10.0, cfg.T / 40.0]
+    h_xt = [cfg.L / 10.0, cfg.L / 10.0, cfg.T / 10.0]
 
     np.random.seed(tf_seed)
     weak_lib = WeakPDELibrary(
@@ -642,5 +642,4 @@ def run_ns_isothermal_intra_trajectory_gls_experiment(
         cfg,
         run_builder=builder,
         progress_desc="MC isothermal NS GLS",
-        coefficient_error_kwargs=lambda _method: {"relative_to_true_support": True},
     )
