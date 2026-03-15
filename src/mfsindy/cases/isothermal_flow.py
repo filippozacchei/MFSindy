@@ -41,11 +41,20 @@ from mfsindy.weighted_weak_pde_library import WeightedWeakPDELibrary
 # Core PDE: isothermal compressible Navier–Stokes
 # ---------------------------------------------------------------------------
 
-def compressible(t, U, dx, N, mu, RT):
-    """
-    2D isothermal compressible flow:
+def _periodic_centered_diff(f: np.ndarray, dx: float, axis: int) -> np.ndarray:
+    """Periodic centered finite difference (first derivative) along one axis."""
+    return (np.roll(f, -1, axis=axis) - np.roll(f, 1, axis=axis)) / (2.0 * dx)
 
-        state = (u, v, rho) on an N x N periodic grid.
+
+def _periodic_second_diff(f: np.ndarray, dx: float, axis: int) -> np.ndarray:
+    """Periodic centered finite difference (second derivative) along one axis."""
+    return (np.roll(f, -1, axis=axis) - 2.0 * f + np.roll(f, 1, axis=axis)) / (dx * dx)
+
+
+def compressible(t, U, dx, N, mu, RT):
+    """2D isothermal compressible flow (periodic) for solve_ivp.
+
+    This uses explicit numpy roll-based finite differences for speed.
 
     Parameters
     ----------
@@ -61,30 +70,30 @@ def compressible(t, U, dx, N, mu, RT):
     v = uvr[:, :, 1]
     rho = uvr[:, :, 2]
 
-    FD1x = ps.differentiation.FiniteDifference(d=1, axis=0, periodic=True)
-    FD1y = ps.differentiation.FiniteDifference(d=1, axis=1, periodic=True)
-    FD2x = ps.differentiation.FiniteDifference(d=2, axis=0, periodic=True)
-    FD2y = ps.differentiation.FiniteDifference(d=2, axis=1, periodic=True)
+    # First derivatives
+    ux = _periodic_centered_diff(u, dx, axis=0)
+    uy = _periodic_centered_diff(u, dx, axis=1)
+    vx = _periodic_centered_diff(v, dx, axis=0)
+    vy = _periodic_centered_diff(v, dx, axis=1)
 
-    ux  = FD1x._differentiate(u, dx)
-    uy  = FD1y._differentiate(u, dx)
-    uxx = FD2x._differentiate(u, dx)
-    uyy = FD2y._differentiate(u, dx)
+    # Second derivatives
+    uxx = _periodic_second_diff(u, dx, axis=0)
+    uyy = _periodic_second_diff(u, dx, axis=1)
+    vxx = _periodic_second_diff(v, dx, axis=0)
+    vyy = _periodic_second_diff(v, dx, axis=1)
 
-    vx  = FD1x._differentiate(v, dx)
-    vy  = FD1y._differentiate(v, dx)
-    vxx = FD2x._differentiate(v, dx)
-    vyy = FD2y._differentiate(v, dx)
+    # Pressure and its derivatives
+    p = rho * RT
+    px = _periodic_centered_diff(p, dx, axis=0)
+    py = _periodic_centered_diff(p, dx, axis=1)
 
-    p   = rho * RT
-    px  = FD1x._differentiate(p, dx)
-    py  = FD1y._differentiate(p, dx)
+    inv_rho = 1.0 / rho
 
-    ret = np.zeros_like(uvr)
+    ret = np.empty_like(uvr)
     # u_t
-    ret[:, :, 0] = -(u * ux + v * uy) - (px - mu * (uxx + uyy)) / rho
+    ret[:, :, 0] = -(u * ux + v * uy) - (px - mu * (uxx + uyy)) * inv_rho
     # v_t
-    ret[:, :, 1] = -(u * vx + v * vy) - (py - mu * (vxx + vyy)) / rho
+    ret[:, :, 1] = -(u * vx + v * vy) - (py - mu * (vxx + vyy)) * inv_rho
     # rho_t
     ret[:, :, 2] = -(u * px / RT + v * py / RT + rho * ux + rho * vy)
 
@@ -107,9 +116,18 @@ def make_initial_condition(
         rng = np.random.default_rng()
 
     if ic_type == "taylor-green":
-        U0 = (-np.sin(2 * np.pi / L * X) + 0.5 * np.cos(2 * 2 * np.pi / L * Y))
-        V0 = (0.5 * np.cos(2 * np.pi / L * X) - np.sin(2 * 2 * np.pi / L * Y))
-        RHO0 = 1.0 + 0.5 * np.cos(2 * np.pi / L * X) * np.cos(2 * 2 * np.pi / L * Y)
+        # Randomize coefficients around standard Taylor-Green values for variation
+        amp_u_sin = - (0.8 + 0.4 * rng.random())  # around -1.0
+        amp_u_cos = 0.4 + 0.2 * rng.random()      # around 0.5
+        amp_v_cos = 0.4 + 0.2 * rng.random()      # around 0.5
+        amp_v_sin = - (0.8 + 0.4 * rng.random())  # around -1.0
+        amp_rho_cos = 0.4 + 0.2 * rng.random()    # around 0.5
+
+        U0 = (amp_u_sin * np.sin(2 * np.pi / L * X) +
+              amp_u_cos * np.cos(2 * 2 * np.pi / L * Y))
+        V0 = (amp_v_cos * np.cos(2 * np.pi / L * X) +
+              amp_v_sin * np.sin(2 * 2 * np.pi / L * Y))
+        RHO0 = 1.0 + amp_rho_cos * np.cos(2 * np.pi / L * X) * np.cos(2 * 2 * np.pi / L * Y)
 
     elif ic_type == "shear-layer":
         U0 = np.tanh((Y - L / 2) / 0.1)
@@ -285,13 +303,14 @@ def compute_reference_coefficients(
     )
 
     base_library = _build_custom_library()
-
-    weak_lib_ref = WeakPDELibrary(
+    
+    weak_lib_ref = WeightedWeakPDELibrary(
         function_library=_build_custom_library(),  # separate instance is fine
         derivative_order=derivative_order,
         spatiotemporal_grid=grid,
         K=K_ref,
         p=p,
+        spatiotemporal_weights=np.ones((U_clean.shape[0],U_clean.shape[1],U_clean.shape[2])),
         H_xt=[L / 10.0, L / 10.0, T / 10.0],
         include_bias=include_bias,
     )
@@ -389,21 +408,29 @@ def _ns_dataset_batch(
 
     hf_data = _sample(cfg.n_hf, noise_hf_abs, offset=0)
     lf_data = _sample(cfg.n_lf, noise_lf_abs, offset=10_000)
+    
+    print("FIT")
 
     return MultiTrajectoryGLSData(
         hf=hf_data,
         lf=lf_data,
         t_argument=t,
-        metadata={"grid": grid},
+        metadata={
+            "grid": grid,
+        },
     )
 
 
 def _ns_library(batch: MultiTrajectoryGLSData, cfg: NSIsothermalMultiTrajectoryGLSConfig):
-    return WeakPDELibrary(
+    return WeightedWeakPDELibrary(
         function_library=_build_custom_library(),
         derivative_order=cfg.derivative_order,
         spatiotemporal_grid=batch.metadata["grid"],
+        spatiotemporal_weights=np.ones((cfg.N,cfg.N,cfg.Nt)),
+        is_uniform=True,
         K=cfg.K,
+        p=cfg.p,
+        H_xt=[cfg.L / 10.0, cfg.L / 10.0, cfg.T / 10.0],
         include_bias=cfg.include_bias,
     )
 
@@ -461,6 +488,7 @@ def run_ns_isothermal_multi_trajectory_gls_experiment(
 
 
     state_std = float(np.std(U_ref))
+    print(state_std)
     def _reference_state_std(_: NSIsothermalMultiTrajectoryGLSConfig) -> float:
         return state_std
 

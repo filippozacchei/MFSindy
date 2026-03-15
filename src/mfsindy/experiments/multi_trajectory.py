@@ -80,6 +80,7 @@ def fit_multi_trajectory_gls_models(
     weights = _expand_sample_weights(batch.hf, (1.0 / eps_hf) ** 2) + _expand_sample_weights(
         batch.lf, (1.0 / eps_lf) ** 2
     )
+    print(np.array(weights).shape)
     model_mf_w.fit(trajectories, t=t_argument, sample_weight=weights)
     print("MODEL MFW:")
     model_mf_w.print()
