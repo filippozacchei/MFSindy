@@ -306,7 +306,6 @@ def run_burgers_experiment(
         cfg,
         run_builder=builder,
         progress_desc="Monte Carlo Burgers GLS",
-        coefficient_error_kwargs=lambda _method: {"relative_to_true_support": True},
     )
 
 

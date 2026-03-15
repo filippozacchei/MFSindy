@@ -210,13 +210,6 @@ def build_true_pendulum_coefficients(
 
     return C
 
-
-# ---------------------------------------------------------------------------
-# Pendulum multi-fidelity experiment (HF / LF / MF / MF_w)
-# ---------------------------------------------------------------------------
-
-
-@dataclass
 @dataclass
 class PendulumMultiTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
     """Configuration for the pendulum multi-fidelity SINDy experiment."""
@@ -497,5 +490,4 @@ def run_pendulum_intra_trajectory_gls_experiment(
         run_builder=builder,
         progress_desc="Monte Carlo pendulum GLS",
         coef_postprocess=lambda coef, _method: np.asarray(coef).T,
-        coefficient_error_kwargs=lambda _method: {"relative_to_true_support": True},
     )

@@ -47,7 +47,7 @@ def bubble_hist(
     bins = np.linspace(vmin - pad, vmax + pad, n_bins + 1)
     centers = 0.5 * (bins[:-1] + bins[1:])
 
-    fig, ax = plt.subplots(figsize=(3.0, 1.4), dpi=300)
+    fig, ax = plt.subplots(figsize=(3, 1.5), dpi=300)
 
     max_count = 0
     counts_per_model = {}
@@ -58,7 +58,7 @@ def bubble_hist(
 
     for idx, m in enumerate(models):
         counts = counts_per_model[m]
-        sizes = 300.0 * counts / max(1, max_count)
+        sizes = 150.0 * counts / max(1, max_count)
         ax.scatter(
             centers,
             np.full_like(centers, idx),

@@ -10,12 +10,11 @@ import seaborn as sns
 
 # Consistent colour scheme for Lorenz MF plots
 COLORS_MODELS = {
-    "HF":   "#F72585",  # magenta
-    "LF":   "#4CC9F0",  # cyan
-    "MF":   "#FFCA3A",  # yellow
-    "MF_w": "#80FF72",  # green
+    "HF":   "tab:blue",
+    "LF":   "tab:orange",
+    "MF":   "tab:green",
+    "MF_w": "tab:red",
 }
-
 
 def set_dark_theme(rc=None):
     """Apply a dark theme suitable for Lorenz 3D plots."""
