@@ -16,6 +16,13 @@ from .base import (
 )
 
 
+#: Part I rungs, in reporting order. MF_P and MF_V are the baselines required by
+#: review: the weak-SINDy covariance applied blind to fidelity, and per-group
+#: weighting by the marginal weak variances alone. A case config may override
+#: this by defining a ``methods`` field.
+PART1_METHODS = ("HF", "LF", "MF", "MF_P", "MF_V", "MF_w")
+
+
 @dataclass
 class MultiTrajectoryGLSData:
     """Inputs required for a single multi-trajectory GLS run."""
@@ -175,7 +182,7 @@ def run_multi_trajectory_gls_experiment(
     state_std = float(reference_state_std(cfg))
     noise_hf_abs = cfg.noise_hf_rel * state_std  # type: ignore[attr-defined]
     noise_lf_abs = cfg.noise_lf_rel * state_std  # type: ignore[attr-defined]
-    methods = ["HF", "LF", "MF", "MF_w"]
+    methods = list(getattr(cfg, "methods", None) or PART1_METHODS)
 
     def single_run(run_idx: int):
         batch = dataset_builder(run_idx, cfg, noise_hf_abs, noise_lf_abs)
@@ -201,6 +208,12 @@ def run_multi_trajectory_gls_experiment(
         if coef_postprocess is not None:
             coef_map = {k: coef_postprocess(v) for k, v in coef_map.items()}
         C_true = true_coefficients(batch, cfg)
+        missing = [m for m in methods if m not in coef_map]
+        if missing:
+            raise KeyError(
+                f"Fit function returned no coefficients for {missing}; "
+                f"available rungs are {sorted(coef_map)}."
+            )
         return {
             method: coefficient_errors(coef_map[method], C_true)
             for method in methods
