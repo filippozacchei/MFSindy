@@ -595,10 +595,10 @@ def _ns_make_weak_library(
         include_bias=cfg.include_bias,
     )
     if variance_field is None:
-        return WeightedWeakPDELibrary(
-            spatiotemporal_weights=np.ones((cfg.N,cfg.N,cfg.Nt)),
-            whitener_mode=whitener_mode,
-            **common_kwargs)
+        # Genuinely unweighted, as in the other cases. Passing a field of ones
+        # here would still apply the weak-SINDy whitening, which made the HF, LF
+        # and MF rungs weighted and identical to MF_P.
+        return WeakPDELibrary(**common_kwargs)
     return WeightedWeakPDELibrary(
         spatiotemporal_weights=variance_field,
         whitener_mode=whitener_mode,
