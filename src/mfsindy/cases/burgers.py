@@ -467,6 +467,7 @@ def _burgers_make_weak_library(
     cfg: BurgersMultiTrajectoryGLSConfig,
     *,
     variance_field: np.ndarray | None,
+    whitener_mode: str = "full",
 ):
     x = batch.metadata["x"]
     t = batch.metadata["t"]
@@ -488,7 +489,11 @@ def _burgers_make_weak_library(
     )
     if variance_field is None:
         return WeakPDELibrary(**common_kwargs)
-    return WeightedWeakPDELibrary(spatiotemporal_weights=variance_field, **common_kwargs)
+    return WeightedWeakPDELibrary(
+        spatiotemporal_weights=variance_field,
+        whitener_mode=whitener_mode,
+        **common_kwargs,
+    )
 
 
 def _burgers_fit_multi_trajectory_weak_gls_models(
@@ -502,8 +507,15 @@ def _burgers_fit_multi_trajectory_weak_gls_models(
 ) -> Dict[str, np.ndarray]:
     del t_argument
 
-    def weak_block_builder(traj: np.ndarray, variance_field: np.ndarray | None):
-        lib = _burgers_make_weak_library(batch, cfg, variance_field=variance_field)
+    def weak_block_builder(
+        traj: np.ndarray,
+        variance_field: np.ndarray | None,
+        *,
+        whitener_mode: str = "full",
+    ):
+        lib = _burgers_make_weak_library(
+            batch, cfg, variance_field=variance_field, whitener_mode=whitener_mode
+        )
         theta = np.asarray(lib.fit_transform([traj])[0])
         rhs = np.asarray(lib.convert_u_dot_integral(traj))
         return theta, rhs

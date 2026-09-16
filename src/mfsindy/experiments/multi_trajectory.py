@@ -63,12 +63,13 @@ def fit_multi_trajectory_weak_gls_models(
         *,
         weighted: bool,
         noise_abs: float,
+        whitener_mode: str = "full",
     ) -> tuple[list[np.ndarray], list[np.ndarray]]:
         theta_blocks: list[np.ndarray] = []
         rhs_blocks: list[np.ndarray] = []
         for traj in trajectories:
             variance_field = variance_field_for(traj, noise_abs) if weighted else None
-            theta, rhs = weak_block_builder(traj, variance_field)
+            theta, rhs = weak_block_builder(traj, variance_field, whitener_mode=whitener_mode)
             theta_blocks.append(theta)
             rhs_blocks.append(rhs)
         return theta_blocks, rhs_blocks
@@ -83,10 +84,27 @@ def fit_multi_trajectory_weak_gls_models(
     theta_hf_w, rhs_hf_w = build_group(batch.hf, weighted=True, noise_abs=noise_hf_abs)
     theta_lf_w, rhs_lf_w = build_group(batch.lf, weighted=True, noise_abs=noise_lf_abs)
 
+    # Baseline MF_P: the weak-SINDy covariance applied to the pooled data, blind to
+    # fidelity. A variance common to every trajectory cancels in the least-squares
+    # solution, so only the correlation structure of the test functions is retained.
+    theta_hf_p, rhs_hf_p = build_group(batch.hf, weighted=True, noise_abs=1.0)
+    theta_lf_p, rhs_lf_p = build_group(batch.lf, weighted=True, noise_abs=1.0)
+
+    # Baseline MF_V: per-group inverse-variance weighting using the marginal weak
+    # variances (the diagonal of the weak covariance), with correlations discarded.
+    theta_hf_v, rhs_hf_v = build_group(
+        batch.hf, weighted=True, noise_abs=noise_hf_abs, whitener_mode="diag"
+    )
+    theta_lf_v, rhs_lf_v = build_group(
+        batch.lf, weighted=True, noise_abs=noise_lf_abs, whitener_mode="diag"
+    )
+
     return {
         "HF": fit_stacked(theta_hf, rhs_hf),
         "LF": fit_stacked(theta_lf, rhs_lf),
         "MF": fit_stacked(theta_hf + theta_lf, rhs_hf + rhs_lf),
+        "MF_P": fit_stacked(theta_hf_p + theta_lf_p, rhs_hf_p + rhs_lf_p),
+        "MF_V": fit_stacked(theta_hf_v + theta_lf_v, rhs_hf_v + rhs_lf_v),
         "MF_w": fit_stacked(theta_hf_w + theta_lf_w, rhs_hf_w + rhs_lf_w),
     }
 

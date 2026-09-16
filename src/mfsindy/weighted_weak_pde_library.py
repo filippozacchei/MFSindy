@@ -14,8 +14,13 @@ class WeightedWeakPDELibrary(WeakPDELibrary):
     This implements min_x || W(Θ x - V) ||_2^2, i.e., GLS in the weak space.
     """
 
-    def __init__(self, *args, spatiotemporal_weights=None, **kwargs):
+    def __init__(self, *args, spatiotemporal_weights=None, whitener_mode="full", **kwargs):
+        if whitener_mode not in ("full", "diag"):
+            raise ValueError(
+                f"whitener_mode must be 'full' or 'diag', got {whitener_mode!r}."
+            )
         self.spatiotemporal_weights = spatiotemporal_weights
+        self.whitener_mode = whitener_mode
         self._L_chol = None  # lower-triangular Cholesky factor of Cov[V]
         super().__init__(*args, **kwargs)
 
@@ -89,6 +94,12 @@ class WeightedWeakPDELibrary(WeakPDELibrary):
         avg_diag = np.trace(Cov) / max(K, 1)
         nugget = 1e-12 * avg_diag
         Cov.flat[:: K + 1] += nugget
+
+        if self.whitener_mode == "diag":
+            # Variance-only weighting: keep the marginal weak variances, discard
+            # the correlations induced by overlapping test-function supports.
+            self._L_chol = np.diag(np.sqrt(np.diag(Cov)))
+            return
 
         try:
             self._L_chol = np.linalg.cholesky(Cov)

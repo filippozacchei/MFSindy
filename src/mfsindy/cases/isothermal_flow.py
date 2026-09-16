@@ -581,6 +581,7 @@ def _ns_make_weak_library(
     *,
     variance_field: np.ndarray | None,
     weak_seed: int,
+    whitener_mode: str = "full",
 ):
     np.random.seed(weak_seed)
     common_kwargs = dict(
@@ -596,9 +597,11 @@ def _ns_make_weak_library(
     if variance_field is None:
         return WeightedWeakPDELibrary(
             spatiotemporal_weights=np.ones((cfg.N,cfg.N,cfg.Nt)),
+            whitener_mode=whitener_mode,
             **common_kwargs)
     return WeightedWeakPDELibrary(
         spatiotemporal_weights=variance_field,
+        whitener_mode=whitener_mode,
         **common_kwargs,
     )
 
@@ -610,12 +613,14 @@ def _ns_build_weak_block(
     grid: np.ndarray,
     variance_field: np.ndarray | None,
     weak_seed: int,
+    whitener_mode: str = "full",
 ) -> tuple[np.ndarray, np.ndarray]:
     library = _ns_make_weak_library(
         cfg,
         grid,
         variance_field=variance_field,
         weak_seed=weak_seed,
+        whitener_mode=whitener_mode,
     )
     theta = np.asarray(library.fit_transform([traj])[0])
     rhs = np.asarray(library.convert_u_dot_integral(traj))
@@ -659,6 +664,7 @@ def _ns_fit_multi_trajectory_weak_gls_models(
         trajectories: list[np.ndarray],
         *,
         variance_field: np.ndarray | None,
+        whitener_mode: str = "full",
     ) -> tuple[list[np.ndarray], list[np.ndarray]]:
         theta_blocks: list[np.ndarray] = []
         rhs_blocks: list[np.ndarray] = []
@@ -669,6 +675,7 @@ def _ns_fit_multi_trajectory_weak_gls_models(
                 grid=grid,
                 variance_field=variance_field,
                 weak_seed=weak_seed,
+                whitener_mode=whitener_mode,
             )
             theta_blocks.append(theta)
             rhs_blocks.append(rhs)
@@ -679,10 +686,29 @@ def _ns_fit_multi_trajectory_weak_gls_models(
     theta_hf_w, rhs_hf_w = build_group(batch.hf, variance_field=hf_variance)
     theta_lf_w, rhs_lf_w = build_group(batch.lf, variance_field=lf_variance)
 
+    # Baseline MF_P: fidelity-blind weak-SINDy rescaling of the pooled data.
+    ones_variance = np.ones(grid_shape, dtype=float)
+    theta_hf_p, rhs_hf_p = build_group(batch.hf, variance_field=ones_variance)
+    theta_lf_p, rhs_lf_p = build_group(batch.lf, variance_field=ones_variance)
+
+    # Baseline MF_V: per-group weighting by the marginal weak variances only.
+    theta_hf_v, rhs_hf_v = build_group(
+        batch.hf, variance_field=hf_variance, whitener_mode="diag"
+    )
+    theta_lf_v, rhs_lf_v = build_group(
+        batch.lf, variance_field=lf_variance, whitener_mode="diag"
+    )
+
     return {
         "HF": _fit_stacked_weak_system(theta_hf, rhs_hf, optimizer_factory),
         "LF": _fit_stacked_weak_system(theta_lf, rhs_lf, optimizer_factory),
         "MF": _fit_stacked_weak_system(theta_hf + theta_lf, rhs_hf + rhs_lf, optimizer_factory),
+        "MF_P": _fit_stacked_weak_system(
+            theta_hf_p + theta_lf_p, rhs_hf_p + rhs_lf_p, optimizer_factory
+        ),
+        "MF_V": _fit_stacked_weak_system(
+            theta_hf_v + theta_lf_v, rhs_hf_v + rhs_lf_v, optimizer_factory
+        ),
         "MF_w": _fit_stacked_weak_system(
             theta_hf_w + theta_lf_w,
             rhs_hf_w + rhs_lf_w,

@@ -328,6 +328,7 @@ def _pendulum_make_weak_library(
     cfg: PendulumMultiTrajectoryGLSConfig,
     *,
     variance_field: np.ndarray | None,
+    whitener_mode: str = "full",
 ):
     np.random.seed(int(batch.metadata["weak_seed"]))
     base_library = ps.PolynomialLibrary(
@@ -346,7 +347,11 @@ def _pendulum_make_weak_library(
         common_kwargs["p"] = cfg.p
     if variance_field is None:
         return WeakPDELibrary(**common_kwargs)
-    return WeightedWeakPDELibrary(spatiotemporal_weights=variance_field, **common_kwargs)
+    return WeightedWeakPDELibrary(
+        spatiotemporal_weights=variance_field,
+        whitener_mode=whitener_mode,
+        **common_kwargs,
+    )
 
 
 def _pendulum_fit_multi_trajectory_weak_gls_models(
@@ -360,8 +365,15 @@ def _pendulum_fit_multi_trajectory_weak_gls_models(
 ) -> Dict[str, np.ndarray]:
     del t_argument
 
-    def weak_block_builder(traj: np.ndarray, variance_field: np.ndarray | None):
-        lib = _pendulum_make_weak_library(batch, cfg, variance_field=variance_field)
+    def weak_block_builder(
+        traj: np.ndarray,
+        variance_field: np.ndarray | None,
+        *,
+        whitener_mode: str = "full",
+    ):
+        lib = _pendulum_make_weak_library(
+            batch, cfg, variance_field=variance_field, whitener_mode=whitener_mode
+        )
         theta = np.asarray(lib.fit_transform([traj])[0])
         rhs = np.asarray(lib.convert_u_dot_integral(traj))
         return theta, rhs
