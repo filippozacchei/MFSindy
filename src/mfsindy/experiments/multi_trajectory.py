@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import zlib
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List
+from typing import Any, Callable, Dict, List, Sequence
 
 import numpy as np
 import pysindy as ps
@@ -21,6 +22,74 @@ from .base import (
 #: weighting by the marginal weak variances alone. A case config may override
 #: this by defining a ``methods`` field.
 PART1_METHODS = ("HF", "LF", "MF", "VHF", "VLF", "PMF", "VMF", "MF_w")
+
+#: Which weak blocks each rung is built from, as (fidelity, weighting) pairs.
+#: The weightings are: ``plain`` (no whitening), ``weighted`` (the fidelity's own
+#: noise level, full weak covariance), ``pooled`` (unit variance, so only the
+#: test-function correlations survive) and ``diag`` (the fidelity's noise level
+#: with the marginal weak variances only).
+RUNG_BLOCKS: Dict[str, tuple[tuple[str, str], ...]] = {
+    "HF": (("hf", "plain"),),
+    "LF": (("lf", "plain"),),
+    "MF": (("hf", "plain"), ("lf", "plain")),
+    "VHF": (("hf", "weighted"),),
+    "VLF": (("lf", "weighted"),),
+    "PMF": (("hf", "pooled"), ("lf", "pooled")),
+    "VMF": (("hf", "diag"), ("lf", "diag")),
+    "MF_w": (("hf", "weighted"), ("lf", "weighted")),
+}
+
+
+def assemble_weak_rungs(
+    group_builder: Callable[[str, str], tuple[List[np.ndarray], List[np.ndarray]]],
+    fit_stacked: Callable[[List[np.ndarray], List[np.ndarray]], np.ndarray],
+    methods: Sequence[str] | None = None,
+    seed: int | None = None,
+) -> Dict[str, np.ndarray]:
+    """Build and fit only the rungs in ``methods``, sharing blocks between them.
+
+    ``group_builder(fidelity, weighting)`` returns the weak (theta, rhs) blocks
+    for one group; each distinct pair is built at most once, so rungs that share
+    a group (MF_w and VHF both use the weighted HF blocks) pay for it once.
+    Restricting ``methods`` matters for per-rung tuning, where every rung is run
+    under its own hyperparameters: without it each run would build and fit all
+    eight rungs and discard seven.
+
+    ``seed`` fixes the bootstrap draws of the ensemble fit, one stream per rung.
+    The ensemble optimizer bags from the global RNG, so without this a rung's
+    draws depend on how many rungs happened to be fitted before it: the same run
+    would give different coefficients depending on the subset requested, and
+    would not repeat across sessions. Seeding happens after the blocks are built,
+    since building a weak library reseeds the global RNG itself to keep the test
+    functions in a common position across rungs.
+    """
+
+    wanted = list(methods or PART1_METHODS)
+    unknown = [m for m in wanted if m not in RUNG_BLOCKS]
+    if unknown:
+        raise KeyError(
+            f"No block recipe for {unknown}; known rungs are {sorted(RUNG_BLOCKS)}."
+        )
+
+    cache: Dict[tuple[str, str], tuple[List[np.ndarray], List[np.ndarray]]] = {}
+
+    def group(key: tuple[str, str]):
+        if key not in cache:
+            cache[key] = group_builder(*key)
+        return cache[key]
+
+    coefficients: Dict[str, np.ndarray] = {}
+    for rung in wanted:
+        theta_blocks: List[np.ndarray] = []
+        rhs_blocks: List[np.ndarray] = []
+        for key in RUNG_BLOCKS[rung]:
+            theta, rhs = group(key)
+            theta_blocks = theta_blocks + list(theta)
+            rhs_blocks = rhs_blocks + list(rhs)
+        if seed is not None:
+            np.random.seed((int(seed) + zlib.crc32(rung.encode())) % 2**32)
+        coefficients[rung] = fit_stacked(theta_blocks, rhs_blocks)
+    return coefficients
 
 
 @dataclass
@@ -59,23 +128,29 @@ def fit_multi_trajectory_weak_gls_models(
     weak_block_builder: Callable[[np.ndarray, np.ndarray | None], tuple[np.ndarray, np.ndarray]],
     noise_hf_abs: float,
     noise_lf_abs: float,
+    methods: Sequence[str] | None = None,
 ) -> Dict[str, np.ndarray]:
-    """Fit HF/LF/MF/MF_w directly in weak space by stacking per-trajectory blocks."""
+    """Fit the requested rungs directly in weak space by stacking per-trajectory blocks."""
 
-    def variance_field_for(traj: np.ndarray, noise_abs: float) -> np.ndarray:
-        return np.full(traj.shape[:-1], noise_abs**2, dtype=float)
+    def build_group(fidelity: str, weighting: str):
+        trajectories = batch.hf if fidelity == "hf" else batch.lf
+        noise_abs = noise_hf_abs if fidelity == "hf" else noise_lf_abs
+        # PMF is blind to fidelity: a variance common to every trajectory cancels
+        # in the least-squares solution, so only the correlation structure of the
+        # test functions is retained. VMF keeps the fidelity's own noise level but
+        # discards those correlations, weighting by the marginal weak variances.
+        if weighting == "pooled":
+            noise_abs = 1.0
+        whitener_mode = "diag" if weighting == "diag" else "full"
 
-    def build_group(
-        trajectories: list[np.ndarray],
-        *,
-        weighted: bool,
-        noise_abs: float,
-        whitener_mode: str = "full",
-    ) -> tuple[list[np.ndarray], list[np.ndarray]]:
         theta_blocks: list[np.ndarray] = []
         rhs_blocks: list[np.ndarray] = []
         for traj in trajectories:
-            variance_field = variance_field_for(traj, noise_abs) if weighted else None
+            variance_field = (
+                None
+                if weighting == "plain"
+                else np.full(traj.shape[:-1], noise_abs**2, dtype=float)
+            )
             theta, rhs = weak_block_builder(traj, variance_field, whitener_mode=whitener_mode)
             theta_blocks.append(theta)
             rhs_blocks.append(rhs)
@@ -86,39 +161,12 @@ def fit_multi_trajectory_weak_gls_models(
         optimizer.fit(np.vstack(theta_blocks), np.vstack(rhs_blocks))
         return _median_coefficients(optimizer)
 
-    theta_hf, rhs_hf = build_group(batch.hf, weighted=False, noise_abs=noise_hf_abs)
-    theta_lf, rhs_lf = build_group(batch.lf, weighted=False, noise_abs=noise_lf_abs)
-    theta_hf_w, rhs_hf_w = build_group(batch.hf, weighted=True, noise_abs=noise_hf_abs)
-    theta_lf_w, rhs_lf_w = build_group(batch.lf, weighted=True, noise_abs=noise_lf_abs)
-
-    # Baseline PMF: the weak-SINDy covariance applied to the pooled data, blind to
-    # fidelity. A variance common to every trajectory cancels in the least-squares
-    # solution, so only the correlation structure of the test functions is retained.
-    theta_hf_p, rhs_hf_p = build_group(batch.hf, weighted=True, noise_abs=1.0)
-    theta_lf_p, rhs_lf_p = build_group(batch.lf, weighted=True, noise_abs=1.0)
-
-    # Baseline VMF: per-group inverse-variance weighting using the marginal weak
-    # variances (the diagonal of the weak covariance), with correlations discarded.
-    theta_hf_v, rhs_hf_v = build_group(
-        batch.hf, weighted=True, noise_abs=noise_hf_abs, whitener_mode="diag"
+    return assemble_weak_rungs(
+        build_group,
+        fit_stacked,
+        methods,
+        seed=batch.metadata.get("weak_seed"),
     )
-    theta_lf_v, rhs_lf_v = build_group(
-        batch.lf, weighted=True, noise_abs=noise_lf_abs, whitener_mode="diag"
-    )
-
-    return {
-        "HF": fit_stacked(theta_hf, rhs_hf),
-        "LF": fit_stacked(theta_lf, rhs_lf),
-        "MF": fit_stacked(theta_hf + theta_lf, rhs_hf + rhs_lf),
-        # Single-fidelity controls carrying the same weighting as WMF, so that the
-        # effect of adding the other fidelity can be separated from the effect of
-        # weighting at all. They reuse the weighted blocks already built above.
-        "VHF": fit_stacked(theta_hf_w, rhs_hf_w),
-        "VLF": fit_stacked(theta_lf_w, rhs_lf_w),
-        "PMF": fit_stacked(theta_hf_p + theta_lf_p, rhs_hf_p + rhs_lf_p),
-        "VMF": fit_stacked(theta_hf_v + theta_lf_v, rhs_hf_v + rhs_lf_v),
-        "MF_w": fit_stacked(theta_hf_w + theta_lf_w, rhs_hf_w + rhs_lf_w),
-    }
 
 
 def fit_multi_trajectory_gls_models(
@@ -209,6 +257,7 @@ def run_multi_trajectory_gls_experiment(
                 t_argument=batch.t_argument,
                 noise_hf_abs=noise_hf_abs,
                 noise_lf_abs=noise_lf_abs,
+                methods=methods,
             )
         if coef_postprocess is not None:
             coef_map = {k: coef_postprocess(v) for k, v in coef_map.items()}
@@ -241,6 +290,8 @@ def run_multi_trajectory_gls_experiment(
 
 __all__ = [
     "MultiTrajectoryGLSData",
+    "RUNG_BLOCKS",
+    "assemble_weak_rungs",
     "fit_multi_trajectory_gls_models",
     "fit_multi_trajectory_weak_gls_models",
     "run_multi_trajectory_gls_experiment",

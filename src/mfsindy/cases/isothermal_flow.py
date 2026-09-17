@@ -17,7 +17,7 @@ import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Sequence
 
 import numpy as np
 import pandas as pd
@@ -31,6 +31,7 @@ from mfsindy.experiments import (
     IntraTrajectoryGLSData,
     MonteCarloConfig,
     MultiTrajectoryGLSData,
+    assemble_weak_rungs,
     WeakValidationBlock,
     get_library_feature_names,
     run_intra_trajectory_gls_experiment,
@@ -652,6 +653,7 @@ def _ns_fit_multi_trajectory_weak_gls_models(
     t_argument,
     noise_hf_abs: float,
     noise_lf_abs: float,
+    methods: Sequence[str] | None = None,
 ) -> Dict[str, np.ndarray]:
     del t_argument
 
@@ -681,42 +683,26 @@ def _ns_fit_multi_trajectory_weak_gls_models(
             rhs_blocks.append(rhs)
         return theta_blocks, rhs_blocks
 
-    theta_hf, rhs_hf = build_group(batch.hf, variance_field=None)
-    theta_lf, rhs_lf = build_group(batch.lf, variance_field=None)
-    theta_hf_w, rhs_hf_w = build_group(batch.hf, variance_field=hf_variance)
-    theta_lf_w, rhs_lf_w = build_group(batch.lf, variance_field=lf_variance)
+    def group_builder(fidelity: str, weighting: str):
+        trajectories = batch.hf if fidelity == "hf" else batch.lf
+        if weighting == "plain":
+            variance_field = None
+        elif weighting == "pooled":
+            # PMF is fidelity-blind: a variance common to every trajectory cancels
+            # in the least-squares solution, leaving only the test-function
+            # correlations.
+            variance_field = np.ones(grid_shape, dtype=float)
+        else:
+            variance_field = hf_variance if fidelity == "hf" else lf_variance
+        whitener_mode = "diag" if weighting == "diag" else "full"
+        return build_group(
+            trajectories, variance_field=variance_field, whitener_mode=whitener_mode
+        )
 
-    # Baseline PMF: fidelity-blind weak-SINDy rescaling of the pooled data.
-    ones_variance = np.ones(grid_shape, dtype=float)
-    theta_hf_p, rhs_hf_p = build_group(batch.hf, variance_field=ones_variance)
-    theta_lf_p, rhs_lf_p = build_group(batch.lf, variance_field=ones_variance)
+    def fit_stacked(theta_blocks, rhs_blocks):
+        return _fit_stacked_weak_system(theta_blocks, rhs_blocks, optimizer_factory)
 
-    # Baseline VMF: per-group weighting by the marginal weak variances only.
-    theta_hf_v, rhs_hf_v = build_group(
-        batch.hf, variance_field=hf_variance, whitener_mode="diag"
-    )
-    theta_lf_v, rhs_lf_v = build_group(
-        batch.lf, variance_field=lf_variance, whitener_mode="diag"
-    )
-
-    return {
-        "HF": _fit_stacked_weak_system(theta_hf, rhs_hf, optimizer_factory),
-        "LF": _fit_stacked_weak_system(theta_lf, rhs_lf, optimizer_factory),
-        "MF": _fit_stacked_weak_system(theta_hf + theta_lf, rhs_hf + rhs_lf, optimizer_factory),
-        "VHF": _fit_stacked_weak_system(theta_hf_w, rhs_hf_w, optimizer_factory),
-        "VLF": _fit_stacked_weak_system(theta_lf_w, rhs_lf_w, optimizer_factory),
-        "PMF": _fit_stacked_weak_system(
-            theta_hf_p + theta_lf_p, rhs_hf_p + rhs_lf_p, optimizer_factory
-        ),
-        "VMF": _fit_stacked_weak_system(
-            theta_hf_v + theta_lf_v, rhs_hf_v + rhs_lf_v, optimizer_factory
-        ),
-        "MF_w": _fit_stacked_weak_system(
-            theta_hf_w + theta_lf_w,
-            rhs_hf_w + rhs_lf_w,
-            optimizer_factory,
-        ),
-    }
+    return assemble_weak_rungs(group_builder, fit_stacked, methods, seed=weak_seed)
 
 
 def run_ns_isothermal_multi_trajectory_gls_experiment(

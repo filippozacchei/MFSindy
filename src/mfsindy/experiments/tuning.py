@@ -23,6 +23,7 @@ from __future__ import annotations
 import itertools
 import json
 import os
+from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, Mapping, Sequence
@@ -181,9 +182,9 @@ def run_with_tuned_configs(
 ) -> pd.DataFrame:
     """Run the Monte Carlo once per rung, each with its own tuned config.
 
-    Each run fits every rung, but only the rung the config was tuned for is
-    kept, so no strategy is reported on another's hyperparameters. Returns the
-    concatenated long-format error frame.
+    Each run fits only the rung its config was tuned for, so no strategy is
+    reported on another's hyperparameters. Returns the concatenated long-format
+    error frame.
     """
 
     frames = []
@@ -191,6 +192,12 @@ def run_with_tuned_configs(
     for rung, cfg in tqdm(
         list(cfg_by_rung.items()), desc="Rungs", disable=disable_progress
     ):
+        # Fit only the rung this config was tuned for. The fit helpers can return
+        # every rung from one evaluation, which is what tuning exploits, but here
+        # the other seven would be produced under the wrong hyperparameters and
+        # discarded -- eight times the work for one column of results.
+        cfg = deepcopy(cfg)
+        cfg.methods = [rung]
         result = runner(cfg)
         frame = _coerce_results_frame(result)
         kept = frame[frame["model"] == rung]

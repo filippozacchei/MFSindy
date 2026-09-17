@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from typing import Callable, Dict, List, Tuple
+from typing import Callable, Dict, List, Tuple, Sequence
 
 import numpy as np
 import pandas as pd
@@ -315,6 +315,7 @@ def _lorenz_fit_multi_trajectory_weak_gls_models(
     t_argument,
     noise_hf_abs: float,
     noise_lf_abs: float,
+    methods: Sequence[str] | None = None,
 ) -> Dict[str, np.ndarray]:
     del t_argument
 
@@ -337,6 +338,7 @@ def _lorenz_fit_multi_trajectory_weak_gls_models(
         weak_block_builder=weak_block_builder,
         noise_hf_abs=noise_hf_abs,
         noise_lf_abs=noise_lf_abs,
+        methods=methods,
     )
 
 

@@ -21,6 +21,9 @@ from .intra_trajectory import (
 )
 from .multi_trajectory import (
     MultiTrajectoryGLSData,
+    PART1_METHODS,
+    RUNG_BLOCKS,
+    assemble_weak_rungs,
     fit_multi_trajectory_gls_models,
     fit_multi_trajectory_weak_gls_models,
     run_multi_trajectory_gls_experiment,
@@ -70,6 +73,9 @@ __all__ = [
     "make_metric_scorer",
     "optimize_hyperparams",
     "MultiTrajectoryGLSData",
+    "assemble_weak_rungs",
+    "RUNG_BLOCKS",
+    "PART1_METHODS",
     "fit_multi_trajectory_gls_models",
     "fit_multi_trajectory_weak_gls_models",
     "run_multi_trajectory_gls_experiment",
