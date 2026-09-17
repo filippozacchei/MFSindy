@@ -178,16 +178,16 @@ class LorenzMultiTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
     """Configuration for the Lorenz multi-fidelity SINDy experiment."""
 
     # multi-fidelity settings
-    n_lf: int = 100
-    n_hf: int = 10
+    n_lf: int = 10
+    n_hf: int = 1
 
     # relative noise levels (wrt std of reference trajectory)
     noise_lf_rel: float = 0.25
     noise_hf_rel: float = 0.01
 
     # time discretization
-    dt: float = 1e-3
-    T_train: float = 0.1
+    dt: float = 1e-2
+    T_train: float = 1.0
     T_true: float = 100.0
     T_forecast: float = 2.0
 
