@@ -25,6 +25,13 @@ from .multi_trajectory import (
     fit_multi_trajectory_weak_gls_models,
     run_multi_trajectory_gls_experiment,
 )
+from .tuning import (
+    RungTuning,
+    TUNING_SEED_OFFSET,
+    run_with_tuned_configs,
+    save_tuning,
+    tune_rungs,
+)
 from .rollout import (
     PolynomialRolloutModel,
     build_polynomial_intra_trajectory_artifacts,
@@ -46,6 +53,11 @@ from .weak_validation import (
 )
 
 __all__ = [
+    "RungTuning",
+    "TUNING_SEED_OFFSET",
+    "run_with_tuned_configs",
+    "save_tuning",
+    "tune_rungs",
     "coefficient_errors",
     "run_monte_carlo_experiment",
     "MonteCarloConfig",
