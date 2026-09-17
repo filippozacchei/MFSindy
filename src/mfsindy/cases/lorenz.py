@@ -191,7 +191,7 @@ class LorenzMultiTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
     noise_hf_rel: float = 0.01
 
     # time discretization
-    dt: float = 1e-2
+    dt: float = 1e-3
     T_train: float = 1.0
     T_true: float = 100.0
     T_forecast: float = 2.0
@@ -307,9 +307,17 @@ def _lorenz_make_weak_library(
         K_requested = int(cfg.K)
     else:
         # K and H_xt are not independent: pysindy's default of K=100 ignores the
-        # support width entirely. Scale the count with the support as Part II
-        # does, so a wider test function gets proportionally fewer domains.
-        K_requested = int(5 * extent / H)
+        # support width entirely. Scale the count with the support so a wider
+        # test function gets proportionally fewer domains.
+        #
+        # The constant sets the coverage, K * 2H / extent -- how many test
+        # functions each point lies under. Coverage drives the conditioning of
+        # the weak covariance, and it is the whole story: at 1000 samples and
+        # H_xt=0.05, coverage 10 gives cond 6.6e8 while coverage 1 gives 2.0e2,
+        # with the mean off-diagonal correlation slightly *higher* at coverage 1.
+        # So the overlap that ruins the covariance is not the overlap that
+        # carries information. Tiling the horizon once is coverage 1.
+        K_requested = max(2, int(round(0.5 * extent / H)))
 
     # Then clamp to what the weak design actually supports. Asking for more test
     # functions than that yields equations that are linear combinations of the
