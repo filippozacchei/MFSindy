@@ -186,7 +186,7 @@ def plot_multifidelity_trajectories(X_hf, X_lf, X_clean):
             traj[:, 1],
             traj[:, 2],
             ".",
-            alpha=0.15,
+            alpha=0.5,
             color="tab:red",
             markersize=1.4,
         )
@@ -196,7 +196,7 @@ def plot_multifidelity_trajectories(X_hf, X_lf, X_clean):
             traj[:, 1],
             traj[:, 2],
             ".",
-            alpha=0.6,
+            alpha=0.5,
             color="tab:blue",
             markersize=1.8,
         )
@@ -206,7 +206,7 @@ def plot_multifidelity_trajectories(X_hf, X_lf, X_clean):
         X_clean[0][:, 2],
         color="black",
         linewidth=0.4,
-        alpha=0.5,
+        alpha=0.25,
     )
     ax.grid(False)
     ax.set_axis_off()
