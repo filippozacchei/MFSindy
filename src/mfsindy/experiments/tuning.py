@@ -22,11 +22,13 @@ from __future__ import annotations
 
 import itertools
 import json
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, Mapping, Sequence
 
 import pandas as pd
+from tqdm import tqdm
 
 from .hyperparameters import _clone_with_updates, _coerce_results_frame
 
@@ -77,6 +79,7 @@ def tune_rungs(
     source_col: str = "model",
     maximize: bool = True,
     reducer: Callable[[pd.Series], float] = lambda s: float(s.mean()),
+    progress_desc: str = "Tuning grid",
 ) -> tuple[Dict[str, RungTuning], pd.DataFrame]:
     """Select hyperparameters separately for each rung from one pass over the grid.
 
@@ -92,10 +95,15 @@ def tune_rungs(
         raise ValueError("param_grid must contain at least one hyperparameter.")
 
     names = list(param_grid)
+    values = [list(param_grid[n]) for n in names]
+    combos = list(itertools.product(*values))
     rows: list[dict[str, Any]] = []
 
-    for combo in itertools.product(*(list(param_grid[n]) for n in names)):
+    disable_progress = os.environ.get("MFSINDY_DOCS_BUILD") == "1"
+    bar = tqdm(combos, desc=progress_desc, disable=disable_progress)
+    for combo in bar:
         updates = dict(zip(names, combo))
+        bar.set_postfix({k: v for k, v in updates.items()}, refresh=False)
         candidate = _clone_with_updates(base_config, updates)
         frame = _coerce_results_frame(evaluate(candidate))
         for rung in rungs:
@@ -103,6 +111,7 @@ def tune_rungs(
             score = reducer(frame.loc[mask, "value"]) if mask.any() else float("nan")
             rows.append({**updates, "rung": rung, "score": score})
 
+    bar.close()
     table = pd.DataFrame(rows)
 
     selections: Dict[str, RungTuning] = {}
@@ -133,7 +142,10 @@ def run_with_tuned_configs(
     """
 
     frames = []
-    for rung, cfg in cfg_by_rung.items():
+    disable_progress = os.environ.get("MFSINDY_DOCS_BUILD") == "1"
+    for rung, cfg in tqdm(
+        list(cfg_by_rung.items()), desc="Rungs", disable=disable_progress
+    ):
         result = runner(cfg)
         frame = _coerce_results_frame(result)
         kept = frame[frame["model"] == rung]
