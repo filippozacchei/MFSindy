@@ -12,6 +12,8 @@ COLORS_MODELS = {
     "HF":   "tab:blue",
     "LF":   "tab:orange",
     "MF":   "tab:green",
+    "MF_P": "tab:purple",
+    "MF_V": "tab:brown",
     "MF_w": "tab:red",
     "HF_2": "black",
     "LF_2": "tab:blue",
