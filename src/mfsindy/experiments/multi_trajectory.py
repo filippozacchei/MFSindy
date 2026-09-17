@@ -16,11 +16,11 @@ from .base import (
 )
 
 
-#: Part I rungs, in reporting order. MF_P and MF_V are the baselines required by
+#: Part I rungs, in reporting order. PMF and VMF are the baselines required by
 #: review: the weak-SINDy covariance applied blind to fidelity, and per-group
 #: weighting by the marginal weak variances alone. A case config may override
 #: this by defining a ``methods`` field.
-PART1_METHODS = ("HF", "LF", "MF", "MF_P", "MF_V", "MF_w")
+PART1_METHODS = ("HF", "LF", "MF", "VHF", "VLF", "PMF", "VMF", "MF_w")
 
 
 @dataclass
@@ -91,13 +91,13 @@ def fit_multi_trajectory_weak_gls_models(
     theta_hf_w, rhs_hf_w = build_group(batch.hf, weighted=True, noise_abs=noise_hf_abs)
     theta_lf_w, rhs_lf_w = build_group(batch.lf, weighted=True, noise_abs=noise_lf_abs)
 
-    # Baseline MF_P: the weak-SINDy covariance applied to the pooled data, blind to
+    # Baseline PMF: the weak-SINDy covariance applied to the pooled data, blind to
     # fidelity. A variance common to every trajectory cancels in the least-squares
     # solution, so only the correlation structure of the test functions is retained.
     theta_hf_p, rhs_hf_p = build_group(batch.hf, weighted=True, noise_abs=1.0)
     theta_lf_p, rhs_lf_p = build_group(batch.lf, weighted=True, noise_abs=1.0)
 
-    # Baseline MF_V: per-group inverse-variance weighting using the marginal weak
+    # Baseline VMF: per-group inverse-variance weighting using the marginal weak
     # variances (the diagonal of the weak covariance), with correlations discarded.
     theta_hf_v, rhs_hf_v = build_group(
         batch.hf, weighted=True, noise_abs=noise_hf_abs, whitener_mode="diag"
@@ -110,8 +110,13 @@ def fit_multi_trajectory_weak_gls_models(
         "HF": fit_stacked(theta_hf, rhs_hf),
         "LF": fit_stacked(theta_lf, rhs_lf),
         "MF": fit_stacked(theta_hf + theta_lf, rhs_hf + rhs_lf),
-        "MF_P": fit_stacked(theta_hf_p + theta_lf_p, rhs_hf_p + rhs_lf_p),
-        "MF_V": fit_stacked(theta_hf_v + theta_lf_v, rhs_hf_v + rhs_lf_v),
+        # Single-fidelity controls carrying the same weighting as WMF, so that the
+        # effect of adding the other fidelity can be separated from the effect of
+        # weighting at all. They reuse the weighted blocks already built above.
+        "VHF": fit_stacked(theta_hf_w, rhs_hf_w),
+        "VLF": fit_stacked(theta_lf_w, rhs_lf_w),
+        "PMF": fit_stacked(theta_hf_p + theta_lf_p, rhs_hf_p + rhs_lf_p),
+        "VMF": fit_stacked(theta_hf_v + theta_lf_v, rhs_hf_v + rhs_lf_v),
         "MF_w": fit_stacked(theta_hf_w + theta_lf_w, rhs_hf_w + rhs_lf_w),
     }
 

@@ -597,7 +597,7 @@ def _ns_make_weak_library(
     if variance_field is None:
         # Genuinely unweighted, as in the other cases. Passing a field of ones
         # here would still apply the weak-SINDy whitening, which made the HF, LF
-        # and MF rungs weighted and identical to MF_P.
+        # and MF rungs weighted and identical to PMF.
         return WeakPDELibrary(**common_kwargs)
     return WeightedWeakPDELibrary(
         spatiotemporal_weights=variance_field,
@@ -686,12 +686,12 @@ def _ns_fit_multi_trajectory_weak_gls_models(
     theta_hf_w, rhs_hf_w = build_group(batch.hf, variance_field=hf_variance)
     theta_lf_w, rhs_lf_w = build_group(batch.lf, variance_field=lf_variance)
 
-    # Baseline MF_P: fidelity-blind weak-SINDy rescaling of the pooled data.
+    # Baseline PMF: fidelity-blind weak-SINDy rescaling of the pooled data.
     ones_variance = np.ones(grid_shape, dtype=float)
     theta_hf_p, rhs_hf_p = build_group(batch.hf, variance_field=ones_variance)
     theta_lf_p, rhs_lf_p = build_group(batch.lf, variance_field=ones_variance)
 
-    # Baseline MF_V: per-group weighting by the marginal weak variances only.
+    # Baseline VMF: per-group weighting by the marginal weak variances only.
     theta_hf_v, rhs_hf_v = build_group(
         batch.hf, variance_field=hf_variance, whitener_mode="diag"
     )
@@ -703,10 +703,12 @@ def _ns_fit_multi_trajectory_weak_gls_models(
         "HF": _fit_stacked_weak_system(theta_hf, rhs_hf, optimizer_factory),
         "LF": _fit_stacked_weak_system(theta_lf, rhs_lf, optimizer_factory),
         "MF": _fit_stacked_weak_system(theta_hf + theta_lf, rhs_hf + rhs_lf, optimizer_factory),
-        "MF_P": _fit_stacked_weak_system(
+        "VHF": _fit_stacked_weak_system(theta_hf_w, rhs_hf_w, optimizer_factory),
+        "VLF": _fit_stacked_weak_system(theta_lf_w, rhs_lf_w, optimizer_factory),
+        "PMF": _fit_stacked_weak_system(
             theta_hf_p + theta_lf_p, rhs_hf_p + rhs_lf_p, optimizer_factory
         ),
-        "MF_V": _fit_stacked_weak_system(
+        "VMF": _fit_stacked_weak_system(
             theta_hf_v + theta_lf_v, rhs_hf_v + rhs_lf_v, optimizer_factory
         ),
         "MF_w": _fit_stacked_weak_system(

@@ -19,7 +19,7 @@ def bubble_hist(
     colors: Dict[str, str] | None = None,
     labels: Iterable[str] | None = None,
     xlim: tuple[float, float] | None = None,
-    figsize: tuple[float, float] = (3.2, 2.0),
+    figsize: tuple[float, float] | None = None,
     max_size: float = 520.0,
     alpha: float = 0.75,
     save_path: str | None = None,
@@ -69,6 +69,10 @@ def bubble_hist(
     bins = np.linspace(xlim[0], xlim[1], n_bins + 1)
     centers = 0.5 * (bins[:-1] + bins[1:])
 
+    if figsize is None:
+        # Grow the panel with the number of rows so bubbles do not collide.
+        # Four rows or fewer keep the original height.
+        figsize = (3.2, 2.0 * max(1.0, len(models) / 4.0))
     fig, ax = plt.subplots(figsize=figsize, dpi=300)
 
     counts_per_model = {}
@@ -110,12 +114,15 @@ def bubble_hist(
     ax.tick_params(axis="y", length=0)
     ax.tick_params(axis="x", length=4)
 
-    # Stable margins: useful when arranging manually in Keynote.
+    # Stable margins: useful when arranging manually in Keynote. The vertical
+    # margins are fixed in inches rather than as a fraction of the figure, so a
+    # taller panel adds plotting area instead of white space.
+    height = float(figsize[1])
     fig.subplots_adjust(
         left=0.25,
         right=0.98,
-        bottom=0.30,
-        top=0.95,
+        bottom=0.60 / height,
+        top=1.0 - 0.10 / height,
     )
 
     if save_path is not None:
