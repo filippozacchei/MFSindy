@@ -43,7 +43,7 @@ class RungTuning:
     rung: str
     best_params: Dict[str, Any]
     best_score: float
-    at_boundary: list[str] = field(default_factory=list)
+    at_boundary: Dict[str, str] = field(default_factory=dict)
 
     def as_dict(self) -> Dict[str, Any]:
         return {
@@ -53,10 +53,11 @@ class RungTuning:
         }
 
 
-def _boundary_axes(params: Mapping[str, Any], grid: Mapping[str, Sequence[Any]]) -> list[str]:
-    """Axes whose selected value is the first or last grid point."""
+def _boundary_axes(params: Mapping[str, Any], grid: Mapping[str, Sequence[Any]]) -> Dict[str, str]:
+    """Axes whose selection sits on an edge, and which end, so the grid can be
+    extended in the right direction."""
 
-    flagged = []
+    flagged: Dict[str, str] = {}
     for name, values in grid.items():
         values = list(values)
         if len(values) < 3:
@@ -64,8 +65,10 @@ def _boundary_axes(params: Mapping[str, Any], grid: Mapping[str, Sequence[Any]])
             # would carry no information.
             continue
         chosen = params.get(name)
-        if chosen == values[0] or chosen == values[-1]:
-            flagged.append(name)
+        if chosen == values[0]:
+            flagged[name] = "low"
+        elif chosen == values[-1]:
+            flagged[name] = "high"
     return flagged
 
 
