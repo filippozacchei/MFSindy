@@ -8,6 +8,8 @@ import os
 from dataclasses import dataclass
 from typing import Callable, Dict, List, Tuple, Sequence
 
+from math import comb
+
 import numpy as np
 import pandas as pd
 from scipy.integrate import solve_ivp
@@ -21,6 +23,7 @@ from mfsindy.experiments import (
     MonteCarloConfig,
     MultiTrajectoryGLSData,
     build_polynomial_rollout_models,
+    domains_for_coverage,
     fit_multi_trajectory_weak_gls_models,
     run_intra_trajectory_gls_experiment,
     run_multi_trajectory_gls_experiment,
@@ -194,7 +197,8 @@ class LorenzMultiTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
     # SINDy settings
     poly_degree: int = 2
     H_xt: float | None = None
-    K: int | None = None
+    K: int | None = None            # derived from H_xt and weak_coverage when None
+    weak_coverage: float = 1.0      # how many times the test functions cover the horizon
     p: int | None = None
     stlsq_threshold: float = 0.5
     n_ensemble_models: int = 200
@@ -288,14 +292,26 @@ def _lorenz_make_weak_library(
         degree=cfg.poly_degree,
         include_bias=False,
     )
+    t_grid = batch.metadata["t_grid"]
     common_kwargs = {
         "function_library": poly_lib,
-        "spatiotemporal_grid": batch.metadata["t_grid"],
+        "spatiotemporal_grid": t_grid,
     }
-    if cfg.K is not None:
-        common_kwargs["K"] = cfg.K
     if cfg.H_xt is not None:
         common_kwargs["H_xt"] = cfg.H_xt
+    if cfg.K is not None:
+        common_kwargs["K"] = cfg.K
+    else:
+        # K and H_xt are not independent: pysindy's default K=100 asks for one
+        # weak equation per time sample here, and random domain placement then
+        # makes the weak covariance rank-deficient. Tie the count to the support.
+        extent = float(np.max(t_grid) - np.min(t_grid))
+        H = cfg.H_xt if cfg.H_xt is not None else extent / 20.0
+        n_states = int(np.asarray(batch.hf[0]).shape[-1])
+        n_terms = comb(n_states + cfg.poly_degree, cfg.poly_degree) - 1
+        common_kwargs["K"] = domains_for_coverage(
+            extent, H, cfg.weak_coverage, min_domains=n_terms + 1
+        )
     if cfg.p is not None:
         common_kwargs["p"] = cfg.p
     if variance_field is None:

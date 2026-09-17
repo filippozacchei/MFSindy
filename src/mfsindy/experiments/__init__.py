@@ -4,6 +4,7 @@ from .base import (
     EnsembleConfigMixin,
     MonteCarloConfig,
     coefficient_errors,
+    domains_for_coverage,
     run_monte_carlo_experiment,
 )
 from .hyperparameters import (
@@ -64,6 +65,7 @@ __all__ = [
     "support_candidates",
     "tune_rungs",
     "coefficient_errors",
+    "domains_for_coverage",
     "run_monte_carlo_experiment",
     "MonteCarloConfig",
     "EnsembleConfigMixin",
