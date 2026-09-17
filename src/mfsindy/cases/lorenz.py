@@ -194,7 +194,7 @@ class LorenzMultiTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
     # SINDy settings
     poly_degree: int = 2
     H_xt: float | None = None
-    K: int | None = None            # derived from H_xt and weak_coverage when None
+    K: int | None = None            # derived from H_xt when None
     p: int | None = None
     stlsq_threshold: float = 0.5
     n_ensemble_models: int = 200
