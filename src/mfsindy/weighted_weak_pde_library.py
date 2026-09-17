@@ -1,6 +1,12 @@
+import warnings
+
 import numpy as np
 from pysindy.feature_library.weak_pde_library import WeakPDELibrary
 from pysindy.utils import AxesArray
+
+
+class WeakCovarianceWarning(UserWarning):
+    """The weak covariance is singular, so whitening by it is not meaningful."""
 
 
 class WeightedWeakPDELibrary(WeakPDELibrary):
@@ -22,6 +28,11 @@ class WeightedWeakPDELibrary(WeakPDELibrary):
         self.spatiotemporal_weights = spatiotemporal_weights
         self.whitener_mode = whitener_mode
         self._L_chol = None  # lower-triangular Cholesky factor of Cov[V]
+        self.cov_size_ = None
+        self.cov_cond_ = None
+        self.cov_rank_ = None
+        self.cov_rank_deficit_ = None
+        self.cov_below_nugget_ = None
         super().__init__(*args, **kwargs)
 
     # ------------------------------ core whitening ------------------------------
@@ -95,18 +106,45 @@ class WeightedWeakPDELibrary(WeakPDELibrary):
         nugget = 1e-12 * avg_diag
         Cov.flat[:: K + 1] += nugget
 
+        # The nugget lets the Cholesky succeed on a covariance that is singular,
+        # and the whitener then amplifies those directions by 1/sqrt(nugget).
+        # Record the conditioning so a degenerate Sigma is visible rather than
+        # silent: the domain centres are placed at random, so two of them landing
+        # within one grid step give duplicate rows, and K too large for the grid
+        # makes that the rule rather than the exception.
+        eigenvalues = np.clip(np.linalg.eigvalsh(Cov)[::-1], 0.0, None)
+        self.cov_size_ = int(K)
+        self.cov_cond_ = float(np.linalg.cond(Cov))
+        self.cov_rank_ = int(np.count_nonzero(eigenvalues > 1e-10 * eigenvalues[0]))
+        self.cov_rank_deficit_ = int(K - self.cov_rank_)
+        self.cov_below_nugget_ = int(np.count_nonzero(eigenvalues < nugget))
+
         if self.whitener_mode == "diag":
             # Variance-only weighting: keep the marginal weak variances, discard
             # the correlations induced by overlapping test-function supports.
+            # A diagonal whitener cannot amplify a near-null direction, so the
+            # conditioning recorded above does not apply to it.
             self._L_chol = np.diag(np.sqrt(np.diag(Cov)))
             return
+
+        if self.cov_rank_deficit_ > 0:
+            warnings.warn(
+                f"Weak covariance is rank {self.cov_rank_} of {K} "
+                f"(cond {self.cov_cond_:.2e}); whitening will amplify "
+                f"{self.cov_rank_deficit_} direction(s) that carry no data. "
+                "Reduce K, widen the test-function support, or sample the grid "
+                "more finely.",
+                WeakCovarianceWarning,
+                stacklevel=2,
+            )
 
         try:
             self._L_chol = np.linalg.cholesky(Cov)
         except np.linalg.LinAlgError:
             Cov.flat[:: K + 1] += max(1e-10, 1e-6 * avg_diag)
             self._L_chol = np.linalg.cholesky(Cov)
-        
+
+
     def _apply_whitener(self, A):
         """Return L^{-1} A without forming L^{-1} explicitly."""
         if self._L_chol is None:
