@@ -25,7 +25,10 @@ from mfsindy.experiments import (
     run_intra_trajectory_gls_experiment,
     run_multi_trajectory_gls_experiment,
 )
-from mfsindy.weighted_weak_pde_library import WeightedWeakPDELibrary
+from mfsindy.weighted_weak_pde_library import (
+    WeightedWeakPDELibrary,
+    usable_test_functions,
+)
 
 LORENZ_STATE_NAMES = ("x", "y", "z")
 
@@ -295,16 +298,32 @@ def _lorenz_make_weak_library(
     }
     if cfg.H_xt is not None:
         common_kwargs["H_xt"] = cfg.H_xt
+    t_values = np.asarray(t_grid, dtype=float).ravel()
+    extent = float(t_values.max() - t_values.min())
+    H = cfg.H_xt if cfg.H_xt is not None else extent / 20.0
     if cfg.K is not None:
-        common_kwargs["K"] = cfg.K
+        K_requested = int(cfg.K)
     else:
         # K and H_xt are not independent: pysindy's default of K=100 ignores the
         # support width entirely. Scale the count with the support as Part II
         # does, so a wider test function gets proportionally fewer domains.
-        t_values = np.asarray(t_grid, dtype=float).ravel()
-        extent = float(t_values.max() - t_values.min())
-        H = cfg.H_xt if cfg.H_xt is not None else extent / 20.0
-        common_kwargs["K"] = int(5 * extent / H)
+        K_requested = int(5 * extent / H)
+
+    # Then clamp to what the weak design actually supports. Asking for more test
+    # functions than that yields equations that are linear combinations of the
+    # others, and whitening by the resulting singular covariance divides by
+    # round-off. At T=1, dt=0.01, H_xt=0.05 the rule above asks for 100 where 54
+    # exist.
+    def probe(K):
+        probe_lib = WeakPDELibrary(K=K, **common_kwargs)
+        probe_lib.fit([np.zeros((t_values.size, batch.hf[0].shape[-1]))])
+        return probe_lib
+
+    common_kwargs["K"] = usable_test_functions(
+        probe,
+        (t_values.size, extent, H, cfg.p, cfg.poly_degree),
+        K_requested,
+    )
 
     if variance_field is None:
         return WeakPDELibrary(**common_kwargs)

@@ -9,7 +9,120 @@ class WeakCovarianceWarning(UserWarning):
     """The weak covariance is singular, so whitening by it is not meaningful."""
 
 
-class WeightedWeakPDELibrary(WeakPDELibrary):
+def drop_duplicate_domains(library) -> int:
+    """Remove test functions whose support is an exact copy of another's.
+
+    pysindy draws the K domain centres uniformly at random and then recentres
+    each onto grid points, so two centres falling in the same grid interval end
+    up selecting identical samples with identical weights -- byte-identical rows
+    of the weak system. By the birthday argument these are common well before K
+    approaches the number of grid positions: at 100 Lorenz samples, 99 requested
+    test functions collapse to 54 distinct ones.
+
+    A duplicated row adds no information in any formulation, but it is not
+    harmless here: it makes the weak covariance exactly singular, and whitening
+    then divides that direction by the nugget, amplifying round-off by ~1e6.
+    Dropping the copies is bookkeeping rather than a modelling choice, so it
+    happens for every weak library, weighted or not, keeping the rungs on a
+    common set of test functions.
+    """
+
+    n_requested = int(library.K)
+    seen: set = set()
+    keep: list[int] = []
+    for k in range(n_requested):
+        support = tuple(
+            tuple(np.asarray(axis).ravel().tolist()) for axis in library.inds_k[k]
+        )
+        if support in seen:
+            continue
+        seen.add(support)
+        keep.append(k)
+
+    dropped = n_requested - len(keep)
+    if dropped:
+        for name in ("inds_k", "fulltweights", "fullweights0", "fullweights1"):
+            sequence = getattr(library, name, None)
+            if sequence is not None and len(sequence) == n_requested:
+                setattr(library, name, [sequence[i] for i in keep])
+        library.K = len(keep)
+    return dropped
+
+
+class DedupedWeakPDELibrary(WeakPDELibrary):
+    """WeakPDELibrary that discards duplicate test-function supports."""
+
+    def _weak_form_setup(self):
+        super()._weak_form_setup()
+        self.n_duplicate_domains_ = drop_duplicate_domains(self)
+
+
+#: Cached usable test-function counts, keyed by the weak design (grid, support,
+#: polynomial degree, requested K). The count depends only on that design, not on
+#: the data, so every trajectory and Monte Carlo seed reuses one measurement.
+_USABLE_K_CACHE: dict = {}
+
+
+def weak_design_rank(library) -> int:
+    """How many of a built library's test functions give independent equations.
+
+    The weak covariance is ``B B^T`` for the weight matrix ``B``, one row per test
+    function, so ``rank(Sigma) = rank(B)`` and the redundancy can be measured
+    before any data is fitted.
+
+    Rows go dependent two ways. pysindy recentres each domain onto grid points,
+    so two centres falling in the same interval produce byte-identical rows --
+    for narrow supports the rank equals the number of distinct supports exactly.
+    Wide supports lose further rank as overlapping bumps become near-dependent.
+    Neither is predictable from a formula worth trusting, so this measures it.
+    """
+
+    K = int(library.K)
+    grid_shape = tuple(np.asarray(library.spatiotemporal_grid).shape[:-1])
+    n_grid = int(np.prod(grid_shape))
+
+    B = np.zeros((K, n_grid), dtype=float)
+    for k in range(K):
+        axes = [np.asarray(ax, dtype=np.intp) for ax in library.inds_k[k]]
+        mesh = np.meshgrid(*axes, indexing="ij")
+        flat = np.ravel_multi_index(tuple(mesh), dims=grid_shape, order="C").ravel(order="C")
+        B[k, flat] = np.asarray(library.fulltweights[k], dtype=float).ravel(order="C")
+
+    singular_values = np.linalg.svd(B, compute_uv=False)
+    if singular_values.size == 0 or singular_values[0] <= 0.0:
+        return 0
+    return int(np.count_nonzero(singular_values > 1e-10 * singular_values[0]))
+
+
+def usable_test_functions(build_probe, design_key, K_requested: int) -> int:
+    """Clamp a requested test-function count to the number that is usable.
+
+    Asking for more test functions than the weak design supports does not add
+    information: the surplus equations are linear combinations of the others,
+    and whitening by a covariance with those directions in it divides by
+    round-off, amplifying noise by ~1e6. Clamping keeps the request honest.
+
+    ``build_probe(K)`` must return a built library at that count; it is called at
+    most once per distinct ``design_key``.
+    """
+
+    K_requested = int(K_requested)
+    key = (design_key, K_requested)
+    if key not in _USABLE_K_CACHE:
+        # Building the probe places domains, which draws from the global RNG.
+        # Left alone it would shift the placement of the library built next, and
+        # only on a cache miss -- so the same configuration would give different
+        # test functions depending on whether it had been measured before.
+        rng_state = np.random.get_state()
+        try:
+            rank = weak_design_rank(build_probe(K_requested))
+        finally:
+            np.random.set_state(rng_state)
+        _USABLE_K_CACHE[key] = max(1, min(K_requested, rank))
+    return _USABLE_K_CACHE[key]
+
+
+class WeightedWeakPDELibrary(DedupedWeakPDELibrary):
     """
     WeakPDELibrary with GLS whitening via a Cholesky factor built from the
     variance field on the spatiotemporal grid.
