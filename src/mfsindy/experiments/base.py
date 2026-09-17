@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
@@ -82,51 +82,6 @@ def run_monte_carlo_experiment(
     metric2_arrs = {m: np.asarray(vals) for m, vals in metric2_errors.items()}
 
     return df_errors, metric1_arrs, metric2_arrs
-
-
-def domains_for_coverage(
-    extent: float | Sequence[float],
-    H_xt: float | Sequence[float],
-    coverage: float = 1.0,
-    min_domains: int = 2,
-) -> int:
-    """Number of weak test functions whose supports cover the grid ``coverage`` times.
-
-    ``K`` and the support width cannot be chosen independently. pysindy defaults
-    to ``K = 100`` with ``H_xt = L/20``, a coverage of 10, which suits PDE grids
-    of 1e4 points; on an ODE horizon of a few hundred samples it asks for more
-    weak equations than the data can support. The domain centres are drawn
-    uniformly at random, so near-coincident domains then make the weak covariance
-    numerically singular -- on Lorenz at the default it is rank 54 of 100, with
-    17 eigenvalues below the nugget added before the Cholesky. Whitening by such
-    a covariance amplifies directions that carry no data at all.
-
-    Tying K to the support keeps the count proportional to the number of
-    independent weak equations the horizon holds: a wider test function affords
-    more overlap because fewer of them fit. Coverage near 1 keeps the covariance
-    full rank while leaving genuine correlation between overlapping supports,
-    which is what distinguishes a full covariance from its diagonal.
-
-    ``min_domains`` floors the count: a single-trajectory rung gets exactly K
-    weak equations, so K below the number of library terms leaves it
-    underdetermined no matter how well conditioned the covariance is.
-    """
-
-    extents = np.atleast_1d(np.asarray(extent, dtype=float))
-    widths = np.atleast_1d(np.asarray(H_xt, dtype=float))
-    if widths.size == 1:
-        widths = np.full(extents.shape, float(widths[0]))
-    if extents.shape != widths.shape:
-        raise ValueError(
-            f"extent {extents.shape} and H_xt {widths.shape} must describe the "
-            "same number of dimensions."
-        )
-    if coverage <= 0 or np.any(extents <= 0) or np.any(widths <= 0):
-        raise ValueError("extent, H_xt and coverage must all be positive.")
-
-    domain_volume = float(np.prod(2.0 * widths))
-    grid_volume = float(np.prod(extents))
-    return max(int(min_domains), int(round(coverage * grid_volume / domain_volume)))
 
 
 @dataclass
