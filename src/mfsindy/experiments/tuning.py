@@ -99,19 +99,33 @@ def tune_rungs(
     combos = list(itertools.product(*values))
     rows: list[dict[str, Any]] = []
 
+    failures: list[tuple[dict, str]] = []
     disable_progress = os.environ.get("MFSINDY_DOCS_BUILD") == "1"
     bar = tqdm(combos, desc=progress_desc, disable=disable_progress)
     for combo in bar:
         updates = dict(zip(names, combo))
         bar.set_postfix({k: v for k, v in updates.items()}, refresh=False)
         candidate = _clone_with_updates(base_config, updates)
-        frame = _coerce_results_frame(evaluate(candidate))
+        try:
+            frame = _coerce_results_frame(evaluate(candidate))
+        except Exception as exc:  # noqa: BLE001 - a bad grid point must not end the search
+            failures.append((updates, f"{type(exc).__name__}: {exc}"))
+            for rung in rungs:
+                rows.append({**updates, "rung": rung, "score": float("nan"),
+                             "error": f"{type(exc).__name__}: {exc}"})
+            continue
         for rung in rungs:
             mask = (frame[source_col] == rung) & (frame["metric"] == metric)
             score = reducer(frame.loc[mask, "value"]) if mask.any() else float("nan")
-            rows.append({**updates, "rung": rung, "score": score})
+            rows.append({**updates, "rung": rung, "score": score, "error": None})
 
     bar.close()
+    if failures:
+        print(f"{len(failures)} of {len(combos)} grid points failed and were skipped:")
+        for updates, message in failures[:5]:
+            print(f"  {updates}: {message}")
+        if len(failures) > 5:
+            print(f"  ... and {len(failures) - 5} more; see the 'error' column")
     table = pd.DataFrame(rows)
 
     selections: Dict[str, RungTuning] = {}
