@@ -10,7 +10,10 @@ import pandas as pd
 import pysindy as ps
 from pysindy.feature_library import WeakPDELibrary
 
-from mfsindy.weighted_weak_pde_library import WeightedWeakPDELibrary
+from mfsindy.weighted_weak_pde_library import (
+    DedupedWeakPDELibrary,
+    WeightedWeakPDELibrary,
+)
 
 from .intra_trajectory import IntraTrajectoryGLSData
 
@@ -232,7 +235,7 @@ def build_polynomial_intra_trajectory_artifacts(
     if p is not None:
         common_kwargs["p"] = p
 
-    weak_lib = WeakPDELibrary(**common_kwargs)
+    weak_lib = DedupedWeakPDELibrary(**common_kwargs)
 
     if weak_seed is not None:
         np.random.seed(int(weak_seed))

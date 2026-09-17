@@ -26,8 +26,10 @@ from mfsindy.experiments import (
     run_multi_trajectory_gls_experiment,
 )
 from mfsindy.weighted_weak_pde_library import (
+    DedupedWeakPDELibrary,
     WeightedWeakPDELibrary,
     usable_test_functions,
+    weak_design_report,
 )
 
 LORENZ_STATE_NAMES = ("x", "y", "z")
@@ -326,7 +328,7 @@ def _lorenz_make_weak_library(
     )
 
     if variance_field is None:
-        return WeakPDELibrary(**common_kwargs)
+        return DedupedWeakPDELibrary(**common_kwargs)
     return WeightedWeakPDELibrary(
         spatiotemporal_weights=variance_field,
         whitener_mode=whitener_mode,
@@ -402,6 +404,35 @@ def run_lorenz_multi_trajectory_gls_experiment(
         coef_postprocess=lambda arr: arr.T,
         progress_desc="Monte Carlo Lorenz MF",
     )
+
+
+def lorenz_weak_design(
+    cfg: LorenzMultiTrajectoryGLSConfig,
+    *,
+    run_idx: int = 0,
+) -> dict:
+    """The weak design a config actually produces, for the record in the paper.
+
+    K is requested from the support width, then clamped to the rank the design
+    supports and stripped of duplicate supports, so the requested count is not
+    what gets fitted. This builds the library one config would build and reports
+    the realised numbers, along with the conditioning of the weak covariance.
+    """
+
+    state_std = _lorenz_reference_state_std(cfg)
+    noise_hf_abs = cfg.noise_hf_rel * state_std
+    noise_lf_abs = cfg.noise_lf_rel * state_std
+    batch = _lorenz_batch(run_idx, cfg, noise_hf_abs, noise_lf_abs)
+
+    t_values = np.asarray(batch.metadata["t_grid"], dtype=float).ravel()
+    extent = float(t_values.max() - t_values.min())
+    H = cfg.H_xt if cfg.H_xt is not None else extent / 20.0
+    K_requested = int(cfg.K) if cfg.K is not None else int(5 * extent / H)
+
+    variance_field = np.full(batch.hf[0].shape[:-1], noise_hf_abs**2, dtype=float)
+    library = _lorenz_make_weak_library(batch, cfg, variance_field=variance_field)
+    library.fit_transform([batch.hf[0]])
+    return weak_design_report(library, K_requested)
 
 
 def fit_lorenz_multi_trajectory_rollout_models(

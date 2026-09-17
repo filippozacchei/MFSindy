@@ -32,7 +32,10 @@ from mfsindy.experiments import (
     run_monte_carlo_experiment,
     run_multi_trajectory_gls_experiment,
 )
-from mfsindy.weighted_weak_pde_library import WeightedWeakPDELibrary
+from mfsindy.weighted_weak_pde_library import (
+    DedupedWeakPDELibrary,
+    WeightedWeakPDELibrary,
+)
 
 PENDULUM_STATE_NAMES = ("theta", "omega")
 
@@ -346,7 +349,7 @@ def _pendulum_make_weak_library(
     if cfg.p is not None:
         common_kwargs["p"] = cfg.p
     if variance_field is None:
-        return WeakPDELibrary(**common_kwargs)
+        return DedupedWeakPDELibrary(**common_kwargs)
     return WeightedWeakPDELibrary(
         spatiotemporal_weights=variance_field,
         whitener_mode=whitener_mode,

@@ -94,6 +94,34 @@ def weak_design_rank(library) -> int:
     return int(np.count_nonzero(singular_values > 1e-10 * singular_values[0]))
 
 
+def weak_design_report(library, K_requested: int | None = None) -> dict:
+    """What a built library's weak design actually came out as.
+
+    The requested K is not the K that gets used: it is clamped to the rank the
+    design supports and then stripped of duplicate supports. Reporting the
+    request would misstate the experiment -- at 100 Lorenz samples a request of
+    100 test functions is fitted with 43 -- so the realised numbers are read back
+    off the library. ``K_used`` depends on the placement draw, so it varies by a
+    few between Monte Carlo seeds.
+    """
+
+    report = {
+        "K_requested": None if K_requested is None else int(K_requested),
+        "K_used": int(library.K),
+        "duplicate_supports_dropped": int(getattr(library, "n_duplicate_domains_", 0)),
+    }
+    for attribute, name in (
+        ("cov_cond_", "cov_cond"),
+        ("cov_rank_", "cov_rank"),
+        ("cov_rank_deficit_", "cov_rank_deficit"),
+        ("cov_below_nugget_", "cov_below_nugget"),
+    ):
+        value = getattr(library, attribute, None)
+        if value is not None:
+            report[name] = float(value) if "cond" in name else int(value)
+    return report
+
+
 def usable_test_functions(build_probe, design_key, K_requested: int) -> int:
     """Clamp a requested test-function count to the number that is usable.
 

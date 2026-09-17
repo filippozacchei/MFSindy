@@ -36,7 +36,10 @@ from mfsindy.experiments import (
     run_monte_carlo_experiment,
     run_multi_trajectory_gls_experiment,
 )
-from mfsindy.weighted_weak_pde_library import WeightedWeakPDELibrary
+from mfsindy.weighted_weak_pde_library import (
+    DedupedWeakPDELibrary,
+    WeightedWeakPDELibrary,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -488,7 +491,7 @@ def _burgers_make_weak_library(
         include_bias=cfg.include_bias,
     )
     if variance_field is None:
-        return WeakPDELibrary(**common_kwargs)
+        return DedupedWeakPDELibrary(**common_kwargs)
     return WeightedWeakPDELibrary(
         spatiotemporal_weights=variance_field,
         whitener_mode=whitener_mode,

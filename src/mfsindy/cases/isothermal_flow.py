@@ -37,7 +37,10 @@ from mfsindy.experiments import (
     run_intra_trajectory_gls_experiment,
     run_multi_trajectory_gls_experiment,
 )
-from mfsindy.weighted_weak_pde_library import WeightedWeakPDELibrary
+from mfsindy.weighted_weak_pde_library import (
+    DedupedWeakPDELibrary,
+    WeightedWeakPDELibrary,
+)
 
 
 _NS_PART1_TUNED_HYPERPARAMS_FILENAME = "navierstokes_part1_tuned_hyperparams.json"
@@ -599,7 +602,7 @@ def _ns_make_weak_library(
         # Genuinely unweighted, as in the other cases. Passing a field of ones
         # here would still apply the weak-SINDy whitening, which made the HF, LF
         # and MF rungs weighted and identical to PMF.
-        return WeakPDELibrary(**common_kwargs)
+        return DedupedWeakPDELibrary(**common_kwargs)
     return WeightedWeakPDELibrary(
         spatiotemporal_weights=variance_field,
         whitener_mode=whitener_mode,

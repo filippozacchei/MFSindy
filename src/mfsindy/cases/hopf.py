@@ -24,7 +24,10 @@ from mfsindy.experiments import (
     run_intra_trajectory_gls_experiment,
     run_multi_trajectory_gls_experiment,
 )
-from mfsindy.weighted_weak_pde_library import WeightedWeakPDELibrary
+from mfsindy.weighted_weak_pde_library import (
+    DedupedWeakPDELibrary,
+    WeightedWeakPDELibrary,
+)
 
 from scipy.integrate import solve_ivp  # at top of file if not already imported
 
@@ -292,7 +295,7 @@ def _hopf_make_weak_library(
     if cfg.p is not None:
         common_kwargs["p"] = cfg.p
     if variance_field is None:
-        return WeakPDELibrary(**common_kwargs)
+        return DedupedWeakPDELibrary(**common_kwargs)
     return WeightedWeakPDELibrary(
         spatiotemporal_weights=variance_field,
         whitener_mode=whitener_mode,
