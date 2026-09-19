@@ -13,6 +13,10 @@ COLORS_MODELS = {
     "HF":   "tab:blue",
     "LF":   "tab:orange",
     "MF":   "tab:green",
+    "VHF": "tab:cyan",
+    "VLF": "tab:olive",
+    "PMF": "tab:purple",
+    "VMF": "tab:brown",
     "MF_w": "tab:red",
 }
 

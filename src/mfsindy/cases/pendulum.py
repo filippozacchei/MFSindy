@@ -34,6 +34,7 @@ from mfsindy.experiments import (
 )
 from mfsindy.weighted_weak_pde_library import (
     DedupedWeakPDELibrary,
+    resolve_ode_test_function_count,
     WeightedWeakPDELibrary,
 )
 
@@ -342,12 +343,20 @@ def _pendulum_make_weak_library(
         "function_library": base_library,
         "spatiotemporal_grid": batch.metadata["t_grid"],
     }
-    if cfg.K is not None:
-        common_kwargs["K"] = cfg.K
     if cfg.H_xt is not None:
         common_kwargs["H_xt"] = cfg.H_xt
     if cfg.p is not None:
         common_kwargs["p"] = cfg.p
+    # K and H_xt are not independent. Left at pysindy's default of 100 this weak
+    # design came out rank-deficient, and whitening by a singular covariance
+    # divides round-off by the nugget.
+    common_kwargs["K"] = resolve_ode_test_function_count(
+        common_kwargs,
+        t_grid=batch.metadata["t_grid"],
+        n_states=int(np.asarray(batch.hf[0]).shape[-1]),
+        requested_K=cfg.K,
+        H_xt=cfg.H_xt,
+    )
     if variance_field is None:
         return DedupedWeakPDELibrary(**common_kwargs)
     return WeightedWeakPDELibrary(

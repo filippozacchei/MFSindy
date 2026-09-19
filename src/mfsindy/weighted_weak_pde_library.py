@@ -1,5 +1,7 @@
 import warnings
 
+from typing import Sequence
+
 import numpy as np
 from pysindy.feature_library.weak_pde_library import WeakPDELibrary
 from pysindy.utils import AxesArray
@@ -92,6 +94,93 @@ def weak_design_rank(library) -> int:
     if singular_values.size == 0 or singular_values[0] <= 0.0:
         return 0
     return int(np.count_nonzero(singular_values > 1e-10 * singular_values[0]))
+
+
+def resolve_ode_test_function_count(
+    common_kwargs: dict,
+    *,
+    t_grid,
+    n_states: int,
+    requested_K: int | None = None,
+    H_xt: float | None = None,
+    rule_constant: float = 5.0,
+) -> int:
+    """K for a single-trajectory ODE weak design, from the support and the rank.
+
+    K and the support width are not independent: pysindy's default of 100 ignores
+    the width entirely, so the count is taken from the support instead, and then
+    clamped to the number of test functions the design can actually support.
+    ``rule_constant`` sets the coverage -- how many test functions each point lies
+    under -- as ``2 * rule_constant``.
+
+    The probe measures the rank of the *requested* design, so it is built from
+    the plain library: removing duplicate supports changes the count but not the
+    rank.
+    """
+
+    t_values = np.asarray(t_grid, dtype=float).ravel()
+    extent = float(t_values.max() - t_values.min())
+    H = H_xt if H_xt is not None else extent / 20.0
+
+    if requested_K is not None:
+        K_requested = int(requested_K)
+    else:
+        K_requested = max(2, int(round(rule_constant * extent / H)))
+
+    def probe(K):
+        probe_library = WeakPDELibrary(K=K, **common_kwargs)
+        probe_library.fit([np.zeros((t_values.size, int(n_states)))])
+        return probe_library
+
+    design_key = (t_values.size, extent, H, common_kwargs.get("p"), int(n_states))
+    return usable_test_functions(probe, design_key, K_requested)
+
+
+def weak_validity_ratio(library, jacobian_norm) -> np.ndarray:
+    """kappa per test function: how much of the residual the covariance ignores.
+
+    The covariance model keeps only the term in which noise enters through the
+    test function's derivative, and neglects the one carrying the library
+    Jacobian. The approximation holds where the neglected term is small against
+    the retained one, which the appendix writes as a ratio of squared norms,
+    ``kappa = || phi |grad F| ||^2 / || phi_dot ||^2``, predicted to scale as
+    O(h^2) in the support width. Returned per test function so the spread across
+    the weak system is visible, not just its centre.
+
+    ``jacobian_norm`` is |grad F(u)| sampled along the trajectory, one value per
+    grid point, so it is the caller's business: each system knows its own
+    Jacobian.
+    """
+
+    jacobian_norm = np.asarray(jacobian_norm, dtype=float).ravel()
+    ratios = []
+    for k in range(int(library.K)):
+        indices = np.asarray(library.inds_k[k][0]).ravel()
+        phi_dot = np.asarray(library.fulltweights[k], dtype=float).ravel()
+        phi = np.asarray(library.fullweights0[k], dtype=float).ravel()
+        denominator = float(np.sum(phi_dot**2))
+        if denominator <= 0.0:
+            continue
+        ratios.append(float(np.sum((phi * jacobian_norm[indices]) ** 2) / denominator))
+    return np.asarray(ratios)
+
+
+def pde_scale_separation_ratio(
+    H_t: float, H_x: float | Sequence[float], derivative_order: int
+) -> float:
+    """The PDE counterpart of kappa, which needs no data.
+
+    For PDEs the neglected term is controlled by scale separation between the
+    temporal and spatial supports rather than by the Jacobian: the ratio behaves
+    as ``h_t^2 * h_x^(-2m)`` for spatial derivative order ``m``. The covariance
+    model requires the temporal support to shrink sufficiently faster than the
+    spatial ones.
+    """
+
+    widths = np.atleast_1d(np.asarray(H_x, dtype=float))
+    if H_t <= 0 or np.any(widths <= 0):
+        raise ValueError("Support widths must be positive.")
+    return float(H_t**2 * np.min(widths) ** (-2 * int(derivative_order)))
 
 
 def weak_design_report(library, K_requested: int | None = None) -> dict:
