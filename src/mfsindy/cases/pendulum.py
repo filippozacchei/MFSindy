@@ -35,6 +35,7 @@ from mfsindy.experiments import (
 from mfsindy.weighted_weak_pde_library import (
     DedupedWeakPDELibrary,
     resolve_ode_test_function_count,
+    weak_design_report,
     WeightedWeakPDELibrary,
 )
 
@@ -399,6 +400,34 @@ def _pendulum_fit_multi_trajectory_weak_gls_models(
         noise_lf_abs=noise_lf_abs,
         methods=methods,
     )
+
+
+def pendulum_weak_design(
+    cfg: PendulumMultiTrajectoryGLSConfig,
+    *,
+    run_idx: int = 0,
+) -> dict:
+    """The weak design a config actually produces, for the record in the paper.
+
+    K is requested from the support width, then clamped to the rank the design
+    supports and stripped of duplicate supports, so the requested count is not
+    what gets fitted. This builds the library one config would build and reports
+    the realised numbers, with the conditioning of the weak covariance.
+    """
+
+    state_std = _pendulum_reference_state_std(cfg)
+    noise_hf_abs = cfg.noise_hf_rel * state_std
+    batch = _pendulum_batch(run_idx, cfg, noise_hf_abs, cfg.noise_lf_rel * state_std)
+
+    t_values = np.asarray(batch.metadata["t_grid"], dtype=float).ravel()
+    extent = float(t_values.max() - t_values.min())
+    H = cfg.H_xt if cfg.H_xt is not None else extent / 20.0
+    K_requested = int(cfg.K) if cfg.K is not None else max(2, int(round(5 * extent / H)))
+
+    variance_field = np.full(batch.hf[0].shape[:-1], noise_hf_abs**2, dtype=float)
+    library = _pendulum_make_weak_library(batch, cfg, variance_field=variance_field)
+    library.fit_transform([batch.hf[0]])
+    return weak_design_report(library, K_requested)
 
 
 def run_pendulum_multi_trajectory_gls_experiment(

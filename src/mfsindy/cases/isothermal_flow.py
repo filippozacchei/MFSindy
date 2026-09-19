@@ -40,6 +40,7 @@ from mfsindy.experiments import (
 from mfsindy.weighted_weak_pde_library import (
     DedupedWeakPDELibrary,
     WeightedWeakPDELibrary,
+    weak_design_report,
 )
 
 
@@ -728,6 +729,38 @@ def _ns_fit_multi_trajectory_weak_gls_models(
         return _fit_stacked_weak_system(theta_blocks, rhs_blocks, optimizer_factory)
 
     return assemble_weak_rungs(group_builder, fit_stacked, methods, seed=weak_seed)
+
+
+def ns_isothermal_weak_design(
+    cfg: NSIsothermalMultiTrajectoryGLSConfig,
+    *,
+    weak_seed: int | None = None,
+) -> dict:
+    """The weak design a config actually produces, for the record in the paper.
+
+    The test-function weights depend on the spatiotemporal grid alone, so this
+    needs no flow solution: the grid is rebuilt from the config and a zero field
+    gives the same design the experiment builds.
+    """
+
+    x = np.linspace(0.0, cfg.L, cfg.N, endpoint=False)
+    y = np.linspace(0.0, cfg.L, cfg.N, endpoint=False)
+    t = np.linspace(0.0, cfg.T, cfg.Nt)
+    X, Y = np.meshgrid(x, y, indexing="ij")
+    grid = np.zeros((cfg.N, cfg.N, cfg.Nt, 3))
+    grid[:, :, :, 0] = X[:, :, None]
+    grid[:, :, :, 1] = Y[:, :, None]
+    grid[:, :, :, 2] = t[None, None, :]
+
+    field_shape = (cfg.N, cfg.N, cfg.Nt)
+    library = _ns_make_weak_library(
+        cfg,
+        grid,
+        variance_field=np.ones(field_shape, dtype=float),
+        weak_seed=int(cfg.seed_base if weak_seed is None else weak_seed),
+    )
+    library.fit_transform([np.zeros(field_shape + (3,))])
+    return weak_design_report(library, int(cfg.K))
 
 
 def run_ns_isothermal_multi_trajectory_gls_experiment(

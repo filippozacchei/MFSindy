@@ -38,6 +38,7 @@ from mfsindy.experiments import (
 )
 from mfsindy.weighted_weak_pde_library import (
     DedupedWeakPDELibrary,
+    weak_design_report,
     WeightedWeakPDELibrary,
 )
 
@@ -532,6 +533,39 @@ def _burgers_fit_multi_trajectory_weak_gls_models(
         noise_lf_abs=noise_lf_abs,
         methods=methods,
     )
+
+
+def burgers_weak_design(
+    cfg: BurgersMultiTrajectoryGLSConfig,
+    *,
+    weak_seed: int | None = None,
+) -> dict:
+    """The weak design a config actually produces, for the record in the paper.
+
+    The test-function weights depend on the spatiotemporal grid alone, so this
+    needs no solution of the PDE: a zero field on the right grid gives the same
+    design the experiment builds. K is reported as requested and as used, since
+    duplicate supports are dropped.
+    """
+
+    grid_cfg = BurgersConfig(L=cfg.L, NX=cfg.NX, t0=0.0, t1=cfg.T_train, dt=cfg.dt, nu=cfg.nu)
+    x, t = make_space_time_grid(grid_cfg)
+    field_shape = (x.size, t.size)
+
+    batch = MultiTrajectoryGLSData(
+        hf=[np.zeros(field_shape + (1,))],
+        lf=[],
+        t_argument=cfg.dt,
+        metadata={
+            "x": x,
+            "t": t,
+            "weak_seed": int(cfg.seed_base if weak_seed is None else weak_seed),
+        },
+    )
+    variance_field = np.ones(field_shape, dtype=float)
+    library = _burgers_make_weak_library(batch, cfg, variance_field=variance_field)
+    library.fit_transform([batch.hf[0]])
+    return weak_design_report(library, int(cfg.K))
 
 
 def run_burgers_multi_trajectory_gls_experiment(
