@@ -33,7 +33,6 @@ from .tuning import (
     TUNING_SEED_OFFSET,
     run_with_tuned_configs,
     save_tuning,
-    support_candidates,
     tune_rungs,
 )
 from .rollout import (
@@ -61,7 +60,6 @@ __all__ = [
     "TUNING_SEED_OFFSET",
     "run_with_tuned_configs",
     "save_tuning",
-    "support_candidates",
     "tune_rungs",
     "coefficient_errors",
     "run_monte_carlo_experiment",

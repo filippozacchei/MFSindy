@@ -73,41 +73,6 @@ def _boundary_axes(params: Mapping[str, Any], grid: Mapping[str, Sequence[Any]])
     return flagged
 
 
-def support_candidates(
-    horizon: float,
-    step: float,
-    *,
-    fractions: Sequence[float] = (1 / 50, 1 / 20, 1 / 10, 1 / 5),
-    min_samples: int = 5,
-) -> list[float]:
-    """Test-function support widths that contain enough samples to integrate over.
-
-    A support narrower than a few samples is not a quadrature rule, so including
-    one in a search wastes grid points at best and, when it falls below one
-    A finely sampled trajectory is only worth sampling finely if the support can
-    shrink with it: at coverage 1 the count is K = extent / 2H, so the number of
-    weak equations is set by the support width alone and a fine grid buys nothing
-    while H stays a fixed fraction of the horizon. The narrow fractions are
-    filtered out automatically on a coarse grid, where they would not hold enough
-    samples to integrate against.
-
-    Widths are given as fractions of
-    the training horizon so the grid follows the design instead of being fixed
-    in absolute time.
-    """
-
-    if step <= 0 or horizon <= 0:
-        raise ValueError("horizon and step must be positive.")
-    widths = [horizon * f for f in fractions]
-    usable = [w for w in widths if w / step >= min_samples]
-    if not usable:
-        raise ValueError(
-            f"No support width in {widths} holds {min_samples} samples at step {step}. "
-            "Lengthen the horizon, refine the step, or widen the fractions."
-        )
-    return usable
-
-
 def tune_rungs(
     base_config: Any,
     *,
