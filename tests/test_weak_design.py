@@ -80,26 +80,39 @@ def test_probe_does_not_disturb_the_placement():
 
 
 def test_clamp_false_restores_the_degenerate_design():
-    """The flag exists to measure what the clamp is worth, so it must really
-    disable it: no rank cap, no duplicate removal, and the singular covariance
-    that follows."""
-    clamped = build_library(0.05)
-    cfg = LorenzMultiTrajectoryGLSConfig(
-        n_hf=1, n_lf=2, H_xt=0.05, dt=0.01, noise_lf_rel=0.25
-    )
-    cfg.clamp = False
-    state_std = _lorenz_reference_state_std(cfg)
-    noise_hf = cfg.noise_hf_rel * state_std
-    batch = _lorenz_batch(0, cfg, noise_hf, cfg.noise_lf_rel * state_std)
-    variance = np.full(batch.hf[0].shape[:-1], noise_hf**2)
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", WeakCovarianceWarning)
-        unclamped = _lorenz_make_weak_library(batch, cfg, variance_field=variance)
-        unclamped.fit_transform([batch.hf[0]])
+    """The flag must really disable both halves: no rank cap, no duplicate
+    removal, and the singular covariance that follows.
 
+    K is set explicitly here rather than left to the support rule. At coverage 1
+    the rule asks for few enough test functions that the design is benign either
+    way, so a test resting on the default would pass for the wrong reason and
+    stop testing anything the day the rule changed.
+    """
+    requested = 200
+
+    def build(clamp):
+        cfg = LorenzMultiTrajectoryGLSConfig(
+            n_hf=1, n_lf=2, H_xt=0.05, dt=0.01, noise_lf_rel=0.25, K=requested
+        )
+        cfg.clamp = clamp
+        state_std = _lorenz_reference_state_std(cfg)
+        noise_hf = cfg.noise_hf_rel * state_std
+        batch = _lorenz_batch(0, cfg, noise_hf, cfg.noise_lf_rel * state_std)
+        variance = np.full(batch.hf[0].shape[:-1], noise_hf**2)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", WeakCovarianceWarning)
+            library = _lorenz_make_weak_library(batch, cfg, variance_field=variance)
+            library.fit_transform([batch.hf[0]])
+        return library
+
+    unclamped = build(False)
+    assert unclamped.K == requested                 # nothing capped
     assert unclamped.n_duplicate_domains_ == 0      # nothing dropped
-    assert unclamped.K > clamped.K                  # nothing capped
-    assert unclamped.cov_rank_deficit_ > 0          # and the covariance is singular
+    assert unclamped.cov_rank_deficit_ > 0          # so the covariance is singular
+
+    clamped = build(True)
+    assert clamped.K < requested
+    assert clamped.n_duplicate_domains_ > 0
     assert clamped.cov_rank_deficit_ == 0
 
 

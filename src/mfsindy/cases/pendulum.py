@@ -356,7 +356,7 @@ def _pendulum_make_weak_library(
     if cfg.K is not None:
         K_requested = int(cfg.K)
     else:
-        K_requested = max(2, int(round(5 * extent / H)))
+        K_requested = max(2, int(round(extent / (2.0 * H))))
 
     def probe(K):
         probe_library = WeakPDELibrary(K=K, **common_kwargs)
@@ -438,7 +438,7 @@ def pendulum_weak_design(
     t_values = np.asarray(batch.metadata["t_grid"], dtype=float).ravel()
     extent = float(t_values.max() - t_values.min())
     H = cfg.H_xt if cfg.H_xt is not None else extent / 20.0
-    K_requested = int(cfg.K) if cfg.K is not None else max(2, int(round(5 * extent / H)))
+    K_requested = int(cfg.K) if cfg.K is not None else max(2, int(round(extent / (2.0 * H))))
 
     variance_field = np.full(batch.hf[0].shape[:-1], noise_hf_abs**2, dtype=float)
     library = _pendulum_make_weak_library(batch, cfg, variance_field=variance_field)

@@ -484,12 +484,8 @@ def _burgers_make_weak_library(
         degree=cfg.poly_degree,
         include_bias=False,
     )
-    # K follows the support width here as it does for the ODE cases, so the two
-    # are never chosen independently. The coverage is 1 rather than the ODEs' 10:
-    # pysindy's own defaults imply coverage 1 on a 2D grid, and that is the
-    # setting measured to stay full rank at cond ~2e1, where the 1D cases at
-    # coverage 10 went singular. Overlap, not count, drives the conditioning, and
-    # overlap at a given coverage differs with dimension.
+    # K and the support width are not independent: one test function occupies
+    # prod(2H) of the grid, so tiling it once takes that ratio many of them.
     extents = (float(x.max() - x.min()), float(t.max() - t.min()))
     H = cfg.H_xt if cfg.H_xt is not None else [e / 20.0 for e in extents]
     if cfg.K is not None:

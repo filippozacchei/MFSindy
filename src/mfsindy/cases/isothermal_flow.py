@@ -613,12 +613,8 @@ def _ns_make_weak_library(
     whitener_mode: str = "full",
 ):
     np.random.seed(weak_seed)
-    # K follows the support width, as in every other case, so the two are never
-    # chosen independently. Coverage 1 matches what this grid already ran at --
-    # K=100 with H=L/10 in three dimensions works out to 0.8 -- and that setting
-    # measures full rank at cond ~6e0. The ODE cases use coverage 10; overlap at
-    # a given coverage differs with dimension, and overlap is what conditions the
-    # covariance.
+    # K and the support width are not independent: one test function occupies
+    # prod(2H) of the grid, so tiling it once takes that ratio many of them.
     H = _ns_multi_h_xt(cfg)
     extents = tuple(float(np.ptp(grid[..., axis])) for axis in range(grid.shape[-1]))
     if cfg.K is not None:

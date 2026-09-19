@@ -309,7 +309,7 @@ def _lorenz_make_weak_library(
     if cfg.K is not None:
         K_requested = int(cfg.K)
     else:
-        K_requested = max(2, int(round(5 * extent / H)))
+        K_requested = max(2, int(round(extent / (2.0 * H))))
 
     # Then clamp to what the weak design actually supports. Asking for more test
     # functions than that yields equations that are linear combinations of the
@@ -433,7 +433,7 @@ def lorenz_weak_design(
     extent = float(t_values.max() - t_values.min())
     H = cfg.H_xt if cfg.H_xt is not None else extent / 20.0
     K_requested = (
-        int(cfg.K) if cfg.K is not None else max(2, int(round(5 * extent / H)))
+        int(cfg.K) if cfg.K is not None else max(2, int(round(extent / (2.0 * H))))
     )
 
     variance_field = np.full(batch.hf[0].shape[:-1], noise_hf_abs**2, dtype=float)
