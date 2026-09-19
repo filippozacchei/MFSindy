@@ -223,8 +223,8 @@ class PendulumMultiTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
     """Configuration for the pendulum multi-fidelity SINDy experiment."""
 
     # multi-fidelity settings
-    n_lf: int = 100
-    n_hf: int = 10
+    n_lf: int = 10
+    n_hf: int = 1
 
     # relative noise levels (wrt std of reference trajectory)
     noise_lf_rel: float = 0.25
@@ -503,9 +503,9 @@ class PendulumIntraTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
     # weak-library settings
     poly_degree: int = 1
     derivative_order: int = 1
-    H_xt: float = 0.1
-    K: int = 100
-    p: int = 2
+    H_xt: float | None = None
+    K: int | None = None            # derived from H_xt when None
+    p: int | None = None
     include_bias: bool = False
 
     # SINDy / optimizer settings

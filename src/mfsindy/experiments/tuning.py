@@ -77,7 +77,7 @@ def support_candidates(
     horizon: float,
     step: float,
     *,
-    fractions: Sequence[float] = (1 / 200, 1 / 100, 1 / 50, 1 / 20, 1 / 10, 1 / 5),
+    fractions: Sequence[float] = (1 / 50, 1 / 20, 1 / 10, 1 / 5),
     min_samples: int = 5,
 ) -> list[float]:
     """Test-function support widths that contain enough samples to integrate over.

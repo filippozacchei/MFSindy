@@ -174,8 +174,8 @@ class HopfMultiTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
     """Configuration for the Hopf multi-fidelity SINDy experiment."""
 
     # multi-fidelity settings
-    n_lf: int = 100
-    n_hf: int = 10
+    n_lf: int = 10
+    n_hf: int = 1
 
     # relative noise levels (wrt std of reference trajectory)
     noise_lf_rel: float = 0.25
@@ -183,7 +183,7 @@ class HopfMultiTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
 
     # time discretisation
     dt: float = 1e-3
-    T_train: float = 0.1
+    T_train: float = 1
     T_true: float = 10.0
 
     # Hopf parameters

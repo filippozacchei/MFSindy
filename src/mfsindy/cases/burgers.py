@@ -86,7 +86,7 @@ class BurgersMultiTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
     L: float = 8.0
     NX: int = 256
     dt: float = 1e-3
-    T_train: float = 0.1
+    T_train: float = 1.0
     nu: float = 0.1
 
     # multi-fidelity settings (numbers of trajectories)

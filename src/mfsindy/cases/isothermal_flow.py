@@ -133,11 +133,33 @@ def make_initial_condition(
         amp_v_sin = - (0.8 + 0.4 * rng.random())  # around -1.0
         amp_rho_cos = 0.4 + 0.2 * rng.random()    # around 0.5
 
-        U0 = (amp_u_sin * np.sin(2 * np.pi / L * X) +
-              amp_u_cos * np.cos(2 * 2 * np.pi / L * Y))
-        V0 = (amp_v_cos * np.cos(2 * np.pi / L * X) +
-              amp_v_sin * np.sin(2 * 2 * np.pi / L * Y))
-        RHO0 = 1.0 + amp_rho_cos * np.cos(2 * np.pi / L * X) * np.cos(2 * 2 * np.pi / L * Y)
+        # Vary the wavenumbers too, not just the amplitudes. Trajectories that
+        # differ only in amplitude are near-replicates of one vortex pattern, so
+        # a second trajectory adds averaging but little new information. The
+        # wavenumbers set the magnitude of the derivatives relative to the state
+        # itself -- u_x scales as k and u_xx as k^2 -- which is exactly the
+        # balance between the advective and viscous terms being identified, so
+        # varying them makes each trajectory probe that balance differently.
+        #
+        # Phases are deliberately not randomized: the dynamics are translation
+        # invariant, so a shifted field visits the same local states and the weak
+        # regression cannot tell it apart.
+        #
+        # The finest structure in the field is the 2*k_y mode, so k_y is what
+        # limits resolution: k_y=2 puts 8 points per wavelength on a 32-point
+        # axis, which is already the floor. k_x costs nothing by comparison and
+        # is given a third value, so there are six structural combinations rather
+        # than four and fewer trajectories are structural duplicates.
+        k_x = int(rng.integers(1, 4))
+        k_y = int(rng.integers(1, 3))
+
+        U0 = (amp_u_sin * np.sin(k_x * 2 * np.pi / L * X) +
+              amp_u_cos * np.cos(2 * k_y * 2 * np.pi / L * Y))
+        V0 = (amp_v_cos * np.cos(k_x * 2 * np.pi / L * X) +
+              amp_v_sin * np.sin(2 * k_y * 2 * np.pi / L * Y))
+        RHO0 = 1.0 + amp_rho_cos * np.cos(k_x * 2 * np.pi / L * X) * np.cos(
+            2 * k_y * 2 * np.pi / L * Y
+        )
 
     elif ic_type == "shear-layer":
         U0 = np.tanh((Y - L / 2) / 0.1)

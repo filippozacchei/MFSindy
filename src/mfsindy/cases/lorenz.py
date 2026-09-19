@@ -202,10 +202,10 @@ class LorenzMultiTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
     K: int | None = None            # derived from H_xt when None
     p: int | None = None
     stlsq_threshold: float = 0.5
-    n_ensemble_models: int = 200
+    n_ensemble_models: int = 100
 
     # random seeds
-    seed_base: int = 231
+    seed_base: int = 0
     seed_forecast_ic: int = 999
 
     # output
@@ -300,6 +300,8 @@ def _lorenz_make_weak_library(
     }
     if cfg.H_xt is not None:
         common_kwargs["H_xt"] = cfg.H_xt
+    if cfg.p is not None:
+        common_kwargs["p"] = cfg.p
     t_values = np.asarray(t_grid, dtype=float).ravel()
     extent = float(t_values.max() - t_values.min())
     H = cfg.H_xt if cfg.H_xt is not None else extent / 20.0
