@@ -38,6 +38,8 @@ from mfsindy.experiments import (
 )
 from mfsindy.weighted_weak_pde_library import (
     DedupedWeakPDELibrary,
+    test_functions_for_coverage,
+    usable_test_functions,
     weak_design_report,
     WeightedWeakPDELibrary,
 )
@@ -94,7 +96,7 @@ class BurgersMultiTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
     n_lf: int = 10
     n_hf: int = 1
     H_xt: list[float] | None = None
-    K: int = 100
+    K: int | None = None       # derived from H_xt when None
 
     # relative noise levels (wrt state std)
     noise_lf_rel: float = 0.25
@@ -482,14 +484,35 @@ def _burgers_make_weak_library(
         degree=cfg.poly_degree,
         include_bias=False,
     )
+    # K follows the support width here as it does for the ODE cases, so the two
+    # are never chosen independently. The coverage is 1 rather than the ODEs' 10:
+    # pysindy's own defaults imply coverage 1 on a 2D grid, and that is the
+    # setting measured to stay full rank at cond ~2e1, where the 1D cases at
+    # coverage 10 went singular. Overlap, not count, drives the conditioning, and
+    # overlap at a given coverage differs with dimension.
+    extents = (float(x.max() - x.min()), float(t.max() - t.min()))
+    H = cfg.H_xt if cfg.H_xt is not None else [e / 20.0 for e in extents]
+    if cfg.K is not None:
+        K_requested = int(cfg.K)
+    else:
+        K_requested = test_functions_for_coverage(extents, H, coverage=1.0)
+
     common_kwargs = dict(
         function_library=base_library,
         derivative_order=cfg.derivative_order,
         spatiotemporal_grid=XT,
         is_uniform=True,
-        K=cfg.K,
         H_xt=cfg.H_xt,
         include_bias=cfg.include_bias,
+    )
+
+    def probe(K):
+        probe_library = WeakPDELibrary(K=K, **common_kwargs)
+        probe_library.fit([np.zeros((x.size, t.size, 1))])
+        return probe_library
+
+    common_kwargs["K"] = usable_test_functions(
+        probe, (x.size, t.size) + extents + (tuple(np.atleast_1d(H)),), K_requested
     )
     if variance_field is None:
         return DedupedWeakPDELibrary(**common_kwargs)
@@ -562,10 +585,18 @@ def burgers_weak_design(
             "weak_seed": int(cfg.seed_base if weak_seed is None else weak_seed),
         },
     )
+    extents = (float(x.max() - x.min()), float(t.max() - t.min()))
+    H = cfg.H_xt if cfg.H_xt is not None else [e / 20.0 for e in extents]
+    K_requested = (
+        int(cfg.K)
+        if cfg.K is not None
+        else test_functions_for_coverage(extents, H, coverage=1.0)
+    )
+
     variance_field = np.ones(field_shape, dtype=float)
     library = _burgers_make_weak_library(batch, cfg, variance_field=variance_field)
     library.fit_transform([batch.hf[0]])
-    return weak_design_report(library, int(cfg.K))
+    return weak_design_report(library, K_requested)
 
 
 def run_burgers_multi_trajectory_gls_experiment(

@@ -40,6 +40,8 @@ from mfsindy.experiments import (
 from mfsindy.weighted_weak_pde_library import (
     DedupedWeakPDELibrary,
     WeightedWeakPDELibrary,
+    test_functions_for_coverage,
+    usable_test_functions,
     weak_design_report,
 )
 
@@ -528,7 +530,7 @@ class NSIsothermalMultiTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin
     derivative_order: int = 2
     include_bias: bool = False
     p: int = 2
-    K: int = 100
+    K: int | None = None       # derived from H_xt when None
     K_std: int = 100
     H_xt: list[float] | None = None
 
@@ -611,15 +613,36 @@ def _ns_make_weak_library(
     whitener_mode: str = "full",
 ):
     np.random.seed(weak_seed)
+    # K follows the support width, as in every other case, so the two are never
+    # chosen independently. Coverage 1 matches what this grid already ran at --
+    # K=100 with H=L/10 in three dimensions works out to 0.8 -- and that setting
+    # measures full rank at cond ~6e0. The ODE cases use coverage 10; overlap at
+    # a given coverage differs with dimension, and overlap is what conditions the
+    # covariance.
+    H = _ns_multi_h_xt(cfg)
+    extents = tuple(float(np.ptp(grid[..., axis])) for axis in range(grid.shape[-1]))
+    if cfg.K is not None:
+        K_requested = int(cfg.K)
+    else:
+        K_requested = test_functions_for_coverage(extents, H, coverage=1.0)
+
     common_kwargs = dict(
         function_library=_build_custom_library(),
         derivative_order=cfg.derivative_order,
         spatiotemporal_grid=grid,
         is_uniform=True,
-        K=cfg.K,
         p=cfg.p,
-        H_xt=_ns_multi_h_xt(cfg),
+        H_xt=H,
         include_bias=cfg.include_bias,
+    )
+
+    def probe(K):
+        probe_library = WeakPDELibrary(K=K, **common_kwargs)
+        probe_library.fit([np.zeros(grid.shape[:-1] + (3,))])
+        return probe_library
+
+    common_kwargs["K"] = usable_test_functions(
+        probe, grid.shape[:-1] + extents + (tuple(H),), K_requested
     )
     if variance_field is None:
         # Genuinely unweighted, as in the other cases. Passing a field of ones
@@ -753,6 +776,14 @@ def ns_isothermal_weak_design(
     grid[:, :, :, 2] = t[None, None, :]
 
     field_shape = (cfg.N, cfg.N, cfg.Nt)
+    H = _ns_multi_h_xt(cfg)
+    extents = tuple(float(np.ptp(grid[..., axis])) for axis in range(grid.shape[-1]))
+    K_requested = (
+        int(cfg.K)
+        if cfg.K is not None
+        else test_functions_for_coverage(extents, H, coverage=1.0)
+    )
+
     library = _ns_make_weak_library(
         cfg,
         grid,
@@ -760,7 +791,7 @@ def ns_isothermal_weak_design(
         weak_seed=int(cfg.seed_base if weak_seed is None else weak_seed),
     )
     library.fit_transform([np.zeros(field_shape + (3,))])
-    return weak_design_report(library, int(cfg.K))
+    return weak_design_report(library, K_requested)
 
 
 def run_ns_isothermal_multi_trajectory_gls_experiment(

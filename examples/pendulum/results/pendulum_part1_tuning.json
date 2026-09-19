@@ -13,6 +13,80 @@
     ]
   },
   "fixed": {
+    "weak_design": {
+      "HF": {
+        "K_requested": 100,
+        "K_used": 87,
+        "duplicate_supports_dropped": 4,
+        "cov_cond": 63210.826259047106,
+        "cov_rank": 87,
+        "cov_rank_deficit": 0,
+        "cov_below_nugget": 0
+      },
+      "LF": {
+        "K_requested": 25,
+        "K_used": 24,
+        "duplicate_supports_dropped": 0,
+        "cov_cond": 332614.2438929282,
+        "cov_rank": 24,
+        "cov_rank_deficit": 0,
+        "cov_below_nugget": 0
+      },
+      "MF": {
+        "K_requested": 25,
+        "K_used": 24,
+        "duplicate_supports_dropped": 0,
+        "cov_cond": 332614.2438929282,
+        "cov_rank": 24,
+        "cov_rank_deficit": 0,
+        "cov_below_nugget": 0
+      },
+      "VHF": {
+        "K_requested": 250,
+        "K_used": 192,
+        "duplicate_supports_dropped": 20,
+        "cov_cond": 30469.131679606773,
+        "cov_rank": 192,
+        "cov_rank_deficit": 0,
+        "cov_below_nugget": 0
+      },
+      "VLF": {
+        "K_requested": 250,
+        "K_used": 192,
+        "duplicate_supports_dropped": 20,
+        "cov_cond": 30469.131679606773,
+        "cov_rank": 192,
+        "cov_rank_deficit": 0,
+        "cov_below_nugget": 0
+      },
+      "PMF": {
+        "K_requested": 100,
+        "K_used": 87,
+        "duplicate_supports_dropped": 4,
+        "cov_cond": 63210.826259047106,
+        "cov_rank": 87,
+        "cov_rank_deficit": 0,
+        "cov_below_nugget": 0
+      },
+      "VMF": {
+        "K_requested": 100,
+        "K_used": 87,
+        "duplicate_supports_dropped": 4,
+        "cov_cond": 63210.826259047106,
+        "cov_rank": 87,
+        "cov_rank_deficit": 0,
+        "cov_below_nugget": 0
+      },
+      "MF_w": {
+        "K_requested": 250,
+        "K_used": 192,
+        "duplicate_supports_dropped": 20,
+        "cov_cond": 30469.131679606773,
+        "cov_rank": 192,
+        "cov_rank_deficit": 0,
+        "cov_below_nugget": 0
+      }
+    },
     "n_takes": 5,
     "poly_degree": 1,
     "p": 2,

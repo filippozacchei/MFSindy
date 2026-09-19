@@ -77,23 +77,45 @@ def weak_design_rank(library) -> int:
     for narrow supports the rank equals the number of distinct supports exactly.
     Wide supports lose further rank as overlapping bumps become near-dependent.
     Neither is predictable from a formula worth trusting, so this measures it.
+
+    ``B`` is held sparse and only ``B B^T`` is formed densely. Each test function
+    touches just the grid points under its support, so ``B`` is mostly zeros, and
+    a dense copy is unaffordable in more than one dimension: a 3D flow grid of
+    1e5 points with 1e3 test functions would need ~800 MB and an SVD to match.
+    ``B B^T`` is K x K whatever the grid.
+
+    The rank tolerance matches the one the whitener reports, so the count used to
+    choose K is the same count that decides whether the covariance is flagged as
+    singular.
     """
+
+    from scipy.sparse import csr_matrix
 
     K = int(library.K)
     grid_shape = tuple(np.asarray(library.spatiotemporal_grid).shape[:-1])
     n_grid = int(np.prod(grid_shape))
 
-    B = np.zeros((K, n_grid), dtype=float)
+    values: list[np.ndarray] = []
+    columns: list[np.ndarray] = []
+    indptr = np.zeros(K + 1, dtype=np.int64)
     for k in range(K):
         axes = [np.asarray(ax, dtype=np.intp) for ax in library.inds_k[k]]
         mesh = np.meshgrid(*axes, indexing="ij")
         flat = np.ravel_multi_index(tuple(mesh), dims=grid_shape, order="C").ravel(order="C")
-        B[k, flat] = np.asarray(library.fulltweights[k], dtype=float).ravel(order="C")
+        weights = np.asarray(library.fulltweights[k], dtype=float).ravel(order="C")
+        columns.append(flat)
+        values.append(weights)
+        indptr[k + 1] = indptr[k] + flat.size
 
-    singular_values = np.linalg.svd(B, compute_uv=False)
-    if singular_values.size == 0 or singular_values[0] <= 0.0:
+    B = csr_matrix(
+        (np.concatenate(values), np.concatenate(columns), indptr), shape=(K, n_grid)
+    )
+    gram = (B @ B.T).toarray()
+
+    eigenvalues = np.clip(np.linalg.eigvalsh(gram)[::-1], 0.0, None)
+    if eigenvalues.size == 0 or eigenvalues[0] <= 0.0:
         return 0
-    return int(np.count_nonzero(singular_values > 1e-10 * singular_values[0]))
+    return int(np.count_nonzero(eigenvalues > 1e-10 * eigenvalues[0]))
 
 
 def resolve_ode_test_function_count(
@@ -134,6 +156,43 @@ def resolve_ode_test_function_count(
 
     design_key = (t_values.size, extent, H, common_kwargs.get("p"), int(n_states))
     return usable_test_functions(probe, design_key, K_requested)
+
+
+def test_functions_for_coverage(
+    extents: Sequence[float],
+    H_xt: float | Sequence[float],
+    coverage: float,
+    min_domains: int = 2,
+) -> int:
+    """K whose supports cover the grid ``coverage`` times over.
+
+    The multi-dimensional form of the rule the ODE cases use: a test function
+    occupies ``prod(2H_i)`` of a grid of volume ``prod(extents)``, so covering
+    the grid ``coverage`` times takes that ratio many of them. Tying K to the
+    support this way means a wider test function gets proportionally fewer.
+
+    Coverage is not comparable across dimensions, which is why it is passed in
+    rather than fixed here. pysindy's own defaults (K=100 at H=L/20) work out to
+    coverage 10 on a 1D grid and 1 on a 2D one, and the conditioning follows the
+    overlap rather than the number: the 1D cases went singular where the 2D ones
+    stayed well conditioned.
+    """
+
+    lengths = np.atleast_1d(np.asarray(extents, dtype=float))
+    widths = np.atleast_1d(np.asarray(H_xt, dtype=float))
+    if widths.size == 1:
+        widths = np.full(lengths.shape, float(widths[0]))
+    if lengths.shape != widths.shape:
+        raise ValueError(
+            f"extents {lengths.shape} and H_xt {widths.shape} must describe the "
+            "same number of dimensions."
+        )
+    if coverage <= 0 or np.any(lengths <= 0) or np.any(widths <= 0):
+        raise ValueError("extents, H_xt and coverage must all be positive.")
+
+    domain = float(np.prod(2.0 * widths))
+    grid = float(np.prod(lengths))
+    return max(int(min_domains), int(round(coverage * grid / domain)))
 
 
 def weak_validity_ratio(library, jacobian_norm) -> np.ndarray:
