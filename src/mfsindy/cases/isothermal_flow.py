@@ -40,7 +40,6 @@ from mfsindy.experiments import (
 from mfsindy.weighted_weak_pde_library import (
     DedupedWeakPDELibrary,
     WeightedWeakPDELibrary,
-    test_functions_for_coverage,
     usable_test_functions,
     weak_design_report,
 )
@@ -625,7 +624,8 @@ def _ns_make_weak_library(
     if cfg.K is not None:
         K_requested = int(cfg.K)
     else:
-        K_requested = test_functions_for_coverage(extents, H, coverage=1.0)
+        domain = float(np.prod([2.0 * h for h in np.atleast_1d(H)]))
+        K_requested = max(2, int(round(float(np.prod(extents)) / domain)))
 
     common_kwargs = dict(
         function_library=_build_custom_library(),
@@ -782,11 +782,11 @@ def ns_isothermal_weak_design(
     field_shape = (cfg.N, cfg.N, cfg.Nt)
     H = _ns_multi_h_xt(cfg)
     extents = tuple(float(np.ptp(grid[..., axis])) for axis in range(grid.shape[-1]))
-    K_requested = (
-        int(cfg.K)
-        if cfg.K is not None
-        else test_functions_for_coverage(extents, H, coverage=1.0)
-    )
+    if cfg.K is not None:
+        K_requested = int(cfg.K)
+    else:
+        domain = float(np.prod([2.0 * h for h in np.atleast_1d(H)]))
+        K_requested = max(2, int(round(float(np.prod(extents)) / domain)))
 
     library = _ns_make_weak_library(
         cfg,

@@ -38,7 +38,6 @@ from mfsindy.experiments import (
 )
 from mfsindy.weighted_weak_pde_library import (
     DedupedWeakPDELibrary,
-    test_functions_for_coverage,
     usable_test_functions,
     weak_design_report,
     WeightedWeakPDELibrary,
@@ -496,7 +495,8 @@ def _burgers_make_weak_library(
     if cfg.K is not None:
         K_requested = int(cfg.K)
     else:
-        K_requested = test_functions_for_coverage(extents, H, coverage=1.0)
+        domain = float(np.prod([2.0 * h for h in np.atleast_1d(H)]))
+        K_requested = max(2, int(round(float(np.prod(extents)) / domain)))
 
     common_kwargs = dict(
         function_library=base_library,
@@ -593,11 +593,11 @@ def burgers_weak_design(
     )
     extents = (float(x.max() - x.min()), float(t.max() - t.min()))
     H = cfg.H_xt if cfg.H_xt is not None else [e / 20.0 for e in extents]
-    K_requested = (
-        int(cfg.K)
-        if cfg.K is not None
-        else test_functions_for_coverage(extents, H, coverage=1.0)
-    )
+    if cfg.K is not None:
+        K_requested = int(cfg.K)
+    else:
+        domain = float(np.prod([2.0 * h for h in np.atleast_1d(H)]))
+        K_requested = max(2, int(round(float(np.prod(extents)) / domain)))
 
     variance_field = np.ones(field_shape, dtype=float)
     library = _burgers_make_weak_library(batch, cfg, variance_field=variance_field)

@@ -26,7 +26,7 @@ from mfsindy.experiments import (
 )
 from mfsindy.weighted_weak_pde_library import (
     DedupedWeakPDELibrary,
-    resolve_ode_test_function_count,
+    usable_test_functions,
     weak_design_report,
     WeightedWeakPDELibrary,
 )
@@ -287,25 +287,38 @@ def _hopf_make_weak_library(
         degree=cfg.poly_degree,
         include_bias=False,
     )
+    t_grid = batch.metadata["t_grid"]
     common_kwargs = {
         "function_library": base_library,
-        "spatiotemporal_grid": batch.metadata["t_grid"],
+        "spatiotemporal_grid": t_grid,
     }
     if cfg.H_xt is not None:
         common_kwargs["H_xt"] = cfg.H_xt
     if cfg.p is not None:
         common_kwargs["p"] = cfg.p
-    # K and H_xt are not independent. Left at pysindy's default of 100 this weak
-    # design came out rank-deficient, and whitening by a singular covariance
-    # divides round-off by the nugget.
-    common_kwargs["K"] = resolve_ode_test_function_count(
-        common_kwargs,
-        t_grid=batch.metadata["t_grid"],
-        n_states=int(np.asarray(batch.hf[0]).shape[-1]),
-        requested_K=cfg.K,
-        H_xt=cfg.H_xt,
-        clamp=cfg.clamp,
+    t_values = np.asarray(t_grid, dtype=float).ravel()
+    extent = float(t_values.max() - t_values.min())
+    H = cfg.H_xt if cfg.H_xt is not None else extent / 20.0
+    if cfg.K is not None:
+        K_requested = int(cfg.K)
+    else:
+        K_requested = max(2, int(round(5 * extent / H)))
+
+    def probe(K):
+        probe_library = WeakPDELibrary(K=K, **common_kwargs)
+        probe_library.fit([np.zeros((t_values.size, batch.hf[0].shape[-1]))])
+        return probe_library
+
+    common_kwargs["K"] = (
+        usable_test_functions(
+            probe,
+            (t_values.size, extent, H, cfg.p, cfg.poly_degree),
+            K_requested,
+        )
+        if cfg.clamp
+        else K_requested
     )
+
     if variance_field is None:
         return DedupedWeakPDELibrary(deduplicate=cfg.clamp, **common_kwargs)
     return WeightedWeakPDELibrary(
