@@ -97,6 +97,7 @@ class BurgersMultiTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
     H_xt: list[float] | None = None
     K: int | None = None       # derived from H_xt when None
     clamp: bool = True         # cap K at the usable rank and drop duplicate supports
+    p: int | None = None       # test-function polynomial degree
 
     # relative noise levels (wrt state std)
     noise_lf_rel: float = 0.25
@@ -484,24 +485,25 @@ def _burgers_make_weak_library(
         degree=cfg.poly_degree,
         include_bias=False,
     )
-    # K and the support width are not independent: one test function occupies
-    # prod(2H) of the grid, so tiling it once takes that ratio many of them.
-    extents = (float(x.max() - x.min()), float(t.max() - t.min()))
-    H = cfg.H_xt if cfg.H_xt is not None else [e / 20.0 for e in extents]
-    if cfg.K is not None:
-        K_requested = int(cfg.K)
-    else:
-        domain = float(np.prod([2.0 * h for h in np.atleast_1d(H)]))
-        K_requested = max(2, int(round(float(np.prod(extents)) / domain)))
-
     common_kwargs = dict(
         function_library=base_library,
         derivative_order=cfg.derivative_order,
         spatiotemporal_grid=XT,
         is_uniform=True,
-        H_xt=cfg.H_xt,
         include_bias=cfg.include_bias,
     )
+    # K and the support width are not independent: one test function occupies
+    # prod(2H) of the grid, so tiling it once takes that ratio many of them.
+    extents = (float(x.max() - x.min()), float(t.max() - t.min()))
+    H = cfg.H_xt if cfg.H_xt is not None else [e / 20.0 for e in extents]
+    common_kwargs["H_xt"] = H
+    if cfg.p is not None:
+        common_kwargs["p"] = cfg.p
+    if cfg.K is not None:
+        K_requested = int(cfg.K)
+    else:
+        domain = float(np.prod([2.0 * h for h in np.atleast_1d(H)]))
+        K_requested = max(2, int(round(float(np.prod(extents)) / domain)))
 
     def probe(K):
         probe_library = WeakPDELibrary(K=K, **common_kwargs)

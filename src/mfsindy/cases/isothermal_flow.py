@@ -615,23 +615,25 @@ def _ns_make_weak_library(
     np.random.seed(weak_seed)
     # K and the support width are not independent: one test function occupies
     # prod(2H) of the grid, so tiling it once takes that ratio many of them.
-    H = _ns_multi_h_xt(cfg)
-    extents = tuple(float(np.ptp(grid[..., axis])) for axis in range(grid.shape[-1]))
-    if cfg.K is not None:
-        K_requested = int(cfg.K)
-    else:
-        domain = float(np.prod([2.0 * h for h in np.atleast_1d(H)]))
-        K_requested = max(2, int(round(float(np.prod(extents)) / domain)))
-
     common_kwargs = dict(
         function_library=_build_custom_library(),
         derivative_order=cfg.derivative_order,
         spatiotemporal_grid=grid,
         is_uniform=True,
-        p=cfg.p,
-        H_xt=H,
         include_bias=cfg.include_bias,
     )
+    # K and the support width are not independent: one test function occupies
+    # prod(2H) of the grid, so tiling it once takes that ratio many of them.
+    extents = tuple(float(np.ptp(grid[..., axis])) for axis in range(grid.shape[-1]))
+    H = _ns_multi_h_xt(cfg)
+    common_kwargs["H_xt"] = H
+    if cfg.p is not None:
+        common_kwargs["p"] = cfg.p
+    if cfg.K is not None:
+        K_requested = int(cfg.K)
+    else:
+        domain = float(np.prod([2.0 * h for h in np.atleast_1d(H)]))
+        K_requested = max(2, int(round(float(np.prod(extents)) / domain)))
 
     def probe(K):
         probe_library = WeakPDELibrary(K=K, **common_kwargs)

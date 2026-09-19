@@ -292,13 +292,12 @@ def _hopf_make_weak_library(
         "function_library": base_library,
         "spatiotemporal_grid": t_grid,
     }
-    if cfg.H_xt is not None:
-        common_kwargs["H_xt"] = cfg.H_xt
-    if cfg.p is not None:
-        common_kwargs["p"] = cfg.p
     t_values = np.asarray(t_grid, dtype=float).ravel()
     extent = float(t_values.max() - t_values.min())
     H = cfg.H_xt if cfg.H_xt is not None else extent / 20.0
+    common_kwargs["H_xt"] = H
+    if cfg.p is not None:
+        common_kwargs["p"] = cfg.p
     if cfg.K is not None:
         K_requested = int(cfg.K)
     else:
