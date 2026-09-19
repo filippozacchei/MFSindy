@@ -492,8 +492,9 @@ def _burgers_make_weak_library(
         is_uniform=True,
         include_bias=cfg.include_bias,
     )
-    # K and the support width are not independent: one test function occupies
-    # prod(2H) of the grid, so tiling it once takes that ratio many of them.
+    # Coverage 2: the test functions cover the grid twice over. Coverage sets
+    # the conditioning of the weak covariance and the support sets kappa, so the
+    # two are chosen independently.
     extents = (float(x.max() - x.min()), float(t.max() - t.min()))
     H = cfg.H_xt if cfg.H_xt is not None else [e / 20.0 for e in extents]
     common_kwargs["H_xt"] = H
@@ -503,7 +504,7 @@ def _burgers_make_weak_library(
         K_requested = int(cfg.K)
     else:
         domain = float(np.prod([2.0 * h for h in np.atleast_1d(H)]))
-        K_requested = max(2, int(round(float(np.prod(extents)) / domain)))
+        K_requested = max(2, int(round(2.0 * float(np.prod(extents)) / domain)))
     common_kwargs["K"] = K_requested
     if variance_field is None:
         return DedupedWeakPDELibrary(deduplicate=cfg.deduplicate, **common_kwargs)
@@ -583,7 +584,7 @@ def burgers_weak_design(
         K_requested = int(cfg.K)
     else:
         domain = float(np.prod([2.0 * h for h in np.atleast_1d(H)]))
-        K_requested = max(2, int(round(float(np.prod(extents)) / domain)))
+        K_requested = max(2, int(round(2.0 * float(np.prod(extents)) / domain)))
 
     variance_field = np.ones(field_shape, dtype=float)
     library = _burgers_make_weak_library(batch, cfg, variance_field=variance_field)

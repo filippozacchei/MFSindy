@@ -301,7 +301,13 @@ def _hopf_make_weak_library(
     if cfg.K is not None:
         K_requested = int(cfg.K)
     else:
-        K_requested = max(2, int(round(extent / (2.0 * H))))
+        # Coverage 2: every point lies under two test functions on average.
+        # Coverage and support width are separable knobs. Coverage sets the
+        # conditioning of the weak covariance -- 1 gives cond ~1e1, 2 ~1e2,
+        # 10 ~1e7 -- while the support sets kappa, the validity of the
+        # covariance model. Two keeps both in hand: it doubles the number of
+        # weak equations over a bare tiling while leaving cond in the hundreds.
+        K_requested = max(2, int(round(extent / H)))
     common_kwargs["K"] = K_requested
 
     if variance_field is None:
@@ -382,7 +388,7 @@ def hopf_weak_design(
     t_values = np.asarray(batch.metadata["t_grid"], dtype=float).ravel()
     extent = float(t_values.max() - t_values.min())
     H = cfg.H_xt if cfg.H_xt is not None else extent / 20.0
-    K_requested = int(cfg.K) if cfg.K is not None else max(2, int(round(extent / (2.0 * H))))
+    K_requested = int(cfg.K) if cfg.K is not None else max(2, int(round(extent / H)))
 
     variance_field = np.full(batch.hf[0].shape[:-1], noise_hf_abs**2, dtype=float)
     library = _hopf_make_weak_library(batch, cfg, variance_field=variance_field)

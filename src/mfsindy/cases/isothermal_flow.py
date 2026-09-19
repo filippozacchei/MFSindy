@@ -613,8 +613,9 @@ def _ns_make_weak_library(
     whitener_mode: str = "full",
 ):
     np.random.seed(weak_seed)
-    # K and the support width are not independent: one test function occupies
-    # prod(2H) of the grid, so tiling it once takes that ratio many of them.
+    # Coverage 2: the test functions cover the grid twice over. Coverage sets
+    # the conditioning of the weak covariance and the support sets kappa, so the
+    # two are chosen independently.
     common_kwargs = dict(
         function_library=_build_custom_library(),
         derivative_order=cfg.derivative_order,
@@ -622,8 +623,9 @@ def _ns_make_weak_library(
         is_uniform=True,
         include_bias=cfg.include_bias,
     )
-    # K and the support width are not independent: one test function occupies
-    # prod(2H) of the grid, so tiling it once takes that ratio many of them.
+    # Coverage 2: the test functions cover the grid twice over. Coverage sets
+    # the conditioning of the weak covariance and the support sets kappa, so the
+    # two are chosen independently.
     extents = tuple(float(np.ptp(grid[..., axis])) for axis in range(grid.shape[-1]))
     H = _ns_multi_h_xt(cfg)
     common_kwargs["H_xt"] = H
@@ -633,7 +635,7 @@ def _ns_make_weak_library(
         K_requested = int(cfg.K)
     else:
         domain = float(np.prod([2.0 * h for h in np.atleast_1d(H)]))
-        K_requested = max(2, int(round(float(np.prod(extents)) / domain)))
+        K_requested = max(2, int(round(2.0 * float(np.prod(extents)) / domain)))
     common_kwargs["K"] = K_requested
     if variance_field is None:
         # Genuinely unweighted, as in the other cases. Passing a field of ones
@@ -774,7 +776,7 @@ def ns_isothermal_weak_design(
         K_requested = int(cfg.K)
     else:
         domain = float(np.prod([2.0 * h for h in np.atleast_1d(H)]))
-        K_requested = max(2, int(round(float(np.prod(extents)) / domain)))
+        K_requested = max(2, int(round(2.0 * float(np.prod(extents)) / domain)))
 
     library = _ns_make_weak_library(
         cfg,
