@@ -52,11 +52,23 @@ def drop_duplicate_domains(library) -> int:
 
 
 class DedupedWeakPDELibrary(WeakPDELibrary):
-    """WeakPDELibrary that discards duplicate test-function supports."""
+    """WeakPDELibrary that discards duplicate test-function supports.
+
+    ``deduplicate=False`` restores pysindy's behaviour, keeping every requested
+    test function including exact copies. That is not a useful way to fit, since
+    the copies make the weak covariance exactly singular, but it is the only way
+    to measure what the duplicates cost: the comparison needs a run with them.
+    """
+
+    def __init__(self, *args, deduplicate: bool = True, **kwargs):
+        self.deduplicate = deduplicate
+        super().__init__(*args, **kwargs)
 
     def _weak_form_setup(self):
         super()._weak_form_setup()
-        self.n_duplicate_domains_ = drop_duplicate_domains(self)
+        self.n_duplicate_domains_ = (
+            drop_duplicate_domains(self) if self.deduplicate else 0
+        )
 
 
 #: Cached usable test-function counts, keyed by the weak design (grid, support,
@@ -126,6 +138,7 @@ def resolve_ode_test_function_count(
     requested_K: int | None = None,
     H_xt: float | None = None,
     rule_constant: float = 5.0,
+    clamp: bool = True,
 ) -> int:
     """K for a single-trajectory ODE weak design, from the support and the rank.
 
@@ -153,6 +166,11 @@ def resolve_ode_test_function_count(
         probe_library = WeakPDELibrary(K=K, **common_kwargs)
         probe_library.fit([np.zeros((t_values.size, int(n_states)))])
         return probe_library
+
+    if not clamp:
+        # Ask for what the rule says and take it, however degenerate. Only useful
+        # for measuring what the clamp is worth.
+        return K_requested
 
     design_key = (t_values.size, extent, H, common_kwargs.get("p"), int(n_states))
     return usable_test_functions(probe, design_key, K_requested)

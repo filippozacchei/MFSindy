@@ -195,6 +195,7 @@ class HopfMultiTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
     poly_degree: int = 3
     H_xt: float | None = None
     K: int | None = None
+    clamp: bool = True         # cap K at the usable rank and drop duplicate supports
     p: int | None = None
     stlsq_threshold: float = 0.5
     n_ensemble_models: int = 100
@@ -303,12 +304,14 @@ def _hopf_make_weak_library(
         n_states=int(np.asarray(batch.hf[0]).shape[-1]),
         requested_K=cfg.K,
         H_xt=cfg.H_xt,
+        clamp=cfg.clamp,
     )
     if variance_field is None:
-        return DedupedWeakPDELibrary(**common_kwargs)
+        return DedupedWeakPDELibrary(deduplicate=cfg.clamp, **common_kwargs)
     return WeightedWeakPDELibrary(
         spatiotemporal_weights=variance_field,
         whitener_mode=whitener_mode,
+        deduplicate=cfg.clamp,
         **common_kwargs,
     )
 

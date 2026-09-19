@@ -200,6 +200,7 @@ class LorenzMultiTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
     poly_degree: int = 2
     H_xt: float | None = None
     K: int | None = None            # derived from H_xt when None
+    clamp: bool = True         # cap K at the usable rank and drop duplicate supports
     p: int | None = None
     stlsq_threshold: float = 0.5
     n_ensemble_models: int = 100
@@ -320,17 +321,22 @@ def _lorenz_make_weak_library(
         probe_lib.fit([np.zeros((t_values.size, batch.hf[0].shape[-1]))])
         return probe_lib
 
-    common_kwargs["K"] = usable_test_functions(
-        probe,
-        (t_values.size, extent, H, cfg.p, cfg.poly_degree),
-        K_requested,
+    common_kwargs["K"] = (
+        usable_test_functions(
+            probe,
+            (t_values.size, extent, H, cfg.p, cfg.poly_degree),
+            K_requested,
+        )
+        if cfg.clamp
+        else K_requested
     )
 
     if variance_field is None:
-        return DedupedWeakPDELibrary(**common_kwargs)
+        return DedupedWeakPDELibrary(deduplicate=cfg.clamp, **common_kwargs)
     return WeightedWeakPDELibrary(
         spatiotemporal_weights=variance_field,
         whitener_mode=whitener_mode,
+        deduplicate=cfg.clamp,
         **common_kwargs,
     )
 

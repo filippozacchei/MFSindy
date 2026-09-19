@@ -531,6 +531,7 @@ class NSIsothermalMultiTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin
     include_bias: bool = False
     p: int = 2
     K: int | None = None       # derived from H_xt when None
+    clamp: bool = True         # cap K at the usable rank and drop duplicate supports
     K_std: int = 100
     H_xt: list[float] | None = None
 
@@ -641,17 +642,20 @@ def _ns_make_weak_library(
         probe_library.fit([np.zeros(grid.shape[:-1] + (3,))])
         return probe_library
 
-    common_kwargs["K"] = usable_test_functions(
-        probe, grid.shape[:-1] + extents + (tuple(H),), K_requested
+    common_kwargs["K"] = (
+        usable_test_functions(probe, grid.shape[:-1] + extents + (tuple(H),), K_requested)
+        if cfg.clamp
+        else K_requested
     )
     if variance_field is None:
         # Genuinely unweighted, as in the other cases. Passing a field of ones
         # here would still apply the weak-SINDy whitening, which made the HF, LF
         # and MF rungs weighted and identical to PMF.
-        return DedupedWeakPDELibrary(**common_kwargs)
+        return DedupedWeakPDELibrary(deduplicate=cfg.clamp, **common_kwargs)
     return WeightedWeakPDELibrary(
         spatiotemporal_weights=variance_field,
         whitener_mode=whitener_mode,
+        deduplicate=cfg.clamp,
         **common_kwargs,
     )
 

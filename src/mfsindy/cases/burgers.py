@@ -97,6 +97,7 @@ class BurgersMultiTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
     n_hf: int = 1
     H_xt: list[float] | None = None
     K: int | None = None       # derived from H_xt when None
+    clamp: bool = True         # cap K at the usable rank and drop duplicate supports
 
     # relative noise levels (wrt state std)
     noise_lf_rel: float = 0.25
@@ -511,14 +512,19 @@ def _burgers_make_weak_library(
         probe_library.fit([np.zeros((x.size, t.size, 1))])
         return probe_library
 
-    common_kwargs["K"] = usable_test_functions(
-        probe, (x.size, t.size) + extents + (tuple(np.atleast_1d(H)),), K_requested
+    common_kwargs["K"] = (
+        usable_test_functions(
+            probe, (x.size, t.size) + extents + (tuple(np.atleast_1d(H)),), K_requested
+        )
+        if cfg.clamp
+        else K_requested
     )
     if variance_field is None:
-        return DedupedWeakPDELibrary(**common_kwargs)
+        return DedupedWeakPDELibrary(deduplicate=cfg.clamp, **common_kwargs)
     return WeightedWeakPDELibrary(
         spatiotemporal_weights=variance_field,
         whitener_mode=whitener_mode,
+        deduplicate=cfg.clamp,
         **common_kwargs,
     )
 
