@@ -38,7 +38,6 @@ from mfsindy.experiments import (
 )
 from mfsindy.weighted_weak_pde_library import (
     DedupedWeakPDELibrary,
-    usable_test_functions,
     weak_design_report,
     WeightedWeakPDELibrary,
 )
@@ -96,7 +95,7 @@ class BurgersMultiTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
     n_hf: int = 1
     H_xt: list[float] | None = None
     K: int | None = None       # derived from H_xt when None
-    clamp: bool = True         # cap K at the usable rank and drop duplicate supports
+    deduplicate: bool = True   # drop test functions whose support duplicates another's
     p: int | None = None       # test-function polynomial degree
 
     # relative noise levels (wrt state std)
@@ -504,25 +503,13 @@ def _burgers_make_weak_library(
     else:
         domain = float(np.prod([2.0 * h for h in np.atleast_1d(H)]))
         K_requested = max(2, int(round(float(np.prod(extents)) / domain)))
-
-    def probe(K):
-        probe_library = WeakPDELibrary(K=K, **common_kwargs)
-        probe_library.fit([np.zeros((x.size, t.size, 1))])
-        return probe_library
-
-    common_kwargs["K"] = (
-        usable_test_functions(
-            probe, (x.size, t.size) + extents + (tuple(np.atleast_1d(H)),), K_requested
-        )
-        if cfg.clamp
-        else K_requested
-    )
+    common_kwargs["K"] = K_requested
     if variance_field is None:
-        return DedupedWeakPDELibrary(deduplicate=cfg.clamp, **common_kwargs)
+        return DedupedWeakPDELibrary(deduplicate=cfg.deduplicate, **common_kwargs)
     return WeightedWeakPDELibrary(
         spatiotemporal_weights=variance_field,
         whitener_mode=whitener_mode,
-        deduplicate=cfg.clamp,
+        deduplicate=cfg.deduplicate,
         **common_kwargs,
     )
 

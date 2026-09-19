@@ -18,7 +18,6 @@ from mfsindy.cases.lorenz import (
     _lorenz_reference_state_std,
 )
 from mfsindy.weighted_weak_pde_library import WeakCovarianceWarning
-import mfsindy.weighted_weak_pde_library as weak_module
 
 
 def build_library(H_xt, dt=0.01, K=None):
@@ -62,39 +61,22 @@ def test_duplicate_supports_are_dropped():
     assert len(supports) == library.K
 
 
-def test_probe_does_not_disturb_the_placement():
-    """The count is measured with a probe library, which draws domain centres.
+def test_keeping_duplicates_makes_the_covariance_singular():
+    """Deduplication is the whole of the fix, so turning it off must bring the
+    singular covariance back.
 
-    Left unrestored that draw would shift the placement of the library built
-    next, and only when the cache missed -- so the same settings would give
-    different test functions depending on whether they had been measured before.
-    """
-    weak_module._USABLE_K_CACHE.clear()
-    cold = build_library(0.05)
-    warm = build_library(0.05)
-    assert cold.K == warm.K
-    for k in range(cold.K):
-        np.testing.assert_array_equal(
-            np.asarray(cold.inds_k[k][0]), np.asarray(warm.inds_k[k][0])
-        )
-
-
-def test_clamp_false_restores_the_degenerate_design():
-    """The flag must really disable both halves: no rank cap, no duplicate
-    removal, and the singular covariance that follows.
-
-    K is set explicitly here rather than left to the support rule. At coverage 1
-    the rule asks for few enough test functions that the design is benign either
-    way, so a test resting on the default would pass for the wrong reason and
-    stop testing anything the day the rule changed.
+    K is set explicitly rather than left to the support rule. At coverage 1 the
+    rule asks for few enough test functions that the design is benign either way,
+    so a test resting on the default would pass for the wrong reason and stop
+    testing anything the day the rule changed.
     """
     requested = 200
 
-    def build(clamp):
+    def build(deduplicate):
         cfg = LorenzMultiTrajectoryGLSConfig(
             n_hf=1, n_lf=2, H_xt=0.05, dt=0.01, noise_lf_rel=0.25, K=requested
         )
-        cfg.clamp = clamp
+        cfg.deduplicate = deduplicate
         state_std = _lorenz_reference_state_std(cfg)
         noise_hf = cfg.noise_hf_rel * state_std
         batch = _lorenz_batch(0, cfg, noise_hf, cfg.noise_lf_rel * state_std)
@@ -105,16 +87,16 @@ def test_clamp_false_restores_the_degenerate_design():
             library.fit_transform([batch.hf[0]])
         return library
 
-    unclamped = build(False)
-    assert unclamped.K == requested                 # nothing capped
-    assert unclamped.n_duplicate_domains_ == 0      # nothing dropped
-    assert unclamped.cov_rank_deficit_ > 0          # so the covariance is singular
+    kept = build(False)
+    assert kept.K == requested                      # every request kept
+    assert kept.n_duplicate_domains_ == 0           # including the copies
+    assert kept.cov_rank_deficit_ > 0               # so the covariance is singular
 
-    clamped = build(True)
-    assert clamped.K < requested
-    assert clamped.n_duplicate_domains_ > 0
-    assert clamped.cov_rank_deficit_ == 0
+    deduped = build(True)
+    assert deduped.K < requested
+    assert deduped.n_duplicate_domains_ > 0
+    assert deduped.cov_rank_deficit_ == 0
 
 
-def test_clamp_defaults_to_on():
-    assert LorenzMultiTrajectoryGLSConfig().clamp is True
+def test_deduplication_defaults_to_on():
+    assert LorenzMultiTrajectoryGLSConfig().deduplicate is True

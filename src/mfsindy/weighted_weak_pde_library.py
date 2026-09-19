@@ -69,67 +69,6 @@ class DedupedWeakPDELibrary(WeakPDELibrary):
         self.n_duplicate_domains_ = (
             drop_duplicate_domains(self) if self.deduplicate else 0
         )
-
-
-#: Cached usable test-function counts, keyed by the weak design (grid, support,
-#: polynomial degree, requested K). The count depends only on that design, not on
-#: the data, so every trajectory and Monte Carlo seed reuses one measurement.
-_USABLE_K_CACHE: dict = {}
-
-
-def weak_design_rank(library) -> int:
-    """How many of a built library's test functions give independent equations.
-
-    The weak covariance is ``B B^T`` for the weight matrix ``B``, one row per test
-    function, so ``rank(Sigma) = rank(B)`` and the redundancy can be measured
-    before any data is fitted.
-
-    Rows go dependent two ways. pysindy recentres each domain onto grid points,
-    so two centres falling in the same interval produce byte-identical rows --
-    for narrow supports the rank equals the number of distinct supports exactly.
-    Wide supports lose further rank as overlapping bumps become near-dependent.
-    Neither is predictable from a formula worth trusting, so this measures it.
-
-    ``B`` is held sparse and only ``B B^T`` is formed densely. Each test function
-    touches just the grid points under its support, so ``B`` is mostly zeros, and
-    a dense copy is unaffordable in more than one dimension: a 3D flow grid of
-    1e5 points with 1e3 test functions would need ~800 MB and an SVD to match.
-    ``B B^T`` is K x K whatever the grid.
-
-    The rank tolerance matches the one the whitener reports, so the count used to
-    choose K is the same count that decides whether the covariance is flagged as
-    singular.
-    """
-
-    from scipy.sparse import csr_matrix
-
-    K = int(library.K)
-    grid_shape = tuple(np.asarray(library.spatiotemporal_grid).shape[:-1])
-    n_grid = int(np.prod(grid_shape))
-
-    values: list[np.ndarray] = []
-    columns: list[np.ndarray] = []
-    indptr = np.zeros(K + 1, dtype=np.int64)
-    for k in range(K):
-        axes = [np.asarray(ax, dtype=np.intp) for ax in library.inds_k[k]]
-        mesh = np.meshgrid(*axes, indexing="ij")
-        flat = np.ravel_multi_index(tuple(mesh), dims=grid_shape, order="C").ravel(order="C")
-        weights = np.asarray(library.fulltweights[k], dtype=float).ravel(order="C")
-        columns.append(flat)
-        values.append(weights)
-        indptr[k + 1] = indptr[k] + flat.size
-
-    B = csr_matrix(
-        (np.concatenate(values), np.concatenate(columns), indptr), shape=(K, n_grid)
-    )
-    gram = (B @ B.T).toarray()
-
-    eigenvalues = np.clip(np.linalg.eigvalsh(gram)[::-1], 0.0, None)
-    if eigenvalues.size == 0 or eigenvalues[0] <= 0.0:
-        return 0
-    return int(np.count_nonzero(eigenvalues > 1e-10 * eigenvalues[0]))
-
-
 def weak_validity_ratio(library, jacobian_norm) -> np.ndarray:
     """kappa per test function: how much of the residual the covariance ignores.
 
@@ -203,36 +142,6 @@ def weak_design_report(library, K_requested: int | None = None) -> dict:
         if value is not None:
             report[name] = float(value) if "cond" in name else int(value)
     return report
-
-
-def usable_test_functions(build_probe, design_key, K_requested: int) -> int:
-    """Clamp a requested test-function count to the number that is usable.
-
-    Asking for more test functions than the weak design supports does not add
-    information: the surplus equations are linear combinations of the others,
-    and whitening by a covariance with those directions in it divides by
-    round-off, amplifying noise by ~1e6. Clamping keeps the request honest.
-
-    ``build_probe(K)`` must return a built library at that count; it is called at
-    most once per distinct ``design_key``.
-    """
-
-    K_requested = int(K_requested)
-    key = (design_key, K_requested)
-    if key not in _USABLE_K_CACHE:
-        # Building the probe places domains, which draws from the global RNG.
-        # Left alone it would shift the placement of the library built next, and
-        # only on a cache miss -- so the same configuration would give different
-        # test functions depending on whether it had been measured before.
-        rng_state = np.random.get_state()
-        try:
-            rank = weak_design_rank(build_probe(K_requested))
-        finally:
-            np.random.set_state(rng_state)
-        _USABLE_K_CACHE[key] = max(1, min(K_requested, rank))
-    return _USABLE_K_CACHE[key]
-
-
 class WeightedWeakPDELibrary(DedupedWeakPDELibrary):
     """
     WeakPDELibrary with GLS whitening via a Cholesky factor built from the

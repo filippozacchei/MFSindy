@@ -28,7 +28,6 @@ from mfsindy.experiments import (
 from mfsindy.weighted_weak_pde_library import (
     DedupedWeakPDELibrary,
     WeightedWeakPDELibrary,
-    usable_test_functions,
     weak_design_report,
 )
 
@@ -200,7 +199,7 @@ class LorenzMultiTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
     poly_degree: int = 2
     H_xt: float | None = None
     K: int | None = None            # derived from H_xt when None
-    clamp: bool = True         # cap K at the usable rank and drop duplicate supports
+    deduplicate: bool = True   # drop test functions whose support duplicates another's
     p: int | None = None
     stlsq_threshold: float = 0.5
     n_ensemble_models: int = 100
@@ -309,33 +308,14 @@ def _lorenz_make_weak_library(
         K_requested = int(cfg.K)
     else:
         K_requested = max(2, int(round(extent / (2.0 * H))))
-
-    # Then clamp to what the weak design actually supports. Asking for more test
-    # functions than that yields equations that are linear combinations of the
-    # others, and whitening by the resulting singular covariance divides by
-    # round-off. At T=1, dt=0.01, H_xt=0.05 the rule above asks for 100 where 54
-    # exist.
-    def probe(K):
-        probe_lib = WeakPDELibrary(K=K, **common_kwargs)
-        probe_lib.fit([np.zeros((t_values.size, batch.hf[0].shape[-1]))])
-        return probe_lib
-
-    common_kwargs["K"] = (
-        usable_test_functions(
-            probe,
-            (t_values.size, extent, H, cfg.p, cfg.poly_degree),
-            K_requested,
-        )
-        if cfg.clamp
-        else K_requested
-    )
+    common_kwargs["K"] = K_requested
 
     if variance_field is None:
-        return DedupedWeakPDELibrary(deduplicate=cfg.clamp, **common_kwargs)
+        return DedupedWeakPDELibrary(deduplicate=cfg.deduplicate, **common_kwargs)
     return WeightedWeakPDELibrary(
         spatiotemporal_weights=variance_field,
         whitener_mode=whitener_mode,
-        deduplicate=cfg.clamp,
+        deduplicate=cfg.deduplicate,
         **common_kwargs,
     )
 

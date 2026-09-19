@@ -40,7 +40,6 @@ from mfsindy.experiments import (
 from mfsindy.weighted_weak_pde_library import (
     DedupedWeakPDELibrary,
     WeightedWeakPDELibrary,
-    usable_test_functions,
     weak_design_report,
 )
 
@@ -530,7 +529,7 @@ class NSIsothermalMultiTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin
     include_bias: bool = False
     p: int = 2
     K: int | None = None       # derived from H_xt when None
-    clamp: bool = True         # cap K at the usable rank and drop duplicate supports
+    deduplicate: bool = True   # drop test functions whose support duplicates another's
     K_std: int = 100
     H_xt: list[float] | None = None
 
@@ -634,26 +633,16 @@ def _ns_make_weak_library(
     else:
         domain = float(np.prod([2.0 * h for h in np.atleast_1d(H)]))
         K_requested = max(2, int(round(float(np.prod(extents)) / domain)))
-
-    def probe(K):
-        probe_library = WeakPDELibrary(K=K, **common_kwargs)
-        probe_library.fit([np.zeros(grid.shape[:-1] + (3,))])
-        return probe_library
-
-    common_kwargs["K"] = (
-        usable_test_functions(probe, grid.shape[:-1] + extents + (tuple(H),), K_requested)
-        if cfg.clamp
-        else K_requested
-    )
+    common_kwargs["K"] = K_requested
     if variance_field is None:
         # Genuinely unweighted, as in the other cases. Passing a field of ones
         # here would still apply the weak-SINDy whitening, which made the HF, LF
         # and MF rungs weighted and identical to PMF.
-        return DedupedWeakPDELibrary(deduplicate=cfg.clamp, **common_kwargs)
+        return DedupedWeakPDELibrary(deduplicate=cfg.deduplicate, **common_kwargs)
     return WeightedWeakPDELibrary(
         spatiotemporal_weights=variance_field,
         whitener_mode=whitener_mode,
-        deduplicate=cfg.clamp,
+        deduplicate=cfg.deduplicate,
         **common_kwargs,
     )
 
