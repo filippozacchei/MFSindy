@@ -27,6 +27,7 @@ from mfsindy.experiments import (
 from mfsindy.weighted_weak_pde_library import (
     DedupedWeakPDELibrary,
     weak_design_report,
+    weak_validity_ratio,
     WeightedWeakPDELibrary,
 )
 
@@ -348,6 +349,19 @@ def _hopf_fit_multi_trajectory_weak_gls_models(
     )
 
 
+def _hopf_jacobian_norm(trajectory: np.ndarray, cfg) -> np.ndarray:
+    """|grad F| along the trajectory, for the covariance-validity ratio."""
+
+    x, y = (np.asarray(trajectory, dtype=float)[:, i] for i in range(2))
+    n = x.size
+    J = np.zeros((n, 2, 2))
+    J[:, 0, 0] = cfg.mu - 3.0 * x**2 - y**2
+    J[:, 0, 1] = -cfg.omega - 2.0 * x * y
+    J[:, 1, 0] = cfg.omega - 2.0 * x * y
+    J[:, 1, 1] = cfg.mu - x**2 - 3.0 * y**2
+    return np.linalg.norm(J, ord=2, axis=(1, 2))
+
+
 def hopf_weak_design(
     cfg: HopfMultiTrajectoryGLSConfig,
     *,
@@ -373,7 +387,15 @@ def hopf_weak_design(
     variance_field = np.full(batch.hf[0].shape[:-1], noise_hf_abs**2, dtype=float)
     library = _hopf_make_weak_library(batch, cfg, variance_field=variance_field)
     library.fit_transform([batch.hf[0]])
-    return weak_design_report(library, K_requested)
+
+    report = weak_design_report(library, K_requested)
+    # The covariance model keeps only the derivative-driven term and drops the
+    # one carrying the library Jacobian; kappa is the ratio of the two, and the
+    # approximation holds where it is small.
+    kappa = weak_validity_ratio(library, _hopf_jacobian_norm(batch.hf[0], cfg))
+    report["kappa_median"] = float(np.median(kappa))
+    report["kappa_max"] = float(kappa.max())
+    return report
 
 
 def run_hopf_multi_trajectory_gls_experiment(

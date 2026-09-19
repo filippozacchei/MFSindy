@@ -8,6 +8,8 @@ import os
 from dataclasses import dataclass
 from typing import Callable, Dict, List, Tuple, Sequence
 
+import inspect
+
 import numpy as np
 import pandas as pd
 from scipy.integrate import solve_ivp
@@ -29,6 +31,7 @@ from mfsindy.weighted_weak_pde_library import (
     DedupedWeakPDELibrary,
     WeightedWeakPDELibrary,
     weak_design_report,
+    weak_validity_ratio,
 )
 
 LORENZ_STATE_NAMES = ("x", "y", "z")
@@ -390,6 +393,33 @@ def run_lorenz_multi_trajectory_gls_experiment(
     )
 
 
+def _lorenz_jacobian_norm(trajectory: np.ndarray, cfg=None) -> np.ndarray:
+    """|grad F| along the trajectory, for the covariance-validity ratio.
+
+    The system parameters are not config fields; they are the defaults of
+    ``lorenz``, so they are read from its signature rather than repeated here.
+    """
+
+    del cfg
+    defaults = inspect.signature(lorenz).parameters
+    sigma = float(defaults["sigma"].default)
+    rho = float(defaults["rho"].default)
+    beta = float(defaults["beta"].default)
+
+    x, y, z = (np.asarray(trajectory, dtype=float)[:, i] for i in range(3))
+    n = x.size
+    J = np.zeros((n, 3, 3))
+    J[:, 0, 0] = -sigma
+    J[:, 0, 1] = sigma
+    J[:, 1, 0] = rho - z
+    J[:, 1, 1] = -1.0
+    J[:, 1, 2] = -x
+    J[:, 2, 0] = y
+    J[:, 2, 1] = x
+    J[:, 2, 2] = -beta
+    return np.linalg.norm(J, ord=2, axis=(1, 2))
+
+
 def lorenz_weak_design(
     cfg: LorenzMultiTrajectoryGLSConfig,
     *,
@@ -418,7 +448,15 @@ def lorenz_weak_design(
     variance_field = np.full(batch.hf[0].shape[:-1], noise_hf_abs**2, dtype=float)
     library = _lorenz_make_weak_library(batch, cfg, variance_field=variance_field)
     library.fit_transform([batch.hf[0]])
-    return weak_design_report(library, K_requested)
+
+    report = weak_design_report(library, K_requested)
+    # The covariance model keeps only the derivative-driven term and drops the
+    # one carrying the library Jacobian; kappa is the ratio of the two, and the
+    # approximation holds where it is small.
+    kappa = weak_validity_ratio(library, _lorenz_jacobian_norm(batch.hf[0], cfg))
+    report["kappa_median"] = float(np.median(kappa))
+    report["kappa_max"] = float(kappa.max())
+    return report
 
 
 def fit_lorenz_multi_trajectory_rollout_models(

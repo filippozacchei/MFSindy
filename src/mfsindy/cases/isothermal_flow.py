@@ -40,6 +40,7 @@ from mfsindy.experiments import (
 from mfsindy.weighted_weak_pde_library import (
     DedupedWeakPDELibrary,
     WeightedWeakPDELibrary,
+    pde_scale_separation_ratio,
     weak_design_report,
 )
 
@@ -782,7 +783,16 @@ def ns_isothermal_weak_design(
         weak_seed=int(cfg.seed_base if weak_seed is None else weak_seed),
     )
     library.fit_transform([np.zeros(field_shape + (3,))])
-    return weak_design_report(library, K_requested)
+
+    report = weak_design_report(library, K_requested)
+    # For a PDE the neglected term is controlled by scale separation between
+    # the temporal and spatial supports rather than by the Jacobian, so the
+    # validity ratio is analytic: h_t^2 * h_x^(-2m).
+    widths = list(np.atleast_1d(H))
+    report["kappa_scale_sep"] = pde_scale_separation_ratio(
+        widths[-1], widths[:-1], cfg.derivative_order
+    )
+    return report
 
 
 def run_ns_isothermal_multi_trajectory_gls_experiment(

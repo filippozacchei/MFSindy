@@ -38,6 +38,7 @@ from mfsindy.experiments import (
 )
 from mfsindy.weighted_weak_pde_library import (
     DedupedWeakPDELibrary,
+    pde_scale_separation_ratio,
     weak_design_report,
     WeightedWeakPDELibrary,
 )
@@ -587,7 +588,16 @@ def burgers_weak_design(
     variance_field = np.ones(field_shape, dtype=float)
     library = _burgers_make_weak_library(batch, cfg, variance_field=variance_field)
     library.fit_transform([batch.hf[0]])
-    return weak_design_report(library, K_requested)
+
+    report = weak_design_report(library, K_requested)
+    # For a PDE the neglected term is controlled by scale separation between
+    # the temporal and spatial supports rather than by the Jacobian, so the
+    # validity ratio is analytic: h_t^2 * h_x^(-2m).
+    widths = list(np.atleast_1d(H))
+    report["kappa_scale_sep"] = pde_scale_separation_ratio(
+        widths[-1], widths[:-1], cfg.derivative_order
+    )
+    return report
 
 
 def run_burgers_multi_trajectory_gls_experiment(

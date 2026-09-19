@@ -35,6 +35,7 @@ from mfsindy.experiments import (
 from mfsindy.weighted_weak_pde_library import (
     DedupedWeakPDELibrary,
     weak_design_report,
+    weak_validity_ratio,
     WeightedWeakPDELibrary,
 )
 
@@ -402,6 +403,15 @@ def _pendulum_fit_multi_trajectory_weak_gls_models(
     )
 
 
+def _pendulum_jacobian_norm(trajectory: np.ndarray, cfg) -> np.ndarray:
+    """|grad F| along the trajectory. The linearised pendulum is linear, so this
+    is constant, but it is returned per sample for a common interface."""
+
+    n = np.asarray(trajectory, dtype=float).shape[0]
+    J = np.array([[0.0, 1.0], [-cfg.g / cfg.L, -cfg.c]])
+    return np.full(n, float(np.linalg.norm(J, ord=2)))
+
+
 def pendulum_weak_design(
     cfg: PendulumMultiTrajectoryGLSConfig,
     *,
@@ -427,7 +437,15 @@ def pendulum_weak_design(
     variance_field = np.full(batch.hf[0].shape[:-1], noise_hf_abs**2, dtype=float)
     library = _pendulum_make_weak_library(batch, cfg, variance_field=variance_field)
     library.fit_transform([batch.hf[0]])
-    return weak_design_report(library, K_requested)
+
+    report = weak_design_report(library, K_requested)
+    # The covariance model keeps only the derivative-driven term and drops the
+    # one carrying the library Jacobian; kappa is the ratio of the two, and the
+    # approximation holds where it is small.
+    kappa = weak_validity_ratio(library, _pendulum_jacobian_norm(batch.hf[0], cfg))
+    report["kappa_median"] = float(np.median(kappa))
+    report["kappa_max"] = float(kappa.max())
+    return report
 
 
 def run_pendulum_multi_trajectory_gls_experiment(
