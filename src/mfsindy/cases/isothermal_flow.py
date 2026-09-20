@@ -26,6 +26,7 @@ from scipy.integrate import solve_ivp
 import pysindy as ps
 from pysindy.feature_library import WeakPDELibrary
 
+from mfsindy.experiments.multi_trajectory import _variance_signature
 from mfsindy.experiments import (
     select_validation_support,
     ValidationSupport,
@@ -532,8 +533,10 @@ class NSIsothermalMultiTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin
 
     # grid / time
     N: int = 64
-    Nt: int = 1000
-    Nt_std: int = 500
+    # linspace(0, T, Nt) spaces samples by T/(Nt-1), so 1001 -- not 1000 --
+    # is what makes dt exactly 1e-3 at T=1.
+    Nt: int = 1001
+    Nt_std: int = 1001
     L: float = 5.0
     T: float = 1.0
     T_std : float = 1.0
@@ -722,6 +725,33 @@ def _ns_fit_multi_trajectory_weak_gls_models(
     grid_shape = tuple(grid.shape[:-1])
     hf_variance = np.full(grid_shape, noise_hf_abs**2, dtype=float)
     lf_variance = np.full(grid_shape, noise_lf_abs**2, dtype=float)
+    # One library per group, not per trajectory. Its domain placement,
+    # quadrature weights and covariance Cholesky depend on the grid, the seed,
+    # the support and the variance field -- all fixed within a group -- so only
+    # the transform depends on the data. Rebuilding per trajectory repeated that
+    # work 11 times over for a 10-LF group, and the tuner sweeps the grid 135
+    # times, which is where the isothermal case spent its hours.
+    libraries: Dict[Any, Any] = {}
+
+    def library_for(variance_field: np.ndarray | None, whitener_mode: str, sample):
+        signature = _variance_signature(variance_field)
+        key = None if signature is None else (signature, whitener_mode)
+        if key is not None and key in libraries:
+            return libraries[key]
+        library = _ns_make_weak_library(
+            cfg,
+            grid,
+            variance_field=variance_field,
+            weak_seed=weak_seed,
+            whitener_mode=whitener_mode,
+        )
+        # Fit once: the geometry does not depend on which trajectory is passed,
+        # and refitting would redraw the domains without reseeding.
+        library.fit([sample])
+        if key is not None:
+            libraries[key] = library
+        return library
+
     def build_group(
         trajectories: list[np.ndarray],
         *,
@@ -731,16 +761,9 @@ def _ns_fit_multi_trajectory_weak_gls_models(
         theta_blocks: list[np.ndarray] = []
         rhs_blocks: list[np.ndarray] = []
         for traj in trajectories:
-            theta, rhs = _ns_build_weak_block(
-                traj,
-                cfg,
-                grid=grid,
-                variance_field=variance_field,
-                weak_seed=weak_seed,
-                whitener_mode=whitener_mode,
-            )
-            theta_blocks.append(theta)
-            rhs_blocks.append(rhs)
+            library = library_for(variance_field, whitener_mode, traj)
+            theta_blocks.append(np.asarray(library.transform([traj])[0]))
+            rhs_blocks.append(np.asarray(library.convert_u_dot_integral(traj)))
         return theta_blocks, rhs_blocks
 
     def group_builder(fidelity: str, weighting: str):

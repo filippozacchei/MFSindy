@@ -145,16 +145,63 @@ def _median_coefficients(opt: ps.EnsembleOptimizer) -> np.ndarray:
     return np.asarray(opt.coef_)
 
 
+def _variance_signature(variance_field: np.ndarray | None):
+    """A key for the library a variance field produces, or None if unshareable.
+
+    Part I weights every sample of a group alike -- ``np.full(shape, sigma**2)``
+    -- so one library serves the whole group. A field that varies sample to
+    sample would need its own whitener, and returning None there keeps this from
+    silently handing back the wrong one.
+    """
+
+    if variance_field is None:
+        return ("plain",)
+    array = np.asarray(variance_field)
+    low, high = float(array.min()), float(array.max())
+    if low != high:
+        return None
+    return (array.shape, low)
+
+
 def fit_multi_trajectory_weak_gls_models(
     batch: MultiTrajectoryGLSData,
     optimizer_factory,
     *,
-    weak_block_builder: Callable[[np.ndarray, np.ndarray | None], tuple[np.ndarray, np.ndarray]],
+    weak_library_builder: Callable[..., Any],
     noise_hf_abs: float,
     noise_lf_abs: float,
     methods: Sequence[str] | None = None,
 ) -> Dict[str, np.ndarray]:
-    """Fit the requested rungs directly in weak space by stacking per-trajectory blocks."""
+    """Fit the requested rungs directly in weak space by stacking per-trajectory blocks.
+
+    ``weak_library_builder(variance_field, whitener_mode=...)`` returns the weak
+    library for one group. It is called once per group rather than once per
+    trajectory: the domain placement, the quadrature weights and the covariance
+    Cholesky depend on the grid, the seed, the support and the variance field,
+    all of which a group holds fixed -- only the transform depends on the data.
+    Rebuilding per trajectory repeated that work 11 times over for a 10-LF
+    group, which dominated tuning, where the grid is swept 135 times over.
+
+    Reusing one library per group also enforces what the shared ``weak_seed``
+    already intends: every trajectory in a group is integrated against the same
+    test functions. Note the library is fitted once and then only transformed --
+    calling ``fit`` again would redraw the domains from the global RNG without
+    reseeding, quietly changing the test functions mid-group.
+    """
+
+    libraries: Dict[Any, Any] = {}
+
+    def library_for(variance_field: np.ndarray | None, whitener_mode: str, sample: np.ndarray):
+        signature = _variance_signature(variance_field)
+        key = None if signature is None else (signature, whitener_mode)
+        if key is not None and key in libraries:
+            return libraries[key]
+        library = weak_library_builder(variance_field, whitener_mode=whitener_mode)
+        # Fit once: the geometry does not depend on which trajectory is passed.
+        library.fit([sample])
+        if key is not None:
+            libraries[key] = library
+        return library
 
     def build_group(fidelity: str, weighting: str):
         trajectories = batch.hf if fidelity == "hf" else batch.lf
@@ -175,9 +222,9 @@ def fit_multi_trajectory_weak_gls_models(
                 if weighting == "plain"
                 else np.full(traj.shape[:-1], noise_abs**2, dtype=float)
             )
-            theta, rhs = weak_block_builder(traj, variance_field, whitener_mode=whitener_mode)
-            theta_blocks.append(theta)
-            rhs_blocks.append(rhs)
+            library = library_for(variance_field, whitener_mode, traj)
+            theta_blocks.append(np.asarray(library.transform([traj])[0]))
+            rhs_blocks.append(np.asarray(library.convert_u_dot_integral(traj)))
         return theta_blocks, rhs_blocks
 
     def fit_stacked(theta_blocks: list[np.ndarray], rhs_blocks: list[np.ndarray]) -> np.ndarray:

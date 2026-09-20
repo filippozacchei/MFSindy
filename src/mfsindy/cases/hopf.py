@@ -335,23 +335,19 @@ def _hopf_fit_multi_trajectory_weak_gls_models(
 ) -> Dict[str, np.ndarray]:
     del t_argument
 
-    def weak_block_builder(
-        traj: np.ndarray,
+    def weak_library_builder(
         variance_field: np.ndarray | None,
         *,
         whitener_mode: str = "full",
     ):
-        lib = _hopf_make_weak_library(
+        return _hopf_make_weak_library(
             batch, cfg, variance_field=variance_field, whitener_mode=whitener_mode
         )
-        theta = np.asarray(lib.fit_transform([traj])[0])
-        rhs = np.asarray(lib.convert_u_dot_integral(traj))
-        return theta, rhs
 
     return fit_multi_trajectory_weak_gls_models(
         batch,
         optimizer_factory,
-        weak_block_builder=weak_block_builder,
+        weak_library_builder=weak_library_builder,
         noise_hf_abs=noise_hf_abs,
         noise_lf_abs=noise_lf_abs,
         methods=methods,

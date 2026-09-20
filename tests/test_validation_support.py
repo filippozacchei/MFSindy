@@ -288,3 +288,64 @@ def test_ns_reference_derives_K_from_the_support():
     )
     assert np.asarray(C_true).shape[0] == 3
     assert np.all(np.isfinite(np.asarray(C_true)))
+
+
+# ---------------------------------------------------------------------------
+# Caching must not change a single number
+# ---------------------------------------------------------------------------
+
+
+def test_group_library_cache_is_bit_identical():
+    """One library per group must give exactly what one per trajectory gave.
+
+    The cached parts -- domain placement, quadrature weights, covariance
+    Cholesky -- depend only on things a group holds fixed, so reuse is a pure
+    saving. Anything else here is a silent change to published numbers.
+    """
+
+    import mfsindy.experiments.multi_trajectory as M
+    from mfsindy.cases.lorenz import (
+        _lorenz_batch,
+        _lorenz_fit_multi_trajectory_weak_gls_models,
+        _lorenz_reference_state_std,
+    )
+
+    cfg = LorenzMultiTrajectoryGLSConfig(n_hf=2, n_lf=3, H_xt=0.1, n_ensemble_models=4)
+    std = _lorenz_reference_state_std(cfg)
+    hf_abs, lf_abs = cfg.noise_hf_rel * std, cfg.noise_lf_rel * std
+    batch = _lorenz_batch(0, cfg, hf_abs, lf_abs)
+
+    cached = _lorenz_fit_multi_trajectory_weak_gls_models(
+        batch, cfg, cfg.make_optimizer, t_argument=cfg.dt,
+        noise_hf_abs=hf_abs, noise_lf_abs=lf_abs,
+    )
+    # Defeat the cache: a signature of None is never shared.
+    original = M._variance_signature
+    M._variance_signature = lambda field: None
+    try:
+        per_trajectory = _lorenz_fit_multi_trajectory_weak_gls_models(
+            batch, cfg, cfg.make_optimizer, t_argument=cfg.dt,
+            noise_hf_abs=hf_abs, noise_lf_abs=lf_abs,
+        )
+    finally:
+        M._variance_signature = original
+
+    assert set(cached) == set(per_trajectory)
+    for rung in cached:
+        np.testing.assert_array_equal(
+            cached[rung], per_trajectory[rung],
+            err_msg=f"library caching changed the {rung} coefficients",
+        )
+
+
+def test_heteroscedastic_variance_is_never_shared():
+    """A field that varies sample to sample needs its own whitener."""
+
+    from mfsindy.experiments.multi_trajectory import _variance_signature
+
+    assert _variance_signature(None) == ("plain",)
+    flat = np.full((4, 3), 0.25)
+    assert _variance_signature(flat) == ((4, 3), 0.25)
+    varying = flat.copy()
+    varying[0, 0] = 0.5
+    assert _variance_signature(varying) is None

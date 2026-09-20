@@ -32,6 +32,8 @@ from .multi_trajectory import (
 )
 from .tuning import (
     RungTuning,
+    TuningArtifacts,
+    load_tuning,
     TUNING_SEED_OFFSET,
     run_with_tuned_configs,
     save_tuning,
@@ -62,6 +64,8 @@ from .weak_validation import (
 
 __all__ = [
     "RungTuning",
+    "TuningArtifacts",
+    "load_tuning",
     "TUNING_SEED_OFFSET",
     "run_with_tuned_configs",
     "save_tuning",

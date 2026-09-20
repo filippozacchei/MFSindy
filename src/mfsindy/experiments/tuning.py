@@ -240,6 +240,13 @@ def run_with_tuned_configs(
     Each run fits only the rung its config was tuned for, so no strategy is
     reported on another's hyperparameters. Returns the concatenated long-format
     error frame.
+
+    The data is regenerated per rung. Sharing it looks tempting -- only the
+    support and the threshold are tuned, and the dataset builder reads neither --
+    but every rung sweeps the runs in the same order, so a cache must hold the
+    whole sweep to hit at all. On the isothermal flow at 64x64 that is 27 GB,
+    which is why this stays simple. Inverting the loops -- runs outside, rungs
+    inside -- is the fix that needs no memory.
     """
 
     frames = []
@@ -269,11 +276,18 @@ def save_tuning(
     param_grid: Mapping[str, Sequence[Any]],
     table: pd.DataFrame | None = None,
     fixed: Mapping[str, Any] | None = None,
+    kappa_table: pd.DataFrame | None = None,
 ) -> Path:
     """Write the selection, the grid and the fixed settings to JSON.
 
     ``fixed`` should carry everything held constant but reportable: test-function
     family and order, ensemble size, subsample fraction, library degree, seeds.
+
+    Everything a notebook needs to redisplay the search goes in this one file --
+    the score surface for the heatmap and the kappa table included -- so the
+    presentation can be reopened without rerunning the search. A CSV would have
+    done for the ODE cases, but the PDE grids tune a vector support and a list
+    does not survive a round trip through CSV.
     """
 
     path = Path(path)
@@ -285,5 +299,50 @@ def save_tuning(
     }
     if table is not None:
         payload["scores"] = table.to_dict(orient="records")
+    if kappa_table is not None:
+        payload["kappa_table"] = kappa_table.to_dict(orient="records")
     path.write_text(json.dumps(payload, indent=2, default=str))
     return path
+
+
+@dataclass
+class TuningArtifacts:
+    """Everything :func:`save_tuning` wrote, read back in usable form."""
+
+    selections: Dict[str, RungTuning]
+    score_table: pd.DataFrame
+    kappa_table: pd.DataFrame | None
+    param_grid: Dict[str, Any]
+    fixed: Dict[str, Any]
+
+
+def load_tuning(path: str | Path) -> TuningArtifacts:
+    """Read a tuning record back, rebuilding the selections as objects.
+
+    The selections come back as :class:`RungTuning` rather than dictionaries so
+    that :func:`mfsindy.plots.tuning_heatmap` and the restriction report work on
+    a loaded record exactly as they do on a fresh one -- the notebook should not
+    care whether the search just ran or ran last week.
+    """
+
+    payload = json.loads(Path(path).read_text())
+    selections: Dict[str, RungTuning] = {}
+    for rung, entry in payload.get("selection", {}).items():
+        selections[rung] = RungTuning(
+            rung=rung,
+            best_params=dict(entry.get("best_params", {})),
+            best_score=float(entry.get("best_score", float("nan"))),
+            at_boundary=dict(entry.get("at_grid_boundary", {})),
+            restricted=bool(entry.get("restricted", False)),
+            unrestricted_best_params=entry.get("unrestricted_best_params"),
+            unrestricted_best_score=entry.get("unrestricted_best_score"),
+        )
+    scores = payload.get("scores")
+    kappa = payload.get("kappa_table")
+    return TuningArtifacts(
+        selections=selections,
+        score_table=pd.DataFrame(scores if scores is not None else []),
+        kappa_table=None if kappa is None else pd.DataFrame(kappa),
+        param_grid=dict(payload.get("param_grid", {})),
+        fixed=dict(payload.get("fixed", {})),
+    )

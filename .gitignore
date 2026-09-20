@@ -12,7 +12,6 @@ __pycache__/
 *.mov
 *.tex
 *.key
-*.csv
 *.npz
 
 *partial_movie_files*
