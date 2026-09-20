@@ -349,3 +349,60 @@ def test_heteroscedastic_variance_is_never_shared():
     varying = flat.copy()
     varying[0, 0] = 0.5
     assert _variance_signature(varying) is None
+
+
+# ---------------------------------------------------------------------------
+# The isothermal benchmark scores against the equations, not against a fit
+# ---------------------------------------------------------------------------
+
+
+def test_analytic_ns_coefficients_match_the_solver():
+    """Every term of ``compressible``, with the coefficients it actually uses.
+
+    The old reference was a weak-SINDy fit of the clean flow, which made the
+    benchmark circular and was wrong besides. These come from the RHS itself,
+    so they are checked against it term by term rather than against another fit.
+    """
+
+    from mfsindy.cases.isothermal_flow import (
+        NSIsothermalMultiTrajectoryGLSConfig,
+        build_true_ns_isothermal_coefficients,
+    )
+
+    cfg = NSIsothermalMultiTrajectoryGLSConfig(RT=2.0, mu=3.0)
+    names = [
+        "uu_1", "vu_2", "rho^-1rho_1", "rho^-1u_11", "rho^-1u_22",
+        "uv_1", "vv_2", "rho^-1rho_2", "rho^-1v_11", "rho^-1v_22",
+        "urho_1", "vrho_2", "rhou_1", "rhov_2", "spurious",
+    ]
+    C = build_true_ns_isothermal_coefficients(names, RT=cfg.RT, mu=cfg.mu)
+    at = lambda state, name: C[state, names.index(name)]
+
+    # u_t = -u u_x - v u_y - RT rho^-1 rho_x + mu rho^-1 (u_xx + u_yy)
+    assert at(0, "uu_1") == -1.0 and at(0, "vu_2") == -1.0
+    assert at(0, "rho^-1rho_1") == -2.0            # -RT
+    assert at(0, "rho^-1u_11") == 3.0 and at(0, "rho^-1u_22") == 3.0   # mu
+    # v_t is the same equation with the axes swapped
+    assert at(1, "uv_1") == -1.0 and at(1, "vv_2") == -1.0
+    assert at(1, "rho^-1rho_2") == -2.0
+    assert at(1, "rho^-1v_11") == 3.0 and at(1, "rho^-1v_22") == 3.0
+    # rho_t = -(u rho)_x - (v rho)_y, expanded
+    for name in ("urho_1", "vrho_2", "rhou_1", "rhov_2"):
+        assert at(2, name) == -1.0
+    # a leading library name is the FUNCTION factor: rhou_1 is rho*u_x while
+    # urho_1 is u*rho_x. Both are real, and easy to transpose.
+    assert at(0, "rhou_1") == 0.0 and at(1, "rhou_1") == 0.0
+    # nothing leaks into features the equations do not use
+    assert at(0, "spurious") == at(1, "spurious") == at(2, "spurious") == 0.0
+    assert [int((np.abs(C[s]) > 0).sum()) for s in range(3)] == [5, 5, 4]
+
+
+def test_missing_library_term_is_not_silently_dropped():
+    """A library that cannot express the physics must fail, not truncate truth."""
+
+    from mfsindy.cases.isothermal_flow import build_true_ns_isothermal_coefficients
+
+    with pytest.raises(KeyError, match="rho\\^-1u_22"):
+        build_true_ns_isothermal_coefficients(
+            ["uu_1", "vu_2", "rho^-1rho_1", "rho^-1u_11"], RT=1.0, mu=1.0
+        )

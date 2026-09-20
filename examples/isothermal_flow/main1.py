@@ -70,8 +70,8 @@ def make_config(**overrides) -> NSIsothermalMultiTrajectoryGLSConfig:
 
 
 def search_grid(cfg) -> dict:
-    h_xy = [cfg.L / 10.0]
-    h_t = [cfg.T / 50.0]
+    h_xy = [cfg.L / 5.0]
+    h_t = [cfg.T / 20.0]
     return {
         "stlsq_threshold": [0.1],
         "H_xt": [[h, h, ht] for h in h_xy for ht in h_t],
@@ -91,11 +91,11 @@ def tune(cfg, *, results_dir: Path = RESULTS_DIR, verbose: bool = True) -> Tunin
     # wavenumbers, so a reference drawn at the offset is a different flow.
     _, t_search, grid_search = generate_isothermal_ns_dataset(
         N=cfg.N, Nt=cfg.Nt, L=cfg.L, T=cfg.T, mu=cfg.mu, RT=cfg.RT,
-        seed=cfg.seed_base + TUNING_SEED_OFFSET, ic_type="taylor-green",
+        seed=cfg.seed_base + TUNING_SEED_OFFSET, 
     )
     reference, _, _ = generate_isothermal_ns_dataset(
         N=cfg.N, Nt=cfg.Nt, L=cfg.L, T=cfg.T, mu=cfg.mu, RT=cfg.RT,
-        seed=cfg.seed_base, ic_type="taylor-green",
+        seed=cfg.seed_base,
     )
     state_std = float(np.std(reference[:, :, :, 2]))
     noise_hf_abs = cfg.noise_hf_rel * state_std
@@ -104,7 +104,7 @@ def tune(cfg, *, results_dir: Path = RESULTS_DIR, verbose: bool = True) -> Tunin
     def sample(seed: int, noise_abs: float, *, noise_seed: int) -> np.ndarray:
         clean, _, _ = generate_isothermal_ns_dataset(
             N=cfg.N, Nt=cfg.Nt, L=cfg.L, T=cfg.T, mu=cfg.mu, RT=cfg.RT,
-            seed=seed, ic_type="taylor-green",
+            seed=seed, 
         )
         rng = np.random.default_rng(noise_seed)
         return clean + noise_abs * rng.standard_normal(size=clean.shape)

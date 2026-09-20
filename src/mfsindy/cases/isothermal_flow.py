@@ -121,7 +121,6 @@ def make_initial_condition(
     X,
     Y,
     L,
-    ic_type: str = "taylor-green",
     rng: np.random.Generator | None = None,
 ):
     """
@@ -132,49 +131,40 @@ def make_initial_condition(
     if rng is None:
         rng = np.random.default_rng()
 
-    if ic_type == "taylor-green":
-        # Randomize coefficients around standard Taylor-Green values for variation
-        amp_u_sin = - (0.8 + 0.4 * rng.random())  # around -1.0
-        amp_u_cos = 0.4 + 0.2 * rng.random()      # around 0.5
-        amp_v_cos = 0.4 + 0.2 * rng.random()      # around 0.5
-        amp_v_sin = - (0.8 + 0.4 * rng.random())  # around -1.0
-        amp_rho_cos = 0.4 + 0.2 * rng.random()    # around 0.5
+    # Randomize coefficients around standard Taylor-Green values for variation
+    amp_u_sin = - (0.8 + 0.4 * rng.random())  # around -1.0
+    amp_u_cos = 0.4 + 0.2 * rng.random()      # around 0.5
+    amp_v_cos = 0.4 + 0.2 * rng.random()      # around 0.5
+    amp_v_sin = - (0.8 + 0.4 * rng.random())  # around -1.0
+    amp_rho_cos = 0.4 + 0.2 * rng.random()    # around 0.5
 
-        # Vary the wavenumbers too, not just the amplitudes. Trajectories that
-        # differ only in amplitude are near-replicates of one vortex pattern, so
-        # a second trajectory adds averaging but little new information. The
-        # wavenumbers set the magnitude of the derivatives relative to the state
-        # itself -- u_x scales as k and u_xx as k^2 -- which is exactly the
-        # balance between the advective and viscous terms being identified, so
-        # varying them makes each trajectory probe that balance differently.
-        #
-        # Phases are deliberately not randomized: the dynamics are translation
-        # invariant, so a shifted field visits the same local states and the weak
-        # regression cannot tell it apart.
-        #
-        # The finest structure in the field is the 2*k_y mode, so k_y is what
-        # limits resolution: k_y=2 puts 8 points per wavelength on a 32-point
-        # axis, which is already the floor. k_x costs nothing by comparison and
-        # is given a third value, so there are six structural combinations rather
-        # than four and fewer trajectories are structural duplicates.
-        k_x = int(rng.integers(1, 4))
-        k_y = int(rng.integers(1, 3))
+    # Vary the wavenumbers too, not just the amplitudes. Trajectories that
+    # differ only in amplitude are near-replicates of one vortex pattern, so
+    # a second trajectory adds averaging but little new information. The
+    # wavenumbers set the magnitude of the derivatives relative to the state
+    # itself -- u_x scales as k and u_xx as k^2 -- which is exactly the
+    # balance between the advective and viscous terms being identified, so
+    # varying them makes each trajectory probe that balance differently.
+    #
+    # Phases are deliberately not randomized: the dynamics are translation
+    # invariant, so a shifted field visits the same local states and the weak
+    # regression cannot tell it apart.
+    #
+    # The finest structure in the field is the 2*k_y mode, so k_y is what
+    # limits resolution: k_y=2 puts 8 points per wavelength on a 32-point
+    # axis, which is already the floor. k_x costs nothing by comparison and
+    # is given a third value, so there are six structural combinations rather
+    # than four and fewer trajectories are structural duplicates.
+    k_x = int(rng.integers(1, 4))
+    k_y = int(rng.integers(1, 3))
 
-        U0 = (amp_u_sin * np.sin(k_x * 2 * np.pi / L * X) +
-              amp_u_cos * np.cos(2 * k_y * 2 * np.pi / L * Y))
-        V0 = (amp_v_cos * np.cos(k_x * 2 * np.pi / L * X) +
-              amp_v_sin * np.sin(2 * k_y * 2 * np.pi / L * Y))
-        RHO0 = 1.0 + amp_rho_cos * np.cos(k_x * 2 * np.pi / L * X) * np.cos(
-            2 * k_y * 2 * np.pi / L * Y
-        )
-
-    elif ic_type == "shear-layer":
-        U0 = np.tanh((Y - L / 2) / 0.1)
-        V0 = 0.05 * np.sin(2 * np.pi * X / L)
-        RHO0 = 1.0 + 0.1 * np.exp(-((Y - L / 2) ** 2) / (0.1 ** 2))
-
-    else:
-        raise ValueError(f"Unknown initial condition: {ic_type}")
+    U0 = (amp_u_sin * np.sin(k_x * 2 * np.pi / L * X) +
+            amp_u_cos * np.cos(2 * k_y * 2 * np.pi / L * Y))
+    V0 = (amp_v_cos * np.cos(k_x * 2 * np.pi / L * X) +
+            amp_v_sin * np.sin(2 * k_y * 2 * np.pi / L * Y))
+    RHO0 = 1.0 + amp_rho_cos * np.cos(k_x * 2 * np.pi / L * X) * np.cos(
+        2 * k_y * 2 * np.pi / L * Y
+    )
 
     return U0, V0, RHO0
 
@@ -187,7 +177,6 @@ def generate_isothermal_ns_dataset(
     mu: float = 1.0,
     RT: float = 1.0,
     seed: int = 1,
-    ic_type: str = "taylor-green",
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Single trajectory of isothermal compressible flow.
@@ -211,7 +200,7 @@ def generate_isothermal_ns_dataset(
 
     # Initial condition
     U0, V0, RHO0 = make_initial_condition(
-        X, Y, L, ic_type=ic_type, rng=rng
+        X, Y, L, rng=rng
     )
     y0 = np.zeros((N, N, 3))
     y0[:, :, 0] = U0
@@ -478,12 +467,16 @@ def compute_reference_coefficients(
         mu=mu,
         RT=RT,
         seed=seed_base,
-        ic_type="taylor-green",
     )
 
     base_library = _build_custom_library()
-    
+
     h_xt = list(H_xt) if H_xt is not None else [L / 10.0, L / 10.0, T / 10.0]
+
+    # pysindy draws the domain centres from the global RNG, and nothing here
+    # seeded it: the same call returned different coefficients depending on what
+    # had consumed the stream first. Seed it so this is reproducible.
+    np.random.seed(int(seed_base))
 
     if K_ref is None:
         extents = tuple(
@@ -591,7 +584,6 @@ def _ns_dataset_batch(
                 mu=cfg.mu,
                 RT=cfg.RT,
                 seed=cfg.seed_base + run_idx * 1000 + offset + j,
-                ic_type="taylor-green",
             )
             noise = noise_abs * rng.standard_normal(size=U_clean.shape)
             data.append(U_clean + noise)
@@ -905,12 +897,29 @@ def run_ns_isothermal_multi_trajectory_gls_experiment(
             grid=grid_ref,
             t=t_ref,
         )
+    # Truth is the equations ``compressible`` integrates, written out in the
+    # library's own feature names -- not a weak-SINDy fit of the clean flow,
+    # which is what this used to score against. That reference was circular and
+    # wrong three ways: underdetermined (K_std=100 rows against 111 features),
+    # non-deterministic (its domain placement is drawn from the global RNG,
+    # which nothing seeds, so "truth" moved between runs), and pruned by an
+    # STLSQ threshold of 0.5 against coefficients of magnitude 1. On a clean
+    # held-out flow it explained 99.74% of the dynamics against 99.99% for the
+    # analytic set, and it had dropped v*u_y from the u equation while carrying
+    # a spurious -5.7 v*u_xy in v.
+    feature_names = get_ns_isothermal_feature_names(
+        cfg, grid=grid_ref, reference_trajectory=U_ref
+    )
+    C_analytic = build_true_ns_isothermal_coefficients(
+        feature_names, RT=cfg.RT, mu=cfg.mu
+    )
+
     return run_multi_trajectory_gls_experiment(
         cfg,
         reference_state_std=_reference_state_std,
         dataset_builder=_dataset_builder,
         library_builder=_ns_library,
-        true_coefficients=lambda _batch, _cfg: C_true,
+        true_coefficients=lambda _batch, _cfg: C_analytic,
         optimizer_factory=cfg.make_optimizer,
         fit_models_fn=_ns_fit_multi_trajectory_weak_gls_models,
         progress_desc="MC isothermal NS MF",
@@ -1021,6 +1030,68 @@ def build_ns_isothermal_weak_validation_blocks(
     return blocks
 
 
+
+#: The isothermal compressible system as ``compressible`` integrates it, written
+#: against the weak library's feature names. With ``p = rho * RT``:
+#:
+#:     u_t   = -u u_x - v u_y - RT rho^-1 rho_x + mu rho^-1 (u_xx + u_yy)
+#:     v_t   = -u v_x - v v_y - RT rho^-1 rho_y + mu rho^-1 (v_xx + v_yy)
+#:     rho_t = -u rho_x - v rho_y - rho u_x - rho v_y
+#:
+#: Fourteen terms, every coefficient +-1 scaled by RT or mu. Axis 1 is x and
+#: axis 2 is y in pysindy's derivative naming, and a leading library name is the
+#: function factor: ``rhou_1`` is ``rho * u_x`` while ``urho_1`` is ``u * rho_x``.
+_NS_TRUE_TERMS: Dict[int, Dict[str, str]] = {
+    0: {"uu_1": "-1", "vu_2": "-1", "rho^-1rho_1": "-RT",
+        "rho^-1u_11": "mu", "rho^-1u_22": "mu"},
+    1: {"uv_1": "-1", "vv_2": "-1", "rho^-1rho_2": "-RT",
+        "rho^-1v_11": "mu", "rho^-1v_22": "mu"},
+    2: {"urho_1": "-1", "vrho_2": "-1", "rhou_1": "-1", "rhov_2": "-1"},
+}
+
+
+def build_true_ns_isothermal_coefficients(
+    feature_names: Sequence[str], *, RT: float, mu: float
+) -> np.ndarray:
+    """Analytic coefficients of the isothermal compressible system.
+
+    The alternative was to call the reference a weak-SINDy fit of the clean
+    flow, which is what this case used to do. That made the benchmark circular
+    -- every rung was scored against another fit rather than against the
+    equations -- and the fit was not a good one: at ``K_std=100`` rows against
+    111 library features it was underdetermined, and it came back missing
+    ``v u_y`` from the u equation and carrying a spurious ``-5.7 v u_xy`` in the
+    v equation, explaining 89.6% of the clean dynamics where plain least squares
+    on the same library reaches 99.9999%.
+
+    ``rho^-1`` is the library's ``1 / (1e-6 + |rho|)``, which differs from
+    ``1 / rho`` by about a part in a million for a density near one.
+
+    Raises if a term is missing from ``feature_names``: a library that can no
+    longer express the physics must fail loudly rather than score every rung
+    against a truncated truth.
+    """
+
+    feature_names = list(feature_names)
+    index = {name: j for j, name in enumerate(feature_names)}
+    values = {"-1": -1.0, "-RT": -float(RT), "mu": float(mu)}
+
+    coefficients = np.zeros((3, len(feature_names)), dtype=float)
+    missing: list[str] = []
+    for state, terms in _NS_TRUE_TERMS.items():
+        for name, symbol in terms.items():
+            if name not in index:
+                missing.append(name)
+                continue
+            coefficients[state, index[name]] = values[symbol]
+    if missing:
+        raise KeyError(
+            f"The weak library does not provide {missing}; the analytic "
+            "isothermal coefficients cannot be expressed in it."
+        )
+    return coefficients
+
+
 def get_ns_isothermal_feature_names(
     cfg: NSIsothermalMultiTrajectoryGLSConfig | NSIsothermalIntraTrajectoryGLSConfig,
     *,
@@ -1117,7 +1188,6 @@ def _build_ns_gls_artifacts(
         mu=cfg.mu,
         RT=cfg.RT,
         seed=cfg.seed_base + run_idx + 1,
-        ic_type="taylor-green",
     )
 
     U_noisy, variance = add_heteroscedastic_noise_temporal_derivative(
@@ -1378,7 +1448,7 @@ def ns_isothermal_kappa_by_support(
     for j in range(int(n_reference)):
         U_ref, _t_ref, grid_ref = generate_isothermal_ns_dataset(
             N=cfg.N, Nt=cfg.Nt, L=cfg.L, T=cfg.T, mu=cfg.mu, RT=cfg.RT,
-            seed=cfg.seed_base + j, ic_type="taylor-green",
+            seed=cfg.seed_base + j,
         )
         references.append((np.asarray(U_ref), np.asarray(grid_ref, dtype=float)))
 
