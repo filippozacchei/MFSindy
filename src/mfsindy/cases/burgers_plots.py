@@ -38,10 +38,10 @@ def set_dark_theme(rc=None):
 
 def plot_multifidelity_trajectories(X_hf, X_lf, X_ref, x, t):
     traj_idx = 0
-
+    print(X_ref)
     u_hf = X_hf[traj_idx][:, :, 0]   # (Nx, Nt)
     u_lf = X_lf[traj_idx][:, :, 0]   # (Nx, Nt)
-    u_ref = X_ref[0][:, :, 0]              # (Nx, Nt)
+    u_ref = X_ref[:4]             # (Nx, Nt)
 
     x = np.squeeze(x)                 # (Nx,)
     t = np.squeeze(t)                # (Nt,)
@@ -74,13 +74,15 @@ def plot_multifidelity_trajectories(X_hf, X_lf, X_ref, x, t):
     )
 
     k_ref = 0
-    ax.plot(
-        x,
-        np.full_like(x, t[k_ref]),
-        u_ref[:, k_ref],
-        color="black",
-        linewidth=1.0,
-    )
+    for j in range(4):
+        ttt = u_ref[j][:, :, 0] 
+        ax.plot(
+            x,
+            np.full_like(x, t[k_ref]),
+            ttt[:, k_ref],
+            color="black",
+            linewidth=1.0,
+        )
 
     # Compact panel: no ticks, no axes, no titles
     ax.set_xticks([])

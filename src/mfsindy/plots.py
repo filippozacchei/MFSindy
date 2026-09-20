@@ -9,7 +9,7 @@ import numpy as np
 import seaborn as sns
 import os
 
-__all__ = ["bubble_hist"]
+__all__ = ["bubble_hist", "tuning_heatmap"]
 
 def bubble_hist(
     errors_dict: Mapping[str, Iterable[float]],
@@ -195,3 +195,175 @@ def bubble_hist(
         plt.show()
     else:
         plt.close(fig)
+
+
+def _grid_label(value) -> str:
+    """Short axis label for one grid value, including the PDE list-valued ones."""
+
+    if isinstance(value, (list, tuple, np.ndarray)):
+        return "(" + ", ".join(f"{float(v):g}" for v in np.ravel(value)) + ")"
+    try:
+        return f"{float(value):g}"
+    except (TypeError, ValueError):
+        return str(value)
+
+
+def tuning_heatmap(
+    score_table,
+    *,
+    selections: Mapping[str, object] | None = None,
+    rungs: Iterable[str] | None = None,
+    x: str = "stlsq_threshold",
+    y: str = "H_xt",
+    score_col: str = "score",
+    rung_col: str = "rung",
+    admissible_col: str = "admissible",
+    ncols: int = 4,
+    cmap: str = "viridis",
+    vmin: float | None = None,
+    vmax: float | None = None,
+    annot: bool = True,
+    figsize: tuple[float, float] | None = None,
+    save_path: str | None = None,
+    show: bool = True,
+):
+    """Show the whole tuning grid per rung, with the selected cell outlined.
+
+    The selection is one number per rung; the surface behind it is what says
+    whether that number means anything. A rung whose grid is flat was not really
+    tuned, one whose best sits in a spike will not survive a reseed, and one
+    whose best lies on an edge is asking for a wider grid -- none of which is
+    visible from the chosen value alone. Cells that failed to fit are left
+    blank rather than plotted as a low score, so a hole reads as a hole.
+
+    Where a rung was restricted -- the covariance-weighted rungs are confined to
+    supports on which their covariance model holds -- the cells it could not be
+    selected from are still scored and still drawn, crosshatched. Showing the
+    surface and then ruling part of it out is the point: a reader can see what
+    the restriction cost, which a quietly shrunken grid would hide.
+
+    ``score_table`` is the frame :func:`mfsindy.experiments.tune_rungs` returns;
+    ``selections`` its companion mapping, used only to mark the chosen cell.
+    """
+
+    import matplotlib.patches as mpatches
+
+    table = score_table.copy()
+    for column in (x, y):
+        table[column] = table[column].map(_grid_label)
+
+    model_names = list(rungs) if rungs is not None else list(
+        dict.fromkeys(table[rung_col])
+    )
+    x_levels = list(dict.fromkeys(table[x]))
+    y_levels = list(dict.fromkeys(table[y]))
+
+    finite = table[score_col].to_numpy(dtype=float)
+    finite = finite[np.isfinite(finite)]
+    if vmin is None:
+        vmin = float(np.min(finite)) if finite.size else 0.0
+    if vmax is None:
+        vmax = float(np.max(finite)) if finite.size else 1.0
+    if vmax <= vmin:
+        vmax = vmin + 1e-9
+
+    ncols = max(1, min(int(ncols), len(model_names)))
+    nrows = int(np.ceil(len(model_names) / ncols))
+    if figsize is None:
+        figsize = (3.1 * ncols + 1.2, 2.5 * nrows + 0.8)
+    fig, axes = plt.subplots(nrows, ncols, figsize=figsize, squeeze=False)
+
+    mesh = None
+    for idx, name in enumerate(model_names):
+        ax = axes[idx // ncols][idx % ncols]
+        sub = table[table[rung_col] == name]
+        grid = (
+            sub.pivot_table(index=y, columns=x, values=score_col, aggfunc="mean")
+            .reindex(index=y_levels, columns=x_levels)
+        )
+        values = np.ma.masked_invalid(grid.to_numpy(dtype=float))
+        mesh = ax.pcolormesh(
+            np.arange(len(x_levels) + 1),
+            np.arange(len(y_levels) + 1),
+            values,
+            cmap=cmap,
+            vmin=vmin,
+            vmax=vmax,
+        )
+        if annot:
+            for row in range(values.shape[0]):
+                for col in range(values.shape[1]):
+                    if values.mask[row, col] if np.ma.is_masked(values) else False:
+                        continue
+                    value = float(values[row, col])
+                    shade = (value - vmin) / (vmax - vmin)
+                    ax.text(
+                        col + 0.5,
+                        row + 0.5,
+                        f"{value:.2f}",
+                        ha="center",
+                        va="center",
+                        fontsize=7,
+                        color="white" if shade < 0.55 else "black",
+                    )
+
+        if admissible_col in sub.columns:
+            blocked = (
+                sub.pivot_table(
+                    index=y, columns=x, values=admissible_col, aggfunc="min"
+                )
+                .reindex(index=y_levels, columns=x_levels)
+                .to_numpy(dtype=float)
+            )
+            for row in range(blocked.shape[0]):
+                for col in range(blocked.shape[1]):
+                    if blocked[row, col] == 0.0:
+                        ax.add_patch(
+                            mpatches.Rectangle(
+                                (col, row), 1, 1,
+                                fill=False, hatch="xxx",
+                                edgecolor="0.25", linewidth=0.0,
+                            )
+                        )
+
+        chosen = None if selections is None else selections.get(name)
+        best = getattr(chosen, "best_params", None)
+        if best is not None and x in best and y in best:
+            try:
+                col = x_levels.index(_grid_label(best[x]))
+                row = y_levels.index(_grid_label(best[y]))
+            except ValueError:
+                col = row = None
+            if col is not None:
+                ax.add_patch(
+                    mpatches.Rectangle(
+                        (col, row), 1, 1, fill=False, edgecolor="red", linewidth=2.0
+                    )
+                )
+
+        ax.set_xticks(np.arange(len(x_levels)) + 0.5)
+        ax.set_yticks(np.arange(len(y_levels)) + 0.5)
+        ax.set_xticklabels(x_levels, fontsize=7, rotation=45, ha="right")
+        ax.set_yticklabels(y_levels, fontsize=7)
+        ax.set_title(name, fontsize=10)
+        if idx % ncols == 0:
+            ax.set_ylabel(y, fontsize=8)
+        if idx // ncols == nrows - 1:
+            ax.set_xlabel(x, fontsize=8)
+
+    for idx in range(len(model_names), nrows * ncols):
+        axes[idx // ncols][idx % ncols].axis("off")
+
+    if mesh is not None:
+        fig.colorbar(mesh, ax=axes.ravel().tolist(), label=score_col, shrink=0.85)
+    if save_path:
+        directory = os.path.dirname(save_path)
+        if directory:
+            os.makedirs(directory, exist_ok=True)
+        for extension in ("png", "pdf"):
+            fig.savefig(f"{save_path}.{extension}", dpi=200, bbox_inches="tight")
+    if show:
+        plt.show()
+    else:
+        plt.close(fig)
+    return fig

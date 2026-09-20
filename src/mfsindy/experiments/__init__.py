@@ -22,7 +22,9 @@ from .intra_trajectory import (
 from .multi_trajectory import (
     MultiTrajectoryGLSData,
     PART1_METHODS,
+    FULL_COVARIANCE_RUNGS,
     RUNG_BLOCKS,
+    WHITENING_RUNGS,
     assemble_weak_rungs,
     fit_multi_trajectory_gls_models,
     fit_multi_trajectory_weak_gls_models,
@@ -47,12 +49,15 @@ from .rollout import (
     split_trajectory_list,
 )
 from .weak_validation import (
+    ValidationSupport,
     WeakValidationBlock,
     evaluate_weak_form_models,
     format_coefficient_equations,
     get_library_feature_names,
+    select_validation_support,
     split_spatiotemporal_trajectory,
     weak_r2_score,
+    weak_target_noise_ceiling,
 )
 
 __all__ = [
@@ -73,6 +78,8 @@ __all__ = [
     "MultiTrajectoryGLSData",
     "assemble_weak_rungs",
     "RUNG_BLOCKS",
+    "WHITENING_RUNGS",
+    "FULL_COVARIANCE_RUNGS",
     "PART1_METHODS",
     "fit_multi_trajectory_gls_models",
     "fit_multi_trajectory_weak_gls_models",
@@ -90,10 +97,13 @@ __all__ = [
     "rollout_r2_score",
     "split_single_trajectory",
     "split_trajectory_list",
+    "ValidationSupport",
     "WeakValidationBlock",
     "evaluate_weak_form_models",
     "format_coefficient_equations",
     "get_library_feature_names",
+    "select_validation_support",
     "split_spatiotemporal_trajectory",
     "weak_r2_score",
+    "weak_target_noise_ceiling",
 ]

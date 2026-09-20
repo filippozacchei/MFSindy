@@ -99,10 +99,210 @@ def weak_validity_ratio(library, jacobian_norm) -> np.ndarray:
     return np.asarray(ratios)
 
 
+
+def pde_feature_weight_index(library) -> np.ndarray:
+    """Which test-function weight array carries each output feature.
+
+    In the weak form a library term's spatial derivatives are integrated by
+    parts onto the test function, so the noise in that term reaches the residual
+    through some ``d^alpha phi`` rather than through ``phi`` itself. Kappa needs
+    to know which one, per feature. The answer is fixed by how pysindy lays the
+    output features out:
+
+    * an optional bias and the plain library functions keep ``phi`` itself;
+    * the pure integral terms ``u_n`` with multi-index ``alpha_j`` take
+      ``d^alpha_j phi``, i.e. ``fullweights1[j]``;
+    * the mixed terms transfer only half of the derivative onto the test
+      function -- ``derivs_mixed = multiindices[j] // 2`` in pysindy's product
+      rule -- and the rest stays on the data.
+
+    Returns one index per output feature: ``-1`` for ``fullweights0`` (plain
+    ``phi``), otherwise the index into ``fullweights1``.
+    """
+
+    multiindices = np.asarray(library.multiindices)
+    num_derivatives = int(library.num_derivatives)
+    n_features = int(library.n_features_in_)
+    include_bias = bool(library.include_bias)
+    include_interaction = bool(getattr(library, "include_interaction", True))
+
+    # The function library's term count is not stored, but the output width
+    # pins it down given the blocks below.
+    n_output = int(library.n_output_features_)
+    divisor = 1 + (num_derivatives * n_features if include_interaction else 0)
+    n_library_terms = (
+        n_output - int(include_bias) - num_derivatives * n_features
+    ) // divisor
+
+    def index_of(multiindex) -> int:
+        if not np.any(multiindex):
+            return -1
+        matches = np.where(np.all(multiindices == multiindex, axis=1))[0]
+        if matches.size == 0:
+            # No weight array holds this order; fall back to plain phi, which
+            # understates kappa rather than inventing a weight.
+            return -1
+        return int(matches[0])
+
+    order: list[int] = []
+    if include_bias:
+        order.append(-1)
+    order.extend([-1] * n_library_terms)
+    for j in range(num_derivatives):
+        order.extend([index_of(multiindices[j])] * n_features)
+    if include_interaction:
+        for j in range(num_derivatives):
+            mixed = multiindices[j] // 2
+            order.extend([index_of(mixed)] * (n_features * n_library_terms))
+
+    if len(order) != n_output:
+        raise ValueError(
+            f"Feature layout does not add up: derived {len(order)} entries for "
+            f"{n_output} output features."
+        )
+    return np.asarray(order, dtype=int)
+
+
+def pde_weak_validity_ratio(library, sensitivity_fields) -> np.ndarray:
+    """kappa per test function for a PDE weak system.
+
+    The PDE counterpart of :func:`weak_validity_ratio`, and computed the same
+    way -- from the assembled system, as a ratio of squared norms -- rather than
+    from the support-width scaling. The scaling form ``h_t^2 h_x^(-2m)`` carries
+    units, so it cannot be compared between benchmarks or against the ODE kappa
+    and has no absolute threshold to test; this one is dimensionless and does.
+
+    The neglected term reaches residual row ``k`` through ``d^alpha phi_k``
+    weighted by each feature's sensitivity to the state, so the effective weight
+    on the noise is ``sum_p |d^alpha_p phi_k| * s_p``. Summing magnitudes is a
+    triangle-inequality bound: cancellation between features would only make the
+    true ratio smaller, so kappa is an upper bound and never flatters the
+    covariance model.
+
+    ``sensitivity_fields`` has shape ``(n_output_features, *grid_shape)`` and
+    carries ``|Xi_p| * |d(feature_p)/du|`` on the grid -- the coefficient
+    included, since a feature the model does not use cannot break it. It is the
+    caller's business, as the library map is: each system knows its own.
+    """
+
+    sensitivity_fields = np.asarray(sensitivity_fields, dtype=float)
+    weight_index = pde_feature_weight_index(library)
+    if sensitivity_fields.shape[0] != weight_index.size:
+        raise ValueError(
+            f"sensitivity_fields has {sensitivity_fields.shape[0]} features, "
+            f"but the library has {weight_index.size} output features."
+        )
+
+    ratios: list[float] = []
+    for k in range(int(library.K)):
+        support = np.ix_(*library.inds_k[k])
+        phi_dot = np.asarray(library.fulltweights[k], dtype=float)
+        denominator = float(np.sum(phi_dot**2))
+        if denominator <= 0.0:
+            continue
+        numerator_field = np.zeros(phi_dot.shape, dtype=float)
+        for feature, index in enumerate(weight_index):
+            if not np.any(sensitivity_fields[feature]):
+                # A feature the model does not use, which is most of them for a
+                # sparse system: skip rather than add zeros grid-point by point.
+                continue
+            weights = (
+                library.fullweights0[k]
+                if index < 0
+                else library.fullweights1[k][index]
+            )
+            numerator_field += np.abs(np.asarray(weights, dtype=float)) * (
+                sensitivity_fields[feature][support]
+            )
+        ratios.append(float(np.sum(numerator_field**2) / denominator))
+    return np.asarray(ratios)
+
+
+
+def pde_sensitivity_fields(library, data, coefficients, *, relative_step: float = 1e-4):
+    """``|Xi_p| * |d(feature_p)/du|`` on the grid, for every output feature.
+
+    The input :func:`pde_weak_validity_ratio` needs, built generically so a case
+    does not have to differentiate its own library by hand. Each output feature
+    block contributes differently:
+
+    * plain library functions ``f_m(u)`` contribute ``|df_m/du|``, taken by a
+      finite difference so any function library works, custom ones included;
+    * pure integral terms are the raw state, so their sensitivity is 1;
+    * mixed terms ``f_m(u) * u_n`` contribute by the product rule, bounded as
+      ``|df_m/du| |u_n| + |f_m(u)|``.
+
+    The coefficient enters as a magnitude: a feature the model does not use
+    cannot invalidate the covariance model no matter how sharp it is, so a zero
+    column contributes nothing.
+    """
+
+    data = np.asarray(data, dtype=float)
+    coefficients = np.asarray(coefficients, dtype=float)
+    if coefficients.ndim == 1:
+        coefficients = coefficients[None, :]
+    strength = np.max(np.abs(coefficients), axis=0)
+
+    weight_index = pde_feature_weight_index(library)
+    n_output = weight_index.size
+    if strength.size != n_output:
+        raise ValueError(
+            f"coefficients describe {strength.size} features, but the library "
+            f"has {n_output} output features."
+        )
+
+    grid_shape = data.shape[:-1]
+    n_features = data.shape[-1]
+
+    def evaluate(values: np.ndarray) -> np.ndarray:
+        arr = AxesArray(
+            np.asarray(values, dtype=float),
+            {"ax_spatial": list(range(len(grid_shape) - 1)),
+             "ax_time": len(grid_shape) - 1,
+             "ax_coord": len(grid_shape)},
+        )
+        return np.asarray(library.function_library.fit_transform(arr), dtype=float)
+
+    funcs = evaluate(data)
+    scale = float(np.std(data))
+    step = relative_step * (scale if scale > 0.0 else 1.0)
+    dfuncs = np.abs(evaluate(data + step) - funcs) / step
+    n_library_terms = funcs.shape[-1]
+
+    fields = np.zeros((n_output,) + grid_shape, dtype=float)
+    cursor = 0
+    if bool(library.include_bias):
+        cursor += 1  # a constant cannot respond to the state
+    for m in range(n_library_terms):
+        fields[cursor] = strength[cursor] * dfuncs[..., m]
+        cursor += 1
+    for _ in range(int(library.num_derivatives)):
+        for _n in range(n_features):
+            fields[cursor] = strength[cursor]
+            cursor += 1
+    if bool(getattr(library, "include_interaction", True)):
+        for _ in range(int(library.num_derivatives)):
+            for n in range(n_features):
+                for m in range(n_library_terms):
+                    fields[cursor] = strength[cursor] * (
+                        dfuncs[..., m] * np.abs(data[..., n]) + np.abs(funcs[..., m])
+                    )
+                    cursor += 1
+    if cursor != n_output:
+        raise ValueError(f"Filled {cursor} of {n_output} sensitivity fields.")
+    return fields
+
+
 def pde_scale_separation_ratio(
     H_t: float, H_x: float | Sequence[float], derivative_order: int
 ) -> float:
-    """The PDE counterpart of kappa, which needs no data.
+    """Support-width scaling of the PDE validity ratio, which needs no data.
+
+    Superseded for reporting by :func:`pde_weak_validity_ratio`, which computes
+    the ratio from the assembled system and is dimensionless. This one returns
+    the bare monomial from an O(.) statement, so it carries units of
+    time^2 / length^(2m) and its absolute value means nothing on its own --
+    only how it scales as the supports shrink.
 
     For PDEs the neglected term is controlled by scale separation between the
     temporal and spatial supports rather than by the Jacobian: the ratio behaves

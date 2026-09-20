@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Callable, Dict, List, Tuple, Sequence
 
 import inspect
@@ -22,10 +22,13 @@ from mfsindy.experiments import (
     IntraTrajectoryGLSData,
     MonteCarloConfig,
     MultiTrajectoryGLSData,
+    ValidationSupport,
+    WeakValidationBlock,
     build_polynomial_rollout_models,
     fit_multi_trajectory_weak_gls_models,
     run_intra_trajectory_gls_experiment,
     run_multi_trajectory_gls_experiment,
+    select_validation_support,
 )
 from mfsindy.weighted_weak_pde_library import (
     DedupedWeakPDELibrary,
@@ -646,3 +649,173 @@ def run_lorenz_intra_trajectory_gls_experiment(
         progress_desc="Monte Carlo Lorenz GLS",
         coef_postprocess=lambda coef, _method: np.asarray(coef).T,
     )
+
+
+def build_lorenz_weak_validation_blocks(
+    cfg: LorenzMultiTrajectoryGLSConfig,
+    trajectories: list[np.ndarray],
+    *,
+    t_grid: np.ndarray,
+    H_val=None,
+    weak_seed: int | None = None,
+    group_name: str = "validation",
+) -> list[WeakValidationBlock]:
+    """Held-out weak-form blocks for lorenz trajectories.
+
+    ``H_val`` fixes the support of the validation system independently of the
+    candidate being scored. Without it the target moves with the candidate --
+    a different Theta, a different b and a different R^2 denominator per grid
+    point -- so the scores would not be comparable across the grid, which is
+    the whole purpose of scoring them. ``K`` is left to follow ``H_val``.
+    """
+
+    val_cfg = cfg if H_val is None else replace(cfg, H_xt=H_val, K=None)
+    t_grid = np.asarray(t_grid, dtype=float)
+    seed = cfg.seed_base if weak_seed is None else int(weak_seed)
+
+    blocks: list[WeakValidationBlock] = []
+    for traj_idx, trajectory in enumerate(trajectories):
+        batch = MultiTrajectoryGLSData(
+            hf=[trajectory],
+            lf=[],
+            t_argument=cfg.dt,
+            metadata={"t_grid": t_grid, "weak_seed": seed},
+        )
+        library = _lorenz_make_weak_library(batch, val_cfg, variance_field=None)
+        theta = np.asarray(library.fit_transform([trajectory])[0])
+        rhs = np.asarray(library.convert_u_dot_integral(trajectory))
+        blocks.append(
+            WeakValidationBlock(
+                theta=theta, rhs=rhs, group=group_name, trajectory=traj_idx, block=0
+            )
+        )
+    return blocks
+
+
+def lorenz_validation_support(
+    cfg: LorenzMultiTrajectoryGLSConfig,
+    validation_trajectory: np.ndarray,
+    *,
+    t_grid: np.ndarray,
+    sigma: float,
+    candidates,
+    weak_seed: int | None = None,
+    min_ceiling: float = 0.99,
+    max_kappa: float = float("inf"),
+    min_rows: int | None = None,
+) -> ValidationSupport:
+    """Choose the validation support for lorenz by the stated rule.
+
+    The noise ceiling on ``b`` rejects the narrow supports and the smallest
+    survivor wins, since rows are what let the metric tell candidates apart.
+    Kappa is reported alongside but does not bind: it governs the covariance
+    model, which this system never invokes -- the validation library is built
+    unweighted and scored with an unweighted R^2. Kappa belongs to the rungs
+    that whiten (VHF, VLF, PMF, VMF, MF_w), on their fitting support.
+    See :func:`mfsindy.experiments.select_validation_support`.
+    """
+
+    t_grid = np.asarray(t_grid, dtype=float)
+    seed = cfg.seed_base if weak_seed is None else int(weak_seed)
+    jacobian_norm = _lorenz_jacobian_norm(validation_trajectory, cfg)
+
+    def build(H):
+        batch = MultiTrajectoryGLSData(
+            hf=[validation_trajectory],
+            lf=[],
+            t_argument=cfg.dt,
+            metadata={"t_grid": t_grid, "weak_seed": seed},
+        )
+        library = _lorenz_make_weak_library(
+            batch, replace(cfg, H_xt=H, K=None), variance_field=None
+        )
+        library.fit_transform([validation_trajectory])
+        return library, np.asarray(library.convert_u_dot_integral(validation_trajectory))
+
+    return select_validation_support(
+        build,
+        candidates=candidates,
+        sigma=sigma,
+        kappa_fn=lambda library, _H: float(
+            np.median(weak_validity_ratio(library, jacobian_norm))
+        ),
+        min_ceiling=min_ceiling,
+        max_kappa=max_kappa,
+        min_rows=min_rows,
+    )
+
+
+def lorenz_kappa_by_support(
+    cfg: LorenzMultiTrajectoryGLSConfig,
+    candidates,
+    *,
+    n_reference: int = 10,
+    weak_seed: int | None = None,
+) -> pd.DataFrame:
+    """Kappa per candidate fitting support, on fixed reference trajectories.
+
+    Kappa depends on the trajectory through ``|grad F(u)|``, so computing it on
+    whichever draw the Monte Carlo happened to produce makes the admissible set
+    a function of the seed -- on Lorenz the support at T/20 straddles 0.25
+    between draws. Clean reference trajectories at the training horizon, drawn
+    from ``cfg.seed_base``, keep it reproducible, and taking the worst over
+    several of them keeps it from turning on one lucky draw.
+
+    ``kappa_median`` -- the median test function, median reference trajectory --
+    is the gate statistic, and ``kappa_lo``/``kappa_hi`` bracket it with the
+    best and worst reference. The spread is wide where the bound actually
+    matters: on Lorenz at T/20 the median is 0.23 but individual trajectories
+    run from 0.17 to 0.44, because ``|grad F|`` varies that much over the
+    attractor. Taking the worst reference instead would make the admissible set
+    depend on how many references were drawn and from which seed -- the same
+    support flips either side of 0.25 between ``seed_base`` 0 and 1234 -- so the
+    median is used and the range is reported rather than buried. The bound is a
+    guideline, not a theorem, and a support sitting near it is marginal rather
+    than disqualified; the columns are there so that shows.
+
+    ``kappa_max`` is the strict reading of (A.3), the worst test function on the
+    worst reference, kept for contrast.
+    """
+
+    seed = cfg.seed_base if weak_seed is None else int(weak_seed)
+    rows: list[dict] = []
+    for H in candidates:
+        per_traj_max: list[float] = []
+        per_traj_median: list[float] = []
+        K_used = 0
+        for j in range(int(n_reference)):
+            trajectories, t_grid, _ = generate_lorenz_dataset(
+                n_traj=1,
+                T=cfg.T_train,
+                dt=cfg.dt,
+                noise_level=0.0,
+                seed=cfg.seed_base + j,
+            )
+            trajectory = trajectories[0]
+            batch = MultiTrajectoryGLSData(
+                hf=[trajectory],
+                lf=[],
+                t_argument=cfg.dt,
+                metadata={"t_grid": t_grid, "weak_seed": seed},
+            )
+            library = _lorenz_make_weak_library(
+                batch, replace(cfg, H_xt=H, K=None), variance_field=None
+            )
+            library.fit_transform([trajectory])
+            ratios = weak_validity_ratio(
+                library, _lorenz_jacobian_norm(trajectory, cfg)
+            )
+            per_traj_max.append(float(np.max(ratios)))
+            per_traj_median.append(float(np.median(ratios)))
+            K_used = int(library.K)
+        rows.append(
+            {
+                "H_xt": H,
+                "K": K_used,
+                "kappa_median": float(np.median(per_traj_median)),
+                "kappa_lo": float(np.min(per_traj_median)),
+                "kappa_hi": float(np.max(per_traj_median)),
+                "kappa_max": float(np.max(per_traj_max)),
+            }
+        )
+    return pd.DataFrame(rows)

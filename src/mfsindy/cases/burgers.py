@@ -13,7 +13,7 @@ Utilities for 1D viscous Burgers experiments:
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Dict, Tuple, List, Callable, Sequence
 
 import numpy as np
@@ -23,6 +23,8 @@ import pysindy as ps
 from pysindy.feature_library import WeakPDELibrary
 
 from mfsindy.experiments import (
+    select_validation_support,
+    ValidationSupport,
     EnsembleConfigMixin,
     IntraTrajectoryGLSData,
     MonteCarloConfig,
@@ -38,9 +40,11 @@ from mfsindy.experiments import (
 )
 from mfsindy.weighted_weak_pde_library import (
     DedupedWeakPDELibrary,
-    pde_scale_separation_ratio,
-    weak_design_report,
     WeightedWeakPDELibrary,
+    pde_scale_separation_ratio,
+    pde_sensitivity_fields,
+    pde_weak_validity_ratio,
+    weak_design_report,
 )
 
 
@@ -743,8 +747,16 @@ def build_burgers_weak_validation_blocks(
     x_grid: np.ndarray,
     weak_seed: int | None = None,
     group_name: str = "validation",
+    H_val=None,
 ) -> list[WeakValidationBlock]:
-    """Build held-out weak-form blocks for Burgers trajectories."""
+    """Build held-out weak-form blocks for Burgers trajectories.
+
+    ``H_val`` fixes the support of the validation system independently of the
+    candidate being scored. Without it the target moves with the candidate --
+    a different Theta, a different b and a different R^2 denominator per grid
+    point -- so the scores would not be comparable across the grid, which is
+    the whole purpose of scoring them.
+    """
 
     dummy_cfg = BurgersMultiTrajectoryGLSConfig(
         L=cfg.L,
@@ -752,7 +764,7 @@ def build_burgers_weak_validation_blocks(
         dt=cfg.dt,
         T_train=float(np.asarray(t_grid, dtype=float)[-1] - np.asarray(t_grid, dtype=float)[0]),
         nu=cfg.nu,
-        H_xt=cfg.H_xt,
+        H_xt=cfg.H_xt if H_val is None else H_val,
         K=cfg.K,
         derivative_order=cfg.derivative_order,
         include_bias=cfg.include_bias,
@@ -805,7 +817,7 @@ def get_burgers_feature_names(
         dt=cfg.dt,
         T_train=float(np.asarray(t_grid, dtype=float)[-1] - np.asarray(t_grid, dtype=float)[0]),
         nu=cfg.nu,
-        H_xt=cfg.H_xt,
+        H_xt=cfg.H_xt if H_val is None else H_val,
         K=cfg.K,
         derivative_order=cfg.derivative_order,
         include_bias=cfg.include_bias,
@@ -867,3 +879,129 @@ def get_burgers_gls_coefficients(
     C_ones = coef_map["Ones GLS"].ravel()
 
     return C_true, C_std, C_var, C_ones
+
+
+def burgers_validation_support(
+    cfg: BurgersMultiTrajectoryGLSConfig,
+    validation_trajectory: np.ndarray,
+    *,
+    t_grid: np.ndarray,
+    x_grid: np.ndarray,
+    sigma: float,
+    candidates,
+    weak_seed: int | None = None,
+    min_ceiling: float = 0.99,
+    min_rows: int | None = None,
+    coefficients: np.ndarray | None = None,
+) -> ValidationSupport:
+    """Choose the support of the held-out weak system for Burgers.
+
+    The noise ceiling on ``b`` is what bounds the choice. Kappa is reported
+    alongside for context but does not gate, exactly as in the ODE cases: it
+    governs the covariance model, and this system never invokes one -- the
+    validation library is built unweighted and scored with an unweighted R^2.
+    """
+
+    t_grid = np.asarray(t_grid, dtype=float)
+    x_grid = np.asarray(x_grid, dtype=float)
+    seed = cfg.seed_base if weak_seed is None else int(weak_seed)
+
+    def build(H):
+        batch = MultiTrajectoryGLSData(
+            hf=[validation_trajectory],
+            lf=[],
+            t_argument=cfg.dt,
+            metadata={"t": t_grid, "x": x_grid, "weak_seed": seed},
+        )
+        library = _burgers_make_weak_library(
+            batch, replace(cfg, H_xt=H, K=None), variance_field=None
+        )
+        library.fit_transform([validation_trajectory])
+        return library, np.asarray(library.convert_u_dot_integral(validation_trajectory))
+
+    if coefficients is None:
+        coefficients = build_true_burgers_coefficients(nu=cfg.nu)
+
+    return select_validation_support(
+        build,
+        candidates=candidates,
+        sigma=sigma,
+        kappa_fn=lambda library, _H: float(
+            np.median(
+                pde_weak_validity_ratio(
+                    library,
+                    pde_sensitivity_fields(library, validation_trajectory, coefficients),
+                )
+            )
+        ),
+        min_ceiling=min_ceiling,
+        max_kappa=float("inf"),
+        min_rows=min_rows,
+    )
+
+
+def burgers_kappa_by_support(
+    cfg: BurgersMultiTrajectoryGLSConfig,
+    candidates,
+    *,
+    n_reference: int = 5,
+    weak_seed: int | None = None,
+    coefficients: np.ndarray | None = None,
+) -> pd.DataFrame:
+    """Kappa per candidate fitting support, on fixed reference trajectories.
+
+    The PDE counterpart of the ODE tables, and computed the same way: from the
+    assembled weak system, as a dimensionless ratio of squared norms. The older
+    ``h_t^2 h_x^(-2m)`` form carries units, so it could be compared neither
+    between benchmarks nor against the ODE kappa; this can.
+
+    ``kappa_median`` is the gate statistic and ``kappa_lo``/``kappa_hi`` bracket
+    it with the best and worst reference trajectory. References are clean and
+    drawn from ``cfg.seed_base``, so the admissible set cannot move with the
+    Monte Carlo draw.
+    """
+
+    seed = cfg.seed_base if weak_seed is None else int(weak_seed)
+    if coefficients is None:
+        coefficients = build_true_burgers_coefficients(nu=cfg.nu)
+
+    references = []
+    for j in range(int(n_reference)):
+        trajectories, t_grid, x_grid, _ = generate_burgers_dataset(
+            n_traj=1, T=cfg.T_train, dt=cfg.dt, noise_level=0.0,
+            seed=cfg.seed_base + j, L=cfg.L, NX=cfg.NX, nu=cfg.nu,
+        )
+        references.append((np.asarray(trajectories[0]), t_grid, x_grid))
+
+    rows: list[dict] = []
+    for H in candidates:
+        medians: list[float] = []
+        maxima: list[float] = []
+        K_used = 0
+        for trajectory, t_grid, x_grid in references:
+            batch = MultiTrajectoryGLSData(
+                hf=[trajectory], lf=[], t_argument=cfg.dt,
+                metadata={"t": t_grid, "x": x_grid, "weak_seed": seed},
+            )
+            library = _burgers_make_weak_library(
+                batch, replace(cfg, H_xt=list(H), K=None), variance_field=None
+            )
+            library.fit_transform([trajectory])
+            ratios = pde_weak_validity_ratio(
+                library,
+                pde_sensitivity_fields(library, trajectory, coefficients),
+            )
+            medians.append(float(np.median(ratios)))
+            maxima.append(float(np.max(ratios)))
+            K_used = int(library.K)
+        rows.append(
+            {
+                "H_xt": list(H),
+                "K": K_used,
+                "kappa_median": float(np.median(medians)),
+                "kappa_lo": float(np.min(medians)),
+                "kappa_hi": float(np.max(medians)),
+                "kappa_max": float(np.max(maxima)),
+            }
+        )
+    return pd.DataFrame(rows)

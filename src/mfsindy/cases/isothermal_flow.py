@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Dict, Sequence
 
@@ -27,6 +27,8 @@ import pysindy as ps
 from pysindy.feature_library import WeakPDELibrary
 
 from mfsindy.experiments import (
+    select_validation_support,
+    ValidationSupport,
     EnsembleConfigMixin,
     IntraTrajectoryGLSData,
     MonteCarloConfig,
@@ -41,6 +43,8 @@ from mfsindy.weighted_weak_pde_library import (
     DedupedWeakPDELibrary,
     WeightedWeakPDELibrary,
     pde_scale_separation_ratio,
+    pde_sensitivity_fields,
+    pde_weak_validity_ratio,
     weak_design_report,
 )
 
@@ -451,13 +455,19 @@ def compute_reference_coefficients(
     derivative_order: int,
     include_bias: bool,
     p: int,
-    K_ref: int,
+    K_ref: int | None,
     H_xt: list[float] | tuple[float, float, float] | None = None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, ps.CustomLibrary]:
     """
     Clean reference model on one trajectory (weak SINDy).
 
     The resulting coefficients are used as "ground truth".
+
+    ``K_ref=None`` derives the count from the support, as
+    :func:`_ns_make_weak_library` does, at the same coverage of 2. The config
+    documents ``K`` as "derived from H_xt when None" and the Monte Carlo passes
+    ``K_ref=cfg.K`` straight through, so without the derivation here the default
+    config reached pysindy with ``K=None`` and failed on ``self.K <= 0``.
     """
     U_clean, t, grid = generate_isothermal_ns_dataset(
         N=N,
@@ -473,6 +483,13 @@ def compute_reference_coefficients(
     base_library = _build_custom_library()
     
     h_xt = list(H_xt) if H_xt is not None else [L / 10.0, L / 10.0, T / 10.0]
+
+    if K_ref is None:
+        extents = tuple(
+            float(np.ptp(grid[..., axis])) for axis in range(grid.shape[-1])
+        )
+        domain = float(np.prod([2.0 * h for h in np.atleast_1d(h_xt)]))
+        K_ref = max(2, int(round(2.0 * float(np.prod(extents)) / domain)))
 
     weak_lib_ref = WeightedWeakPDELibrary(
         function_library=_build_custom_library(),  # separate instance is fine
@@ -514,12 +531,12 @@ class NSIsothermalMultiTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin
     noise_hf_rel: float = 0.01
 
     # grid / time
-    N: int = 32
-    Nt: int = 100
+    N: int = 64
+    Nt: int = 1000
     Nt_std: int = 500
     L: float = 5.0
-    T: float = 0.1
-    T_std : float = 0.5
+    T: float = 1.0
+    T_std : float = 1.0
 
     # physical parameters
     mu: float = 1.0
@@ -916,8 +933,16 @@ def build_ns_isothermal_weak_validation_blocks(
     grid: np.ndarray,
     weak_seed: int | None = None,
     group_name: str = "validation",
+    H_val=None,
 ) -> list[WeakValidationBlock]:
-    """Build held-out weak-form validation blocks for isothermal-flow trajectories."""
+    """Build held-out weak-form validation blocks for isothermal-flow trajectories.
+
+    ``H_val`` fixes the support of the validation system independently of the
+    candidate being scored. Without it the target moves with the candidate --
+    a different Theta, a different b and a different R^2 denominator per grid
+    point -- so the scores would not be comparable across the grid, which is
+    the whole purpose of scoring them.
+    """
 
     if isinstance(cfg, NSIsothermalMultiTrajectoryGLSConfig):
         multi_cfg = cfg
@@ -940,12 +965,15 @@ def build_ns_isothermal_weak_validation_blocks(
             p=cfg.p,
             K=cfg.K,
             K_std=cfg.K_ref,
-            H_xt=cfg.H_xt,
+            H_xt=cfg.H_xt if H_val is None else H_val,
             stlsq_threshold=cfg.stlsq_threshold,
             stlsq_alpha=cfg.stlsq_alpha,
             n_ensemble_models=cfg.n_ensemble_models,
             seed_base=cfg.seed_base,
         )
+
+    if H_val is not None and multi_cfg is cfg:
+        multi_cfg = replace(multi_cfg, H_xt=H_val)
 
     grid = np.asarray(grid, dtype=float)
     weak_seed = multi_cfg.seed_base if weak_seed is None else int(weak_seed)
@@ -1244,3 +1272,119 @@ def build_ns_isothermal_intra_trajectory_artifacts(
         true_coefficients=
         np.empty((data.shape[-1], 0)) if true_coefficients is None else np.asarray(true_coefficients),
     )
+
+
+def ns_isothermal_validation_support(
+    cfg: NSIsothermalMultiTrajectoryGLSConfig,
+    validation_trajectory: np.ndarray,
+    *,
+    grid: np.ndarray,
+    sigma: float,
+    candidates,
+    weak_seed: int | None = None,
+    min_ceiling: float = 0.99,
+    min_rows: int | None = None,
+    coefficients: np.ndarray | None = None,
+) -> ValidationSupport:
+    """Choose the support of the held-out weak system for the isothermal flow.
+
+    The noise ceiling on ``b`` is what bounds the choice. Kappa is reported
+    alongside when ``coefficients`` are given, but does not gate: it governs the
+    covariance model, and this system never invokes one -- the validation
+    library is built unweighted and scored with an unweighted R^2.
+    """
+
+    grid = np.asarray(grid, dtype=float)
+    seed = cfg.seed_base if weak_seed is None else int(weak_seed)
+
+    def build(H):
+        library = _ns_make_weak_library(
+            replace(cfg, H_xt=H, K=None),
+            grid,
+            variance_field=None,
+            weak_seed=seed,
+        )
+        library.fit_transform([validation_trajectory])
+        return library, np.asarray(library.convert_u_dot_integral(validation_trajectory))
+
+    kappa_fn = None
+    if coefficients is not None:
+        kappa_fn = lambda library, _H: float(  # noqa: E731
+            np.median(
+                pde_weak_validity_ratio(
+                    library,
+                    pde_sensitivity_fields(library, validation_trajectory, coefficients),
+                )
+            )
+        )
+
+    return select_validation_support(
+        build,
+        candidates=candidates,
+        sigma=sigma,
+        kappa_fn=kappa_fn,
+        min_ceiling=min_ceiling,
+        max_kappa=float("inf"),
+        min_rows=min_rows,
+    )
+
+
+def ns_isothermal_kappa_by_support(
+    cfg: NSIsothermalMultiTrajectoryGLSConfig,
+    candidates,
+    *,
+    coefficients: np.ndarray,
+    n_reference: int = 3,
+    weak_seed: int | None = None,
+) -> pd.DataFrame:
+    """Kappa per candidate fitting support, on fixed reference flows.
+
+    As for Burgers, but ``coefficients`` is required rather than derived: the
+    isothermal reference coefficients come from a weak fit of their own, and
+    recomputing it here would double the most expensive step in the notebook.
+
+    ``kappa_median`` is the gate statistic and ``kappa_lo``/``kappa_hi`` bracket
+    it with the best and worst reference flow. The Taylor-Green initial
+    condition randomises its amplitudes and wavenumbers, and the wavenumbers set
+    the size of the derivatives the library sees, so the spread across
+    references is the honest uncertainty in the bound rather than noise.
+    """
+
+    seed = cfg.seed_base if weak_seed is None else int(weak_seed)
+    references = []
+    for j in range(int(n_reference)):
+        U_ref, _t_ref, grid_ref = generate_isothermal_ns_dataset(
+            N=cfg.N, Nt=cfg.Nt, L=cfg.L, T=cfg.T, mu=cfg.mu, RT=cfg.RT,
+            seed=cfg.seed_base + j, ic_type="taylor-green",
+        )
+        references.append((np.asarray(U_ref), np.asarray(grid_ref, dtype=float)))
+
+    rows: list[dict] = []
+    for H in candidates:
+        medians: list[float] = []
+        maxima: list[float] = []
+        K_used = 0
+        for U_ref, grid_ref in references:
+            library = _ns_make_weak_library(
+                replace(cfg, H_xt=list(H), K=None), grid_ref,
+                variance_field=None, weak_seed=seed,
+            )
+            library.fit_transform([U_ref])
+            ratios = pde_weak_validity_ratio(
+                library,
+                pde_sensitivity_fields(library, U_ref, coefficients),
+            )
+            medians.append(float(np.median(ratios)))
+            maxima.append(float(np.max(ratios)))
+            K_used = int(library.K)
+        rows.append(
+            {
+                "H_xt": list(H),
+                "K": K_used,
+                "kappa_median": float(np.median(medians)),
+                "kappa_lo": float(np.min(medians)),
+                "kappa_hi": float(np.max(medians)),
+                "kappa_max": float(np.max(maxima)),
+            }
+        )
+    return pd.DataFrame(rows)

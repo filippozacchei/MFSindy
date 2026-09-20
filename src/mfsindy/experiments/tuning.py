@@ -28,6 +28,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, Mapping, Sequence
 
+import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
@@ -45,13 +46,43 @@ class RungTuning:
     best_params: Dict[str, Any]
     best_score: float
     at_boundary: Dict[str, str] = field(default_factory=dict)
+    restricted: bool = False
+    unrestricted_best_params: Dict[str, Any] | None = None
+    unrestricted_best_score: float | None = None
 
     def as_dict(self) -> Dict[str, Any]:
-        return {
+        payload = {
             "best_params": self.best_params,
             "best_score": self.best_score,
             "at_grid_boundary": self.at_boundary,
         }
+        if self.restricted:
+            # What the rung would have chosen unrestricted, so the price of
+            # confining it to a valid covariance model is on the record rather
+            # than invisible.
+            payload["restricted"] = True
+            payload["unrestricted_best_params"] = self.unrestricted_best_params
+            payload["unrestricted_best_score"] = self.unrestricted_best_score
+        return payload
+
+
+def _grid_equal(left: Any, right: Any) -> bool:
+    """Compare two grid values, which may be scalars or sequences.
+
+    The PDE benchmarks tune a vector support -- ``H_xt`` is ``[h_x, h_t]`` --
+    so a grid value can be a list. Comparing a pandas column of those against
+    one list with ``==`` makes pandas try to broadcast elementwise and raise,
+    rather than answering the question asked.
+    """
+
+    left_seq = isinstance(left, (list, tuple, np.ndarray))
+    right_seq = isinstance(right, (list, tuple, np.ndarray))
+    if left_seq or right_seq:
+        if not (left_seq and right_seq):
+            return False
+        left_arr, right_arr = np.atleast_1d(left), np.atleast_1d(right)
+        return left_arr.shape == right_arr.shape and bool(np.all(left_arr == right_arr))
+    return bool(left == right)
 
 
 def _boundary_axes(params: Mapping[str, Any], grid: Mapping[str, Sequence[Any]]) -> Dict[str, str]:
@@ -66,9 +97,9 @@ def _boundary_axes(params: Mapping[str, Any], grid: Mapping[str, Sequence[Any]])
             # would carry no information.
             continue
         chosen = params.get(name)
-        if chosen == values[0]:
+        if _grid_equal(chosen, values[0]):
             flagged[name] = "low"
-        elif chosen == values[-1]:
+        elif _grid_equal(chosen, values[-1]):
             flagged[name] = "high"
     return flagged
 
@@ -83,6 +114,7 @@ def tune_rungs(
     source_col: str = "model",
     maximize: bool = True,
     reducer: Callable[[pd.Series], float] = lambda s: float(s.mean()),
+    admissible: Callable[[str, Dict[str, Any]], bool] | None = None,
     progress_desc: str = "Tuning grid",
 ) -> tuple[Dict[str, RungTuning], pd.DataFrame]:
     """Select hyperparameters separately for each rung from one pass over the grid.
@@ -90,6 +122,15 @@ def tune_rungs(
     ``evaluate`` is called once per grid point with a cloned config and must
     return a long-format frame carrying one row per rung and metric, as produced
     by :func:`mfsindy.experiments.evaluate_rollout_models`.
+
+    ``admissible(rung, params)`` restricts which cells a rung may be *selected*
+    from. Every cell is still scored, so the surface stays complete and the
+    restriction is visible in the heatmap rather than hidden by a grid that was
+    quietly shrunk. The intended use is per-rung: the rungs that whiten by the
+    weak covariance are confined to supports where that covariance model holds,
+    while the unweighted baselines keep the whole grid, since kappa says nothing
+    about them. Restricting every rung alike would shrink the baselines' search
+    space for a condition they never invoke, which flatters the comparison.
 
     Returns the per-rung selections and the full score table, which belongs in
     the paper's reproducibility appendix.
@@ -116,12 +157,24 @@ def tune_rungs(
             failures.append((updates, f"{type(exc).__name__}: {exc}"))
             for rung in rungs:
                 rows.append({**updates, "rung": rung, "score": float("nan"),
-                             "error": f"{type(exc).__name__}: {exc}"})
+                             "error": f"{type(exc).__name__}: {exc}",
+                             "admissible": True if admissible is None else bool(
+                                 admissible(rung, dict(updates)))})
             continue
         for rung in rungs:
             mask = (frame[source_col] == rung) & (frame["metric"] == metric)
             score = reducer(frame.loc[mask, "value"]) if mask.any() else float("nan")
-            rows.append({**updates, "rung": rung, "score": score, "error": None})
+            rows.append(
+                {
+                    **updates,
+                    "rung": rung,
+                    "score": score,
+                    "error": None,
+                    "admissible": True if admissible is None else bool(
+                        admissible(rung, dict(updates))
+                    ),
+                }
+            )
 
     bar.close()
     if failures:
@@ -132,18 +185,48 @@ def tune_rungs(
             print(f"  ... and {len(failures) - 5} more; see the 'error' column")
     table = pd.DataFrame(rows)
 
+    def _pick(frame: pd.DataFrame):
+        idx = frame["score"].idxmax() if maximize else frame["score"].idxmin()
+        return frame.loc[idx]
+
     selections: Dict[str, RungTuning] = {}
     for rung in rungs:
         sub = table[table["rung"] == rung].dropna(subset=["score"])
         if sub.empty:
             raise ValueError(f"No scores recorded for rung {rung!r}.")
-        best = sub.loc[sub["score"].idxmax() if maximize else sub["score"].idxmin()]
+        allowed = sub[sub["admissible"]]
+        if allowed.empty:
+            raise ValueError(
+                f"Every grid point is inadmissible for rung {rung!r}; the "
+                "restriction leaves nothing to select from. Widen the grid "
+                "towards the admissible region or relax the bound."
+            )
+        restricted = len(allowed) < len(sub)
+        best = _pick(allowed)
         params = {n: best[n] for n in names}
+        # A rung confined to part of the grid is at an edge of the grid it can
+        # actually use, not of the one it was handed.
+        effective_grid = {
+            n: [
+                v
+                for v in param_grid[n]
+                if any(_grid_equal(chosen, v) for chosen in allowed[n])
+            ]
+            for n in names
+        }
+        unrestricted = _pick(sub) if restricted else None
         selections[rung] = RungTuning(
             rung=rung,
             best_params=params,
             best_score=float(best["score"]),
-            at_boundary=_boundary_axes(params, param_grid),
+            at_boundary=_boundary_axes(params, effective_grid),
+            restricted=restricted,
+            unrestricted_best_params=(
+                {n: unrestricted[n] for n in names} if restricted else None
+            ),
+            unrestricted_best_score=(
+                float(unrestricted["score"]) if restricted else None
+            ),
         )
     return selections, table
 

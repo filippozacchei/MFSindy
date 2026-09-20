@@ -40,6 +40,30 @@ RUNG_BLOCKS: Dict[str, tuple[tuple[str, str], ...]] = {
 }
 
 
+#: Rungs that whiten by the weak covariance, and so depend on the covariance
+#: model being valid. Kappa bounds the support for these and says nothing about
+#: the rest: HF, LF and MF form no covariance at all. Derived from the recipes
+#: above so it cannot drift from them.
+WHITENING_RUNGS: frozenset[str] = frozenset(
+    rung
+    for rung, blocks in RUNG_BLOCKS.items()
+    if any(weighting != "plain" for _, weighting in blocks)
+)
+
+
+#: Rungs whitened by the FULL weak covariance, which is what kappa bounds.
+#: VMF is deliberately not here: it whitens by the marginal variances alone, and
+#: GLS is invariant to a global rescale of its weights, so the level of kappa
+#: cancels for it -- at a kappa of 3.2 its weights are off by only 1.5x. The
+#: rungs below use the test-function correlations, where the error does not
+#: cancel, and PMF uses nothing else.
+FULL_COVARIANCE_RUNGS: frozenset[str] = frozenset(
+    rung
+    for rung, blocks in RUNG_BLOCKS.items()
+    if any(weighting in ("weighted", "pooled") for _, weighting in blocks)
+)
+
+
 def assemble_weak_rungs(
     group_builder: Callable[[str, str], tuple[List[np.ndarray], List[np.ndarray]]],
     fit_stacked: Callable[[List[np.ndarray], List[np.ndarray]], np.ndarray],
@@ -291,6 +315,8 @@ def run_multi_trajectory_gls_experiment(
 __all__ = [
     "MultiTrajectoryGLSData",
     "RUNG_BLOCKS",
+    "WHITENING_RUNGS",
+    "FULL_COVARIANCE_RUNGS",
     "assemble_weak_rungs",
     "fit_multi_trajectory_gls_models",
     "fit_multi_trajectory_weak_gls_models",
