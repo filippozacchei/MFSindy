@@ -61,7 +61,6 @@ MIN_CEILING = 0.99
 
 def make_config(**overrides) -> PendulumMultiTrajectoryGLSConfig:
     settings = dict(
-        seed_base=1234,
         p=2,
         n_runs=100,
         results_dir=str(RESULTS_DIR),
