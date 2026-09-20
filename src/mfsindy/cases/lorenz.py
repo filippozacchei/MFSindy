@@ -310,12 +310,6 @@ def _lorenz_make_weak_library(
     if cfg.K is not None:
         K_requested = int(cfg.K)
     else:
-        # Coverage 2: every point lies under two test functions on average.
-        # Coverage and support width are separable knobs. Coverage sets the
-        # conditioning of the weak covariance -- 1 gives cond ~1e1, 2 ~1e2,
-        # 10 ~1e7 -- while the support sets kappa, the validity of the
-        # covariance model. Two keeps both in hand: it doubles the number of
-        # weak equations over a bare tiling while leaving cond in the hundreds.
         K_requested = max(2, int(round(extent / H)))
     common_kwargs["K"] = K_requested
 

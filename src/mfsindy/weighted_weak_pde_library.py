@@ -69,6 +69,7 @@ class DedupedWeakPDELibrary(WeakPDELibrary):
         self.n_duplicate_domains_ = (
             drop_duplicate_domains(self) if self.deduplicate else 0
         )
+        
 def weak_validity_ratio(library, jacobian_norm) -> np.ndarray:
     """kappa per test function: how much of the residual the covariance ignores.
 

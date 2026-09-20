@@ -1,0 +1,2634 @@
+{
+  "param_grid": {
+    "stlsq_threshold": [
+      0.1,
+      0.2,
+      0.5
+    ],
+    "H_xt": [
+      [
+        0.25,
+        0.25,
+        0.005
+      ],
+      [
+        0.25,
+        0.25,
+        0.01
+      ],
+      [
+        0.25,
+        0.25,
+        0.02
+      ],
+      [
+        0.5,
+        0.5,
+        0.005
+      ],
+      [
+        0.5,
+        0.5,
+        0.01
+      ],
+      [
+        0.5,
+        0.5,
+        0.02
+      ],
+      [
+        1.0,
+        1.0,
+        0.005
+      ],
+      [
+        1.0,
+        1.0,
+        0.01
+      ],
+      [
+        1.0,
+        1.0,
+        0.02
+      ]
+    ]
+  },
+  "fixed": {
+    "weak_design": {
+      "HF": {
+        "K_requested": 469,
+        "K_used": 469,
+        "duplicate_supports_dropped": 0,
+        "cov_cond": 36.338708602755865,
+        "cov_rank": 469,
+        "cov_rank_deficit": 0,
+        "cov_below_nugget": 0
+      },
+      "LF": {
+        "K_requested": 235,
+        "K_used": 235,
+        "duplicate_supports_dropped": 0,
+        "cov_cond": 35.225157241904725,
+        "cov_rank": 235,
+        "cov_rank_deficit": 0,
+        "cov_below_nugget": 0
+      },
+      "MF": {
+        "K_requested": 235,
+        "K_used": 235,
+        "duplicate_supports_dropped": 0,
+        "cov_cond": 35.225157241904725,
+        "cov_rank": 235,
+        "cov_rank_deficit": 0,
+        "cov_below_nugget": 0
+      },
+      "VHF": {
+        "K_requested": 469,
+        "K_used": 469,
+        "duplicate_supports_dropped": 0,
+        "cov_cond": 36.338708602755865,
+        "cov_rank": 469,
+        "cov_rank_deficit": 0,
+        "cov_below_nugget": 0
+      },
+      "VLF": {
+        "K_requested": 235,
+        "K_used": 235,
+        "duplicate_supports_dropped": 0,
+        "cov_cond": 35.225157241904725,
+        "cov_rank": 235,
+        "cov_rank_deficit": 0,
+        "cov_below_nugget": 0
+      },
+      "PMF": {
+        "K_requested": 235,
+        "K_used": 235,
+        "duplicate_supports_dropped": 0,
+        "cov_cond": 35.225157241904725,
+        "cov_rank": 235,
+        "cov_rank_deficit": 0,
+        "cov_below_nugget": 0
+      },
+      "VMF": {
+        "K_requested": 235,
+        "K_used": 235,
+        "duplicate_supports_dropped": 0,
+        "cov_cond": 35.225157241904725,
+        "cov_rank": 235,
+        "cov_rank_deficit": 0,
+        "cov_below_nugget": 0
+      },
+      "MF_w": {
+        "K_requested": 59,
+        "K_used": 59,
+        "duplicate_supports_dropped": 0,
+        "cov_cond": 14.163242176576803,
+        "cov_rank": 59,
+        "cov_rank_deficit": 0,
+        "cov_below_nugget": 0
+      }
+    },
+    "n_takes": 5,
+    "K": null,
+    "n_ensemble_models": 100,
+    "N": 32,
+    "Nt": 100,
+    "L": 5.0,
+    "T": 0.1,
+    "mu": 1.0,
+    "RT": 1.0,
+    "n_hf": 1,
+    "n_lf": 10,
+    "noise_hf_rel": 0.01,
+    "noise_lf_rel": 0.25,
+    "seed_base": 0
+  },
+  "selection": {
+    "HF": {
+      "best_params": {
+        "stlsq_threshold": 0.2,
+        "H_xt": [
+          0.25,
+          0.25,
+          0.01
+        ]
+      },
+      "best_score": 0.998484630401391,
+      "at_grid_boundary": {}
+    },
+    "LF": {
+      "best_params": {
+        "stlsq_threshold": 0.5,
+        "H_xt": [
+          0.25,
+          0.25,
+          0.02
+        ]
+      },
+      "best_score": 0.9975571726038694,
+      "at_grid_boundary": {
+        "stlsq_threshold": "high"
+      }
+    },
+    "MF": {
+      "best_params": {
+        "stlsq_threshold": 0.5,
+        "H_xt": [
+          0.25,
+          0.25,
+          0.02
+        ]
+      },
+      "best_score": 0.9977949009630084,
+      "at_grid_boundary": {
+        "stlsq_threshold": "high"
+      }
+    },
+    "VHF": {
+      "best_params": {
+        "stlsq_threshold": 0.2,
+        "H_xt": [
+          0.25,
+          0.25,
+          0.01
+        ]
+      },
+      "best_score": 0.9978764052078031,
+      "at_grid_boundary": {}
+    },
+    "VLF": {
+      "best_params": {
+        "stlsq_threshold": 0.1,
+        "H_xt": [
+          0.25,
+          0.25,
+          0.02
+        ]
+      },
+      "best_score": 0.9967236215941888,
+      "at_grid_boundary": {
+        "stlsq_threshold": "low"
+      }
+    },
+    "PMF": {
+      "best_params": {
+        "stlsq_threshold": 0.5,
+        "H_xt": [
+          0.25,
+          0.25,
+          0.02
+        ]
+      },
+      "best_score": 0.9977406741501573,
+      "at_grid_boundary": {
+        "stlsq_threshold": "high"
+      }
+    },
+    "VMF": {
+      "best_params": {
+        "stlsq_threshold": 0.5,
+        "H_xt": [
+          0.25,
+          0.25,
+          0.02
+        ]
+      },
+      "best_score": 0.9994240447776248,
+      "at_grid_boundary": {
+        "stlsq_threshold": "high"
+      }
+    },
+    "MF_w": {
+      "best_params": {
+        "stlsq_threshold": 0.5,
+        "H_xt": [
+          0.5,
+          0.5,
+          0.02
+        ]
+      },
+      "best_score": 0.9994311957356157,
+      "at_grid_boundary": {
+        "stlsq_threshold": "high"
+      }
+    }
+  },
+  "scores": [
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.005
+      ],
+      "rung": "HF",
+      "score": 0.9884920327876323,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.005
+      ],
+      "rung": "LF",
+      "score": 0.9744523139347923,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.005
+      ],
+      "rung": "MF",
+      "score": 0.979880418762065,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.005
+      ],
+      "rung": "VHF",
+      "score": 0.9894972355427907,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.005
+      ],
+      "rung": "VLF",
+      "score": 0.979937273329838,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.005
+      ],
+      "rung": "PMF",
+      "score": 0.9840820471707167,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.005
+      ],
+      "rung": "VMF",
+      "score": 0.9943016900141541,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.005
+      ],
+      "rung": "MF_w",
+      "score": 0.9929867347307365,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.01
+      ],
+      "rung": "HF",
+      "score": 0.9877576078587478,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.01
+      ],
+      "rung": "LF",
+      "score": 0.9906694849018602,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.01
+      ],
+      "rung": "MF",
+      "score": 0.9943450698623739,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.01
+      ],
+      "rung": "VHF",
+      "score": 0.9931766858362291,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.01
+      ],
+      "rung": "VLF",
+      "score": 0.9899395870798504,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.01
+      ],
+      "rung": "PMF",
+      "score": 0.9942714790047052,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.01
+      ],
+      "rung": "VMF",
+      "score": 0.9978407900340753,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.01
+      ],
+      "rung": "MF_w",
+      "score": 0.997556926706979,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.02
+      ],
+      "rung": "HF",
+      "score": 0.9901890907238643,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.02
+      ],
+      "rung": "LF",
+      "score": 0.9959464033295472,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.02
+      ],
+      "rung": "MF",
+      "score": 0.9977282898603861,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.02
+      ],
+      "rung": "VHF",
+      "score": 0.9869679793484636,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.02
+      ],
+      "rung": "VLF",
+      "score": 0.9967236215941888,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.02
+      ],
+      "rung": "PMF",
+      "score": 0.9976423234762946,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.02
+      ],
+      "rung": "VMF",
+      "score": 0.9982593487938347,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.02
+      ],
+      "rung": "MF_w",
+      "score": 0.9986460334583942,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.005
+      ],
+      "rung": "HF",
+      "score": 0.5709443978399277,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.005
+      ],
+      "rung": "LF",
+      "score": 0.9270088704701616,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.005
+      ],
+      "rung": "MF",
+      "score": 0.942726768220042,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.005
+      ],
+      "rung": "VHF",
+      "score": 0.6471839843633195,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.005
+      ],
+      "rung": "VLF",
+      "score": 0.9364363651291313,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.005
+      ],
+      "rung": "PMF",
+      "score": 0.9504166186875193,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.005
+      ],
+      "rung": "VMF",
+      "score": 0.9686572170832128,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.005
+      ],
+      "rung": "MF_w",
+      "score": 0.9748418579823127,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.01
+      ],
+      "rung": "HF",
+      "score": 0.8040402694582302,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.01
+      ],
+      "rung": "LF",
+      "score": 0.9703583684273743,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.01
+      ],
+      "rung": "MF",
+      "score": 0.9668000504110232,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.01
+      ],
+      "rung": "VHF",
+      "score": 0.7424283964087405,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.01
+      ],
+      "rung": "VLF",
+      "score": 0.9675356150038688,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.01
+      ],
+      "rung": "PMF",
+      "score": 0.9738956821676439,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.01
+      ],
+      "rung": "VMF",
+      "score": 0.9914744185402344,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.01
+      ],
+      "rung": "MF_w",
+      "score": 0.989138135612307,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.02
+      ],
+      "rung": "HF",
+      "score": 0.9204753172510307,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.02
+      ],
+      "rung": "LF",
+      "score": 0.9937087207852718,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.02
+      ],
+      "rung": "MF",
+      "score": 0.9897816629285234,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.02
+      ],
+      "rung": "VHF",
+      "score": 0.9328662175581133,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.02
+      ],
+      "rung": "VLF",
+      "score": 0.9877832149866471,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.02
+      ],
+      "rung": "PMF",
+      "score": 0.9888575090494477,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.02
+      ],
+      "rung": "VMF",
+      "score": 0.9964774596260494,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.02
+      ],
+      "rung": "MF_w",
+      "score": 0.9980702227918904,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.005
+      ],
+      "rung": "HF",
+      "score": -0.3397588875256076,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.005
+      ],
+      "rung": "LF",
+      "score": 0.5072084177696962,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.005
+      ],
+      "rung": "MF",
+      "score": 0.5058699790918108,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.005
+      ],
+      "rung": "VHF",
+      "score": 0.2058013061970548,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.005
+      ],
+      "rung": "VLF",
+      "score": 0.416366189285627,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.005
+      ],
+      "rung": "PMF",
+      "score": 0.6438490808571306,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.005
+      ],
+      "rung": "VMF",
+      "score": 0.719767794494165,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.005
+      ],
+      "rung": "MF_w",
+      "score": 0.7878856959036462,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.01
+      ],
+      "rung": "HF",
+      "score": 0.31746514301906736,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.01
+      ],
+      "rung": "LF",
+      "score": 0.5950947137899382,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.01
+      ],
+      "rung": "MF",
+      "score": 0.5841418444859482,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.01
+      ],
+      "rung": "VHF",
+      "score": 0.04689254119159612,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.01
+      ],
+      "rung": "VLF",
+      "score": 0.7454363384230452,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.01
+      ],
+      "rung": "PMF",
+      "score": 0.7990977796999171,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.01
+      ],
+      "rung": "VMF",
+      "score": 0.7209712895742951,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.01
+      ],
+      "rung": "MF_w",
+      "score": 0.774495736534188,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.02
+      ],
+      "rung": "HF",
+      "score": -0.08086411063130683,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.02
+      ],
+      "rung": "LF",
+      "score": 0.17488323773834807,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.02
+      ],
+      "rung": "MF",
+      "score": 0.46292552834335804,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.02
+      ],
+      "rung": "VHF",
+      "score": -0.08086411063130683,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.02
+      ],
+      "rung": "VLF",
+      "score": 0.44216407383213063,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.02
+      ],
+      "rung": "PMF",
+      "score": 0.6423039723064725,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.02
+      ],
+      "rung": "VMF",
+      "score": 0.5727334353140339,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.02
+      ],
+      "rung": "MF_w",
+      "score": 0.7562323733525568,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.005
+      ],
+      "rung": "HF",
+      "score": 0.9975666983929461,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.005
+      ],
+      "rung": "LF",
+      "score": 0.974428717263218,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.005
+      ],
+      "rung": "MF",
+      "score": 0.977723137101506,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.005
+      ],
+      "rung": "VHF",
+      "score": 0.997243928008006,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.005
+      ],
+      "rung": "VLF",
+      "score": 0.9802585462720508,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.005
+      ],
+      "rung": "PMF",
+      "score": 0.9803023123760986,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.005
+      ],
+      "rung": "VMF",
+      "score": 0.9933502487114166,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.005
+      ],
+      "rung": "MF_w",
+      "score": 0.9950003038896778,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.01
+      ],
+      "rung": "HF",
+      "score": 0.998484630401391,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.01
+      ],
+      "rung": "LF",
+      "score": 0.988595195519544,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.01
+      ],
+      "rung": "MF",
+      "score": 0.9904202769763616,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.01
+      ],
+      "rung": "VHF",
+      "score": 0.9978764052078031,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.01
+      ],
+      "rung": "VLF",
+      "score": 0.9929894894576881,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.01
+      ],
+      "rung": "PMF",
+      "score": 0.9919856832527287,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.01
+      ],
+      "rung": "VMF",
+      "score": 0.9992913127884291,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.01
+      ],
+      "rung": "MF_w",
+      "score": 0.9993074010338047,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.02
+      ],
+      "rung": "HF",
+      "score": 0.9885133229905243,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.02
+      ],
+      "rung": "LF",
+      "score": 0.9950058850225167,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.02
+      ],
+      "rung": "MF",
+      "score": 0.9972534194923185,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.02
+      ],
+      "rung": "VHF",
+      "score": 0.9782594672066919,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.02
+      ],
+      "rung": "VLF",
+      "score": 0.9951910354589074,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.02
+      ],
+      "rung": "PMF",
+      "score": 0.9965017429345467,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.02
+      ],
+      "rung": "VMF",
+      "score": 0.9986320331371024,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.02
+      ],
+      "rung": "MF_w",
+      "score": 0.9986445184778807,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.005
+      ],
+      "rung": "HF",
+      "score": 0.40546142116447026,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.005
+      ],
+      "rung": "LF",
+      "score": 0.9101751164805252,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.005
+      ],
+      "rung": "MF",
+      "score": 0.905202234752956,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.005
+      ],
+      "rung": "VHF",
+      "score": 0.4965585171144758,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.005
+      ],
+      "rung": "VLF",
+      "score": 0.8930182574832676,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.005
+      ],
+      "rung": "PMF",
+      "score": 0.9342272312055006,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.005
+      ],
+      "rung": "VMF",
+      "score": 0.9903939038727113,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.005
+      ],
+      "rung": "MF_w",
+      "score": 0.9861211993933561,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.01
+      ],
+      "rung": "HF",
+      "score": 0.8982071147124364,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.01
+      ],
+      "rung": "LF",
+      "score": 0.9501606759163878,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.01
+      ],
+      "rung": "MF",
+      "score": 0.9704127861402426,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.01
+      ],
+      "rung": "VHF",
+      "score": 0.9263880761353377,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.01
+      ],
+      "rung": "VLF",
+      "score": 0.9662995068535405,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.01
+      ],
+      "rung": "PMF",
+      "score": 0.9755247861641948,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.01
+      ],
+      "rung": "VMF",
+      "score": 0.998594287253348,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.01
+      ],
+      "rung": "MF_w",
+      "score": 0.999313956374265,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.02
+      ],
+      "rung": "HF",
+      "score": 0.927120566712567,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.02
+      ],
+      "rung": "LF",
+      "score": 0.9940608318853423,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.02
+      ],
+      "rung": "MF",
+      "score": 0.9909474540244595,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.02
+      ],
+      "rung": "VHF",
+      "score": 0.9236234174622593,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.02
+      ],
+      "rung": "VLF",
+      "score": 0.9926391591497445,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.02
+      ],
+      "rung": "PMF",
+      "score": 0.9921820997367984,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.02
+      ],
+      "rung": "VMF",
+      "score": 0.997866475195476,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.02
+      ],
+      "rung": "MF_w",
+      "score": 0.9990462590938431,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.005
+      ],
+      "rung": "HF",
+      "score": 0.7256825259587525,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.005
+      ],
+      "rung": "LF",
+      "score": 0.24946955936178083,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.005
+      ],
+      "rung": "MF",
+      "score": 0.5659831749739563,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.005
+      ],
+      "rung": "VHF",
+      "score": 0.8462397098659711,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.005
+      ],
+      "rung": "VLF",
+      "score": 0.3789895408812348,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.005
+      ],
+      "rung": "PMF",
+      "score": 0.44712100610988037,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.005
+      ],
+      "rung": "VMF",
+      "score": 0.5415599804929149,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.005
+      ],
+      "rung": "MF_w",
+      "score": 0.6797545129054894,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.01
+      ],
+      "rung": "HF",
+      "score": -0.025950888842836316,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.01
+      ],
+      "rung": "LF",
+      "score": 0.5051479966058539,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.01
+      ],
+      "rung": "MF",
+      "score": 0.7255863557865985,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.01
+      ],
+      "rung": "VHF",
+      "score": -0.025950888842836316,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.01
+      ],
+      "rung": "VLF",
+      "score": 0.45340132249486265,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.01
+      ],
+      "rung": "PMF",
+      "score": 0.676558404580733,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.01
+      ],
+      "rung": "VMF",
+      "score": 0.8563218229454381,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.01
+      ],
+      "rung": "MF_w",
+      "score": 0.8052251177963345,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.02
+      ],
+      "rung": "HF",
+      "score": -0.08086411063130683,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.02
+      ],
+      "rung": "LF",
+      "score": 0.37178401488043644,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.02
+      ],
+      "rung": "MF",
+      "score": 0.5975653300767553,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.02
+      ],
+      "rung": "VHF",
+      "score": -0.08086411063130683,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.02
+      ],
+      "rung": "VLF",
+      "score": 0.4475399120128169,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.02
+      ],
+      "rung": "PMF",
+      "score": 0.31514443903971234,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.02
+      ],
+      "rung": "VMF",
+      "score": 0.6948838132163505,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.02
+      ],
+      "rung": "MF_w",
+      "score": 0.6872214870183209,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.005
+      ],
+      "rung": "HF",
+      "score": 0.9937240797559571,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.005
+      ],
+      "rung": "LF",
+      "score": 0.9228814674298697,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.005
+      ],
+      "rung": "MF",
+      "score": 0.9264475350243254,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.005
+      ],
+      "rung": "VHF",
+      "score": 0.9891039921647833,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.005
+      ],
+      "rung": "VLF",
+      "score": 0.9124334882752961,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.005
+      ],
+      "rung": "PMF",
+      "score": 0.9062872487601045,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.005
+      ],
+      "rung": "VMF",
+      "score": 0.9973647979603746,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.005
+      ],
+      "rung": "MF_w",
+      "score": 0.9982988949485214,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.01
+      ],
+      "rung": "HF",
+      "score": 0.9874064285718696,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.01
+      ],
+      "rung": "LF",
+      "score": 0.9745518587869892,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.01
+      ],
+      "rung": "MF",
+      "score": 0.990398134111272,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.01
+      ],
+      "rung": "VHF",
+      "score": 0.9801036791172452,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.01
+      ],
+      "rung": "VLF",
+      "score": 0.9854719348601128,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.01
+      ],
+      "rung": "PMF",
+      "score": 0.9920777068974541,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.01
+      ],
+      "rung": "VMF",
+      "score": 0.9967839423590286,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.01
+      ],
+      "rung": "MF_w",
+      "score": 0.9952146402210283,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.02
+      ],
+      "rung": "HF",
+      "score": 0.9352188212501634,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.02
+      ],
+      "rung": "LF",
+      "score": 0.9975571726038694,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.02
+      ],
+      "rung": "MF",
+      "score": 0.9977949009630084,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.02
+      ],
+      "rung": "VHF",
+      "score": 0.9343626172319544,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.02
+      ],
+      "rung": "VLF",
+      "score": 0.9922811480752738,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.02
+      ],
+      "rung": "PMF",
+      "score": 0.9977406741501573,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.02
+      ],
+      "rung": "VMF",
+      "score": 0.9994240447776248,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        0.25,
+        0.25,
+        0.02
+      ],
+      "rung": "MF_w",
+      "score": 0.9993926884014472,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.005
+      ],
+      "rung": "HF",
+      "score": 0.5617578292963014,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.005
+      ],
+      "rung": "LF",
+      "score": 0.8671184031991258,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.005
+      ],
+      "rung": "MF",
+      "score": 0.7525681487960052,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.005
+      ],
+      "rung": "VHF",
+      "score": 0.5546224734521625,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.005
+      ],
+      "rung": "VLF",
+      "score": 0.7843756986896233,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.005
+      ],
+      "rung": "PMF",
+      "score": 0.873234420865779,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.005
+      ],
+      "rung": "VMF",
+      "score": 0.9906478220017612,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.005
+      ],
+      "rung": "MF_w",
+      "score": 0.9912247636924579,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.01
+      ],
+      "rung": "HF",
+      "score": 0.42178728423589557,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.01
+      ],
+      "rung": "LF",
+      "score": 0.9913398421309665,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.01
+      ],
+      "rung": "MF",
+      "score": 0.9934521875271575,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.01
+      ],
+      "rung": "VHF",
+      "score": 0.2977643375036726,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.01
+      ],
+      "rung": "VLF",
+      "score": 0.9874261381103547,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.01
+      ],
+      "rung": "PMF",
+      "score": 0.9912988579183128,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.01
+      ],
+      "rung": "VMF",
+      "score": 0.9917803024901934,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.01
+      ],
+      "rung": "MF_w",
+      "score": 0.9938164175862468,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.02
+      ],
+      "rung": "HF",
+      "score": -0.022217784885857128,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.02
+      ],
+      "rung": "LF",
+      "score": 0.995735798832159,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.02
+      ],
+      "rung": "MF",
+      "score": 0.9950125182675477,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.02
+      ],
+      "rung": "VHF",
+      "score": -0.022217784885857128,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.02
+      ],
+      "rung": "VLF",
+      "score": 0.9963636887027467,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.02
+      ],
+      "rung": "PMF",
+      "score": 0.9924850361917261,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.02
+      ],
+      "rung": "VMF",
+      "score": 0.9969806322608878,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        0.5,
+        0.5,
+        0.02
+      ],
+      "rung": "MF_w",
+      "score": 0.9994311957356157,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.005
+      ],
+      "rung": "HF",
+      "score": -0.025405334695377313,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.005
+      ],
+      "rung": "LF",
+      "score": -0.06542179791829934,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.005
+      ],
+      "rung": "MF",
+      "score": 0.29144035492798087,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.005
+      ],
+      "rung": "VHF",
+      "score": -0.025405334695377313,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.005
+      ],
+      "rung": "VLF",
+      "score": -0.3175679534865497,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.005
+      ],
+      "rung": "PMF",
+      "score": 0.22977629951310358,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.005
+      ],
+      "rung": "VMF",
+      "score": 0.15137635374108407,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.005
+      ],
+      "rung": "MF_w",
+      "score": 0.5024993700247512,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.01
+      ],
+      "rung": "HF",
+      "score": -0.025950888842836316,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.01
+      ],
+      "rung": "LF",
+      "score": 0.10796250455516129,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.01
+      ],
+      "rung": "MF",
+      "score": 0.41138105445596673,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.01
+      ],
+      "rung": "VHF",
+      "score": -0.025950888842836316,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.01
+      ],
+      "rung": "VLF",
+      "score": 0.4497342356008039,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.01
+      ],
+      "rung": "PMF",
+      "score": 0.4559857120053447,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.01
+      ],
+      "rung": "VMF",
+      "score": 0.8083763243012388,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.01
+      ],
+      "rung": "MF_w",
+      "score": 0.8342792603924233,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.02
+      ],
+      "rung": "HF",
+      "score": -0.08086411063130683,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.02
+      ],
+      "rung": "LF",
+      "score": 0.5212568639685817,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.02
+      ],
+      "rung": "MF",
+      "score": 0.574718821342367,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.02
+      ],
+      "rung": "VHF",
+      "score": -0.08086411063130683,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.02
+      ],
+      "rung": "VLF",
+      "score": 0.60083235526268,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.02
+      ],
+      "rung": "PMF",
+      "score": 0.41164329180394627,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.02
+      ],
+      "rung": "VMF",
+      "score": 0.353416328522544,
+      "error": null
+    },
+    {
+      "stlsq_threshold": 0.5,
+      "H_xt": [
+        1.0,
+        1.0,
+        0.02
+      ],
+      "rung": "MF_w",
+      "score": 0.7325336476492451,
+      "error": null
+    }
+  ]
+}
