@@ -19,10 +19,11 @@ import pandas as pd
 from mfsindy.cases.isothermal_flow import (
     NSIsothermalMultiTrajectoryGLSConfig,
     build_ns_isothermal_weak_validation_blocks,
-    compute_reference_coefficients,
+    build_true_ns_isothermal_coefficients,
     fit_ns_isothermal_multi_trajectory_coefficients,
     generate_isothermal_ns_dataset,
     ns_isothermal_kappa_by_support,
+    get_ns_isothermal_feature_names,
     ns_isothermal_validation_support,
     ns_isothermal_weak_design,
     run_ns_isothermal_multi_trajectory_gls_experiment,
@@ -125,18 +126,24 @@ def tune(cfg, *, results_dir: Path = RESULTS_DIR, verbose: bool = True) -> Tunin
 
     grid_search = np.asarray(grid_search, dtype=float)
 
-    # The reference coefficients weight each library feature's sensitivity: a
-    # term the model does not use cannot break the covariance model.
-    reference_coefficients, _, _, _, _ = compute_reference_coefficients(
-        N=cfg.N, Nt=cfg.Nt_std, L=cfg.L, T=cfg.T_std, mu=cfg.mu, RT=cfg.RT,
-        seed_base=cfg.seed_base, derivative_order=cfg.derivative_order,
-        include_bias=cfg.include_bias, p=cfg.p, K_ref=cfg.K_std, H_xt=cfg.H_xt,
+    # Kappa weights each library feature's sensitivity by its coefficient, so
+    # the coefficients had better be the right ones. These are analytic -- the
+    # equations compressible integrates -- and must be: the weak-SINDy reference
+    # this used to call carried a spurious -5.7 on v*u_xy, a mixed second
+    # derivative. Weighting a sensitivity field by a coefficient five times
+    # larger than any real one inflates kappa and tightens the gate for no
+    # physical reason.
+    feature_names = get_ns_isothermal_feature_names(
+        cfg, grid=grid_search, reference_trajectory=hf_val[0]
+    )
+    reference_coefficients = build_true_ns_isothermal_coefficients(
+        feature_names, RT=cfg.RT, mu=cfg.mu
     )
 
     support = ns_isothermal_validation_support(
         cfg, hf_val[0], grid=grid_search, sigma=noise_hf_abs,
         candidates=grid["H_xt"], weak_seed=take_seeds[0] + 10,
-        min_ceiling=MIN_CEILING, coefficients=np.asarray(reference_coefficients),
+        min_ceiling=MIN_CEILING, coefficients=reference_coefficients,
     )
     if verbose:
         print(support.table.to_string(index=False))
@@ -151,7 +158,7 @@ def tune(cfg, *, results_dir: Path = RESULTS_DIR, verbose: bool = True) -> Tunin
     }
 
     kappa_table = ns_isothermal_kappa_by_support(
-        cfg, grid["H_xt"], coefficients=np.asarray(reference_coefficients),
+        cfg, grid["H_xt"], coefficients=reference_coefficients,
         n_reference=N_KAPPA_REFERENCE,
     )
     kappa_table["admissible"] = kappa_table["kappa_median"] <= KAPPA_MAX
