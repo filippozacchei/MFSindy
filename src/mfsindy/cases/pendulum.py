@@ -444,12 +444,10 @@ def pendulum_weak_design(
     library.fit_transform([batch.hf[0]])
 
     report = weak_design_report(library, K_requested)
-    # The covariance model keeps only the derivative-driven term and drops the
-    # one carrying the library Jacobian; kappa is the ratio of the two, and the
-    # approximation holds where it is small.
-    kappa = weak_validity_ratio(library, _pendulum_jacobian_norm(batch.hf[0], cfg))
-    report["kappa_median"] = float(np.median(kappa))
-    report["kappa_max"] = float(kappa.max())
+    # Kappa is not reported here. It was, computed on this one noisy HF
+    # trajectory, which disagreed with pendulum_kappa_by_support -- the median over
+    # clean reference trajectories -- by up to 1.6x at the same support. One
+    # quantity, one estimator: use the kappa table.
     return report
 
 

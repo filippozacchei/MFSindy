@@ -434,77 +434,6 @@ def save_ns_part1_tuned_hyperparams(
     return target
 
 
-def compute_reference_coefficients(
-    N: int,
-    Nt: int,
-    L: float,
-    T: float,
-    mu: float,
-    RT: float,
-    seed_base: int,
-    derivative_order: int,
-    include_bias: bool,
-    p: int,
-    K_ref: int | None,
-    H_xt: list[float] | tuple[float, float, float] | None = None,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, ps.CustomLibrary]:
-    """
-    Clean reference model on one trajectory (weak SINDy).
-
-    The resulting coefficients are used as "ground truth".
-
-    ``K_ref=None`` derives the count from the support, as
-    :func:`_ns_make_weak_library` does, at the same coverage of 2. The config
-    documents ``K`` as "derived from H_xt when None" and the Monte Carlo passes
-    ``K_ref=cfg.K`` straight through, so without the derivation here the default
-    config reached pysindy with ``K=None`` and failed on ``self.K <= 0``.
-    """
-    U_clean, t, grid = generate_isothermal_ns_dataset(
-        N=N,
-        Nt=Nt,
-        L=L,
-        T=T,
-        mu=mu,
-        RT=RT,
-        seed=seed_base,
-    )
-
-    base_library = _build_custom_library()
-
-    h_xt = list(H_xt) if H_xt is not None else [L / 10.0, L / 10.0, T / 10.0]
-
-    # pysindy draws the domain centres from the global RNG, and nothing here
-    # seeded it: the same call returned different coefficients depending on what
-    # had consumed the stream first. Seed it so this is reproducible.
-    np.random.seed(int(seed_base))
-
-    if K_ref is None:
-        extents = tuple(
-            float(np.ptp(grid[..., axis])) for axis in range(grid.shape[-1])
-        )
-        domain = float(np.prod([2.0 * h for h in np.atleast_1d(h_xt)]))
-        K_ref = max(2, int(round(2.0 * float(np.prod(extents)) / domain)))
-
-    weak_lib_ref = WeightedWeakPDELibrary(
-        function_library=_build_custom_library(),  # separate instance is fine
-        derivative_order=derivative_order,
-        spatiotemporal_grid=grid,
-        K=K_ref,
-        p=p,
-        spatiotemporal_weights=np.ones((U_clean.shape[0],U_clean.shape[1],U_clean.shape[2])),
-        H_xt=h_xt,
-        include_bias=include_bias,
-    )
-
-    opt_ref = ps.STLSQ(threshold=0.5, alpha=1e-12)
-    model_ref = ps.SINDy(feature_library=weak_lib_ref, optimizer=opt_ref)
-
-    model_ref.fit(U_clean, t=t)
-
-    C_true = model_ref.optimizer.coef_.copy()  # shape (n_states=3, n_terms)
-    return C_true, U_clean, t, grid, base_library
-
-
 # ---------------------------------------------------------------------------
 # PART 1: Multi-fidelity SINDy experiment (HF / LF / MF / MF_w)
 # ---------------------------------------------------------------------------
@@ -851,37 +780,14 @@ def run_ns_isothermal_multi_trajectory_gls_experiment(
     noise_hf_abs : absolute HF noise level
     noise_lf_abs : absolute LF noise level
     """
-    # Reference clean dataset for state_std and "truth"
-    C_true, _, _, _, _ = compute_reference_coefficients(
-        N=cfg.N,
-        Nt=cfg.Nt_std,
-        L=cfg.L,
-        T=cfg.T_std,
-        mu=cfg.mu,
-        RT=cfg.RT,
-        seed_base=cfg.seed_base,
-        derivative_order=cfg.derivative_order,
-        include_bias=cfg.include_bias,
-        p=cfg.p,
-        K_ref=cfg.K_std,
-        H_xt=cfg.H_xt,
-    )
     
-    _, U_ref, t_ref, grid_ref, _ = compute_reference_coefficients(
-        N=cfg.N,
-        Nt=cfg.Nt,
-        L=cfg.L,
-        T=cfg.T,
-        mu=cfg.mu,
-        RT=cfg.RT,
-        seed_base=cfg.seed_base,
-        derivative_order=cfg.derivative_order,
-        include_bias=cfg.include_bias,
-        p=cfg.p,
-        K_ref=cfg.K,
-        H_xt=cfg.H_xt,
+    # The clean reference flow sets state_std and the grid -- nothing more is
+    # needed from it. It used to come from a weak-SINDy fit of this same flow,
+    # which ran the whole fit only for the coefficients to be discarded.
+    U_ref, t_ref, grid_ref = generate_isothermal_ns_dataset(
+        N=cfg.N, Nt=cfg.Nt, L=cfg.L, T=cfg.T, mu=cfg.mu, RT=cfg.RT,
+        seed=cfg.seed_base,
     )
-
 
     state_std = float(np.std(U_ref[:,:,:,2]))
 
@@ -1256,19 +1162,21 @@ def run_ns_isothermal_intra_trajectory_gls_experiment(
     """
     Full heteroscedastic NS GLS experiment (Part 2).
     """
-    C_true, U_clean_ref, t_ref, grid_ref, base_library = compute_reference_coefficients(
-        N=cfg.N,
-        Nt=cfg.Nt,
-        L=cfg.L,
-        T=cfg.T,
-        mu=cfg.mu,
+    U_clean_ref, _, grid_ref = generate_isothermal_ns_dataset(
+        N=cfg.N, Nt=cfg.Nt, L=cfg.L, T=cfg.T, mu=cfg.mu, RT=cfg.RT,
+        seed=cfg.seed_base,
+    )
+    base_library = _build_custom_library()
+    # Truth is the equations compressible integrates, not a weak-SINDy fit of
+    # the clean flow. Part 2 had the same circular reference Part 1 did: scored
+    # against another fit, underdetermined, unseeded, and wrong in the u and v
+    # equations.
+    C_true = build_true_ns_isothermal_coefficients(
+        get_ns_isothermal_feature_names(
+            cfg, grid=grid_ref, reference_trajectory=U_clean_ref
+        ),
         RT=cfg.RT,
-        seed_base=cfg.seed_base,
-        derivative_order=cfg.derivative_order,
-        include_bias=cfg.include_bias,
-        p=cfg.p,
-        K_ref=cfg.K_ref,
-        H_xt=cfg.H_xt,
+        mu=cfg.mu,
     )
 
     def builder(run_idx: int, cfg: NSIsothermalIntraTrajectoryGLSConfig) -> IntraTrajectoryGLSData:
@@ -1436,7 +1344,7 @@ def ns_isothermal_kappa_by_support(
     isothermal reference coefficients come from a weak fit of their own, and
     recomputing it here would double the most expensive step in the notebook.
 
-    ``kappa_median`` is the gate statistic and ``kappa_lo``/``kappa_hi`` bracket
+    ``kappa_median`` is the reported statistic and ``kappa_lo``/``kappa_hi`` bracket
     it with the best and worst reference flow. The Taylor-Green initial
     condition randomises its amplitudes and wavenumbers, and the wavenumbers set
     the size of the derivatives the library sees, so the spread across

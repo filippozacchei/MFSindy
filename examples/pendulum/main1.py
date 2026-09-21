@@ -50,10 +50,6 @@ MODELS = ["HF", "LF", "MF", "VHF", "VLF", "PMF", "VMF", "MF_w"]
 #: test functions land, so a selection is not decided by a single placement.
 N_TAKES = 5
 
-#: Kappa bound for the rungs whitened by the full weak covariance. A guideline
-#: on an approximation, not a theorem: a support sitting near it is marginal
-#: rather than disqualified, which is why the table reports the range too.
-KAPPA_MAX = 0.25
 
 #: Floor on the noise ceiling of the validation target.
 MIN_CEILING = 0.99
@@ -148,20 +144,17 @@ def tune(cfg, *, results_dir: Path = RESULTS_DIR, verbose: bool = True) -> Tunin
         for seed in take_seeds
     }
 
-    # Kappa restricts only the rungs whitened by the full covariance. HF, LF and
-    # MF form none; VMF uses the marginal variances alone, where a global
-    # rescale cancels. Restricting every rung alike would shrink the baselines'
-    # search space for a condition they never invoke.
+    # Kappa is reported, not enforced. It is defined at the true coefficients --
+    # (A.1) expands the residual at Xi* -- so gating the search on it would leak
+    # information no practitioner has, and would make this selection protocol
+    # unreproducible on real data. Everything else here is oracle-free: the
+    # metric scores held-out noisy data and the validation support follows a
+    # noise ceiling computable from sigma. So kappa stays a diagnostic, and a
+    # rung landing where the covariance model is invalid is a result to report
+    # rather than a search to constrain.
     kappa_table = pendulum_kappa_by_support(cfg, candidates)
-    kappa_table["admissible"] = kappa_table["kappa_median"] <= KAPPA_MAX
     if verbose:
         print(kappa_table.to_string(index=False))
-    admissible_h = set(kappa_table.loc[kappa_table["admissible"], "H_xt"])
-
-    def admissible(rung, params):
-        if rung not in FULL_COVARIANCE_RUNGS:
-            return True
-        return params["H_xt"] in admissible_h
 
     selections, score_table = tune_rungs(
         cfg,
@@ -169,7 +162,6 @@ def tune(cfg, *, results_dir: Path = RESULTS_DIR, verbose: bool = True) -> Tunin
         rungs=MODELS,
         metric="weak_r2",
         reducer=lambda scores: float(np.mean(np.clip(scores, -1.0, 1.0))),
-        admissible=admissible,
         evaluate=lambda candidate: pd.concat(
             [
                 evaluate_weak_form_models(
@@ -190,6 +182,20 @@ def tune(cfg, *, results_dir: Path = RESULTS_DIR, verbose: bool = True) -> Tunin
             ignore_index=True,
         ),
     )
+
+    # Where each rung actually landed, so the tables can show whether the
+    # covariance model held at the support the search chose.
+    kappa_by_support = {
+        tuple(np.atleast_1d(row.H_xt)): float(row.kappa_median)
+        for row in kappa_table.itertuples()
+    }
+    kappa_at_selection = {
+        rung: kappa_by_support[tuple(np.atleast_1d(sel.best_params["H_xt"]))]
+        for rung, sel in selections.items()
+    }
+    if verbose:
+        print(f"\nkappa at each selection: "
+              + ", ".join(f"{r}={k:.3g}" for r, k in kappa_at_selection.items()))
 
     weak_design = {}
     for rung, selection in selections.items():
@@ -212,12 +218,14 @@ def tune(cfg, *, results_dir: Path = RESULTS_DIR, verbose: bool = True) -> Tunin
             # drift apart, which they had.
             "K_rule": "max(2, round((t1 - t0) / H_xt))  # coverage 2",
             "validation_metric": "weak_r2",
-            "kappa_gate": {
-                "max_kappa": KAPPA_MAX,
+            "kappa_diagnostic": {
+                "enforced": False,
                 "statistic": "kappa_median (median over test functions),"
-                             " worst case over fixed reference trajectories",
-                "applies_to": sorted(FULL_COVARIANCE_RUNGS),
-                "admissible_H_xt": sorted(admissible_h),
+                             " median over fixed reference trajectories",
+                "relevant_to": sorted(FULL_COVARIANCE_RUNGS),
+                "note": "defined at the true coefficients, so reported"
+                        " a posteriori rather than used to select",
+                "kappa_at_selection": kappa_at_selection,
             },
             "validation_support": {
                 "H_val": support.H_val,

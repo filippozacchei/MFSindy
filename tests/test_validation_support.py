@@ -265,36 +265,6 @@ def test_vector_valued_grid_params_survive_selection():
     assert selections["MF_w"].at_boundary.get("H_xt") != "high"
 
 
-def test_ns_reference_derives_K_from_the_support():
-    """``cfg.K`` is documented as derived from ``H_xt`` when None.
-
-    The Monte Carlo passes ``K_ref=cfg.K`` into the reference fit unchanged, so
-    the derivation has to happen there too. Without it the default config
-    reached pysindy with ``K=None`` and died on ``self.K <= 0`` -- which meant
-    the isothermal Monte Carlo could not run at its own defaults.
-    """
-
-    from mfsindy.cases.isothermal_flow import (
-        NSIsothermalMultiTrajectoryGLSConfig,
-        compute_reference_coefficients,
-    )
-
-    cfg = NSIsothermalMultiTrajectoryGLSConfig(N=16, Nt=20, p=2)
-    assert cfg.K is None
-    C_true, U_ref, t_ref, grid_ref, _ = compute_reference_coefficients(
-        N=cfg.N, Nt=cfg.Nt, L=cfg.L, T=cfg.T, mu=cfg.mu, RT=cfg.RT,
-        seed_base=cfg.seed_base, derivative_order=cfg.derivative_order,
-        include_bias=cfg.include_bias, p=cfg.p, K_ref=cfg.K, H_xt=cfg.H_xt,
-    )
-    assert np.asarray(C_true).shape[0] == 3
-    assert np.all(np.isfinite(np.asarray(C_true)))
-
-
-# ---------------------------------------------------------------------------
-# Caching must not change a single number
-# ---------------------------------------------------------------------------
-
-
 def test_group_library_cache_is_bit_identical():
     """One library per group must give exactly what one per trajectory gave.
 

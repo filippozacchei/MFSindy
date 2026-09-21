@@ -48,7 +48,6 @@ ERRORS_PATH = RESULTS_DIR / "navierstokes_part1_errors.csv"
 
 MODELS = ["HF", "LF", "MF", "VHF", "VLF", "PMF", "VMF", "MF_w"]
 N_TAKES = 5
-KAPPA_MAX = 0.25
 MIN_CEILING = 0.99
 
 #: Reference flows for the kappa table. This case is the expensive one -- a
@@ -126,13 +125,14 @@ def tune(cfg, *, results_dir: Path = RESULTS_DIR, verbose: bool = True) -> Tunin
 
     grid_search = np.asarray(grid_search, dtype=float)
 
-    # Kappa weights each library feature's sensitivity by its coefficient, so
-    # the coefficients had better be the right ones. These are analytic -- the
-    # equations compressible integrates -- and must be: the weak-SINDy reference
-    # this used to call carried a spurious -5.7 on v*u_xy, a mixed second
-    # derivative. Weighting a sensitivity field by a coefficient five times
-    # larger than any real one inflates kappa and tightens the gate for no
-    # physical reason.
+    # Kappa is reported, not enforced. It is defined at the true coefficients --
+    # (A.1) expands the residual at Xi* -- so gating the search on it would leak
+    # information no practitioner has, and would make this selection protocol
+    # unreproducible on real data. Everything else here is oracle-free: the
+    # metric scores held-out noisy data and the validation support follows a
+    # noise ceiling computable from sigma. So kappa stays a diagnostic, and a
+    # rung landing where the covariance model is invalid is a result to report
+    # rather than a search to constrain.
     feature_names = get_ns_isothermal_feature_names(
         cfg, grid=grid_search, reference_trajectory=hf_val[0]
     )
@@ -161,16 +161,8 @@ def tune(cfg, *, results_dir: Path = RESULTS_DIR, verbose: bool = True) -> Tunin
         cfg, grid["H_xt"], coefficients=reference_coefficients,
         n_reference=N_KAPPA_REFERENCE,
     )
-    kappa_table["admissible"] = kappa_table["kappa_median"] <= KAPPA_MAX
     if verbose:
         print(kappa_table.to_string(index=False))
-    admissible_h = {tuple(np.atleast_1d(h)) for h in
-                    kappa_table.loc[kappa_table["admissible"], "H_xt"]}
-
-    def admissible(rung, params):
-        if rung not in FULL_COVARIANCE_RUNGS:
-            return True
-        return tuple(np.atleast_1d(params["H_xt"])) in admissible_h
 
     def score_take(candidate_cfg, weak_seed):
         coef_map = fit_ns_isothermal_multi_trajectory_coefficients(
@@ -191,11 +183,24 @@ def tune(cfg, *, results_dir: Path = RESULTS_DIR, verbose: bool = True) -> Tunin
         rungs=MODELS,
         metric="weak_r2",
         reducer=lambda scores: float(np.mean(np.clip(scores, -1.0, 1.0))),
-        admissible=admissible,
         evaluate=lambda candidate: pd.concat(
             [score_take(candidate, seed) for seed in take_seeds], ignore_index=True
         ),
     )
+
+    # Where each rung actually landed, so the tables can show whether the
+    # covariance model held at the support the search chose.
+    kappa_by_support = {
+        tuple(np.atleast_1d(row.H_xt)): float(row.kappa_median)
+        for row in kappa_table.itertuples()
+    }
+    kappa_at_selection = {
+        rung: kappa_by_support[tuple(np.atleast_1d(sel.best_params["H_xt"]))]
+        for rung, sel in selections.items()
+    }
+    if verbose:
+        print(f"\nkappa at each selection: "
+              + ", ".join(f"{r}={k:.3g}" for r, k in kappa_at_selection.items()))
 
     weak_design = {}
     for rung, selection in selections.items():
@@ -214,13 +219,14 @@ def tune(cfg, *, results_dir: Path = RESULTS_DIR, verbose: bool = True) -> Tunin
             "weak_design": weak_design,
             "n_takes": N_TAKES,
             "validation_metric": "weak_r2 (per state component)",
-            "kappa_gate": {
-                "max_kappa": KAPPA_MAX,
-                "statistic": "assembled-system kappa_median,"
-                             " worst case over fixed reference flows",
-                "applies_to": sorted(FULL_COVARIANCE_RUNGS),
-                "admissible_H_xt": [list(h) for h in sorted(admissible_h)],
-                "n_reference": N_KAPPA_REFERENCE,
+            "kappa_diagnostic": {
+                "enforced": False,
+                "statistic": "kappa_median (median over test functions),"
+                             " median over fixed reference trajectories",
+                "relevant_to": sorted(FULL_COVARIANCE_RUNGS),
+                "note": "defined at the true coefficients, so reported"
+                        " a posteriori rather than used to select",
+                "kappa_at_selection": kappa_at_selection,
             },
             "validation_support": {
                 "H_val": support.H_val,

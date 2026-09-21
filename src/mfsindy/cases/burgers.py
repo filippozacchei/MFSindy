@@ -951,7 +951,7 @@ def burgers_kappa_by_support(
     ``h_t^2 h_x^(-2m)`` form carries units, so it could be compared neither
     between benchmarks nor against the ODE kappa; this can.
 
-    ``kappa_median`` is the gate statistic and ``kappa_lo``/``kappa_hi`` bracket
+    ``kappa_median`` is the reported statistic and ``kappa_lo``/``kappa_hi`` bracket
     it with the best and worst reference trajectory. References are clean and
     drawn from ``cfg.seed_base``, so the admissible set cannot move with the
     Monte Carlo draw.
