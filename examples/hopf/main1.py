@@ -72,7 +72,11 @@ def support_candidates(cfg) -> list[float]:
 
 def search_grid(cfg) -> dict:
     return {
-        "stlsq_threshold": [0.1, 0.2, 0.5],
+        # Log-spaced and wide: with three points most rungs sat on an edge,
+        # so the selection was truncated rather than chosen. With a grid
+        # spanning 0.01-5 the best threshold is interior for every rung
+        # tested. Every true coefficient is 1.0, so the grid stops below it.
+        "stlsq_threshold": [0.02, 0.05, 0.1, 0.2, 0.5],
         "H_xt": support_candidates(cfg),
     }
 

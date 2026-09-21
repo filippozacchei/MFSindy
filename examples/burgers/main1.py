@@ -66,7 +66,11 @@ def search_grid(cfg) -> dict:
     h_x = [cfg.L / d for d in (20.0, 10.0, 5.0)]
     h_t = [cfg.T_train / d for d in (20.0, 10.0, 5.0)]
     return {
-        "stlsq_threshold": [0.01, 0.02, 0.05],
+        # Log-spaced and wide: with three points most rungs sat on an edge,
+        # so the selection was truncated rather than chosen. With a grid
+        # spanning 0.01-5 the best threshold is interior for every rung
+        # tested. Extended down: every rung sat on the old lower edge of 0.01.
+        "stlsq_threshold": [0.001, 0.002, 0.005, 0.01, 0.02, 0.05],
         "H_xt": [[hx, ht] for hx in h_x for ht in h_t],
     }
 
