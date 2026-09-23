@@ -170,7 +170,7 @@ def make_initial_condition(
 
 
 def generate_isothermal_ns_dataset(
-    N: int = 64,
+    N: int = 32,
     Nt: int = 500,
     L: float = 5.0,
     T: float = 2.5,
@@ -454,9 +454,7 @@ class NSIsothermalMultiTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin
     noise_hf_rel: float = 0.01
 
     # grid / time
-    N: int = 64
-    # linspace(0, T, Nt) spaces samples by T/(Nt-1), so 1001 -- not 1000 --
-    # is what makes dt exactly 1e-3 at T=1.
+    N: int = 32
     Nt: int = 1001
     Nt_std: int = 1001
     L: float = 5.0
@@ -1043,7 +1041,7 @@ class NSIsothermalIntraTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin
     """
 
     # grid / time
-    N: int = 64
+    N: int = 32
     Nt: int = 500
     L: float = 5.0
     T: float = 2.5

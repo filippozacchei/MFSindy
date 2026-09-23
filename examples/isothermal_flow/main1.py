@@ -49,10 +49,6 @@ ERRORS_PATH = RESULTS_DIR / "navierstokes_part1_errors.csv"
 MODELS = ["HF", "LF", "MF", "VHF", "VLF", "PMF", "VMF", "MF_w"]
 N_TAKES = 5
 MIN_CEILING = 0.99
-
-#: Reference flows for the kappa table. This case is the expensive one -- a
-#: single 64x64 field at dt 1e-3 is 98 MB and takes over a second to solve --
-#: so the spread is sampled with fewer draws than the ODE benchmarks use.
 N_KAPPA_REFERENCE = 3
 
 
@@ -73,7 +69,7 @@ def search_grid(cfg) -> dict:
     h_xy = [cfg.L / 20.0, cfg.L / 10.0, cfg.L / 5.0]
     h_t = [cfg.T / 20.0, cfg.T / 10.0, cfg.T / 5.0]
     return {
-        "stlsq_threshold": [0.1, 0.2, 0.5],
+        "stlsq_threshold": [0.2],
         "H_xt": [[h, h, ht] for h in h_xy for ht in h_t],
     }
 
@@ -125,14 +121,8 @@ def tune(cfg, *, results_dir: Path = RESULTS_DIR, verbose: bool = True) -> Tunin
 
     grid_search = np.asarray(grid_search, dtype=float)
 
-    # Kappa is reported, not enforced. It is defined at the true coefficients --
-    # (A.1) expands the residual at Xi* -- so gating the search on it would leak
-    # information no practitioner has, and would make this selection protocol
-    # unreproducible on real data. Everything else here is oracle-free: the
-    # metric scores held-out noisy data and the validation support follows a
-    # noise ceiling computable from sigma. So kappa stays a diagnostic, and a
-    # rung landing where the covariance model is invalid is a result to report
-    # rather than a search to constrain.
+    # Kappa is reported, not enforced. It is defined at the true coefficients
+    # so gating the search on it would leak information no practitioner hasno, .
     feature_names = get_ns_isothermal_feature_names(
         cfg, grid=grid_search, reference_trajectory=hf_val[0]
     )
