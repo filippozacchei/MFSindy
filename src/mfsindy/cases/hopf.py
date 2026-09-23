@@ -201,6 +201,7 @@ class HopfMultiTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
     deduplicate: bool = True   # drop test functions whose support duplicates another's
     p: int | None = None
     stlsq_threshold: float = 0.5
+    stlsq_alpha: float = 1e-12
     n_ensemble_models: int = 100
 
     # random seeds

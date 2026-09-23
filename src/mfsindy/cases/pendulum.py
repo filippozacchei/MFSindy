@@ -240,9 +240,9 @@ class PendulumMultiTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
     T_true: float = 10.0
 
     # physical parameters
-    g: float = 9.81
+    g: float = 1.0
     L: float = 1.0
-    c: float = 0.5
+    c: float = 0.1
 
     # SINDy settings
     poly_degree: int = 1
@@ -251,6 +251,7 @@ class PendulumMultiTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
     deduplicate: bool = True   # drop test functions whose support duplicates another's
     p: int | None = None
     stlsq_threshold: float = 0.1
+    stlsq_alpha: float = 1e-12
     n_ensemble_models: int = 100
 
     # random seeds
@@ -542,9 +543,9 @@ class PendulumIntraTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
     dt: float = 1e-3
 
     # physical parameters
-    g: float = 9.81
+    g: float = 1.0
     L: float = 1.0
-    c: float = 0.5
+    c: float = 0.1
 
     # heteroscedastic noise model: sigma(t) = sigma0 + alpha * |omega(t)|
     sigma0: float = 0.0

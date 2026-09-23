@@ -76,7 +76,7 @@ def search_grid(cfg) -> dict:
         # so the selection was truncated rather than chosen. With a grid
         # spanning 0.01-5 the best threshold is interior for every rung
         # tested. Ceiling at the smallest true coefficient, 1.0.
-        "stlsq_threshold": [0.05, 0.1, 0.2, 0.5, 1.0],
+        "stlsq_threshold": [0.1, 0.2, 0.5],
         "H_xt": support_candidates(cfg),
     }
 

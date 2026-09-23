@@ -487,9 +487,6 @@ class NSIsothermalMultiTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin
     # output
     results_filename: str = "ns_isothermal_mf_errors.csv"
 
-    def stlsq_kwargs(self) -> Dict[str, Any]:
-        return {"alpha": self.stlsq_alpha}
-
 
 def _ns_dataset_batch(
     run_idx: int,

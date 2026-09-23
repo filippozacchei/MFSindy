@@ -35,11 +35,11 @@
         "cov_below_nugget": 0
       },
       "MF": {
-        "K_requested": 10,
-        "K_used": 10,
+        "K_requested": 5,
+        "K_used": 5,
         "duplicate_supports_dropped": 0,
-        "cov_cond": 391.2759185870088,
-        "cov_rank": 10,
+        "cov_cond": 1081.0742423478025,
+        "cov_rank": 5,
         "cov_rank_deficit": 0,
         "cov_below_nugget": 0
       },
@@ -105,7 +105,7 @@
       "kappa_at_selection": {
         "HF": 8.188503708374132e-05,
         "LF": 0.15452129888951005,
-        "MF": 0.03621879185450581,
+        "MF": 0.15452129888951005,
         "VHF": 8.188503708374132e-05,
         "VLF": 0.15452129888951005,
         "PMF": 0.15452129888951005,
@@ -153,19 +153,19 @@
         "stlsq_threshold": 0.2,
         "H_xt": 0.2
       },
-      "best_score": 0.6862735088506187,
+      "best_score": 0.7199877098890528,
       "at_grid_boundary": {
         "H_xt": "high"
       }
     },
     "MF": {
       "best_params": {
-        "stlsq_threshold": 0.1,
-        "H_xt": 0.1
+        "stlsq_threshold": 0.2,
+        "H_xt": 0.2
       },
-      "best_score": 0.5705420406150099,
+      "best_score": 0.8383309936976426,
       "at_grid_boundary": {
-        "stlsq_threshold": "low"
+        "H_xt": "high"
       }
     },
     "VHF": {
@@ -184,7 +184,7 @@
         "stlsq_threshold": 0.1,
         "H_xt": 0.2
       },
-      "best_score": 0.83705253688568,
+      "best_score": 0.8372575617903862,
       "at_grid_boundary": {
         "stlsq_threshold": "low",
         "H_xt": "high"
@@ -195,7 +195,7 @@
         "stlsq_threshold": 0.2,
         "H_xt": 0.2
       },
-      "best_score": 0.8783060661972396,
+      "best_score": 0.8801914736829299,
       "at_grid_boundary": {
         "H_xt": "high"
       }
@@ -266,7 +266,7 @@
       "stlsq_threshold": 0.1,
       "H_xt": 0.005,
       "rung": "PMF",
-      "score": -0.706344110904918,
+      "score": -0.9796883878021644,
       "error": null,
       "admissible": true
     },
@@ -282,7 +282,7 @@
       "stlsq_threshold": 0.1,
       "H_xt": 0.005,
       "rung": "MF_w",
-      "score": -0.6936808553102702,
+      "score": -0.6946680461966828,
       "error": null,
       "admissible": true
     },
@@ -306,7 +306,7 @@
       "stlsq_threshold": 0.1,
       "H_xt": 0.01,
       "rung": "MF",
-      "score": -0.8064524127736805,
+      "score": -0.8525873747377004,
       "error": null,
       "admissible": true
     },
@@ -322,7 +322,7 @@
       "stlsq_threshold": 0.1,
       "H_xt": 0.01,
       "rung": "VLF",
-      "score": -0.9340094480711588,
+      "score": -0.9551745592420697,
       "error": null,
       "admissible": true
     },
@@ -330,7 +330,7 @@
       "stlsq_threshold": 0.1,
       "H_xt": 0.01,
       "rung": "PMF",
-      "score": -0.6329269626242309,
+      "score": -0.720136821739115,
       "error": null,
       "admissible": true
     },
@@ -338,7 +338,7 @@
       "stlsq_threshold": 0.1,
       "H_xt": 0.01,
       "rung": "VMF",
-      "score": -0.691839089648297,
+      "score": -0.6847124525871955,
       "error": null,
       "admissible": true
     },
@@ -346,7 +346,7 @@
       "stlsq_threshold": 0.1,
       "H_xt": 0.01,
       "rung": "MF_w",
-      "score": -0.44502951644724575,
+      "score": -0.4835961485059858,
       "error": null,
       "admissible": true
     },
@@ -362,7 +362,7 @@
       "stlsq_threshold": 0.1,
       "H_xt": 0.02,
       "rung": "LF",
-      "score": -1.0,
+      "score": -0.5842283077688576,
       "error": null,
       "admissible": true
     },
@@ -370,7 +370,7 @@
       "stlsq_threshold": 0.1,
       "H_xt": 0.02,
       "rung": "MF",
-      "score": -0.854666080126999,
+      "score": -0.38791339096961297,
       "error": null,
       "admissible": true
     },
@@ -386,7 +386,7 @@
       "stlsq_threshold": 0.1,
       "H_xt": 0.02,
       "rung": "VLF",
-      "score": -0.5041078917607391,
+      "score": -0.50307592029286,
       "error": null,
       "admissible": true
     },
@@ -394,7 +394,7 @@
       "stlsq_threshold": 0.1,
       "H_xt": 0.02,
       "rung": "PMF",
-      "score": -0.2785653267568141,
+      "score": -0.3087056303484824,
       "error": null,
       "admissible": true
     },
@@ -402,7 +402,7 @@
       "stlsq_threshold": 0.1,
       "H_xt": 0.02,
       "rung": "VMF",
-      "score": -0.18673104252658224,
+      "score": -0.18970200163294432,
       "error": null,
       "admissible": true
     },
@@ -410,7 +410,7 @@
       "stlsq_threshold": 0.1,
       "H_xt": 0.02,
       "rung": "MF_w",
-      "score": -0.07706802158412862,
+      "score": -0.08357833133300407,
       "error": null,
       "admissible": true
     },
@@ -426,7 +426,7 @@
       "stlsq_threshold": 0.1,
       "H_xt": 0.05,
       "rung": "LF",
-      "score": 0.17571923977710027,
+      "score": -0.037929795334255535,
       "error": null,
       "admissible": true
     },
@@ -434,7 +434,7 @@
       "stlsq_threshold": 0.1,
       "H_xt": 0.05,
       "rung": "MF",
-      "score": 0.21527696698842141,
+      "score": -0.02271481450229864,
       "error": null,
       "admissible": true
     },
@@ -450,7 +450,7 @@
       "stlsq_threshold": 0.1,
       "H_xt": 0.05,
       "rung": "VLF",
-      "score": 0.4009647353507608,
+      "score": 0.3987146501490257,
       "error": null,
       "admissible": true
     },
@@ -458,7 +458,7 @@
       "stlsq_threshold": 0.1,
       "H_xt": 0.05,
       "rung": "PMF",
-      "score": 0.622323577364379,
+      "score": 0.6156010208360181,
       "error": null,
       "admissible": true
     },
@@ -466,7 +466,7 @@
       "stlsq_threshold": 0.1,
       "H_xt": 0.05,
       "rung": "VMF",
-      "score": 0.4686813351300737,
+      "score": 0.4694517559446191,
       "error": null,
       "admissible": true
     },
@@ -474,7 +474,7 @@
       "stlsq_threshold": 0.1,
       "H_xt": 0.05,
       "rung": "MF_w",
-      "score": 0.8487877336034974,
+      "score": 0.8490343824696893,
       "error": null,
       "admissible": true
     },
@@ -490,7 +490,7 @@
       "stlsq_threshold": 0.1,
       "H_xt": 0.1,
       "rung": "LF",
-      "score": 0.06596332914213429,
+      "score": 0.35925769832921794,
       "error": null,
       "admissible": true
     },
@@ -498,7 +498,7 @@
       "stlsq_threshold": 0.1,
       "H_xt": 0.1,
       "rung": "MF",
-      "score": 0.5705420406150099,
+      "score": 0.4328817170700189,
       "error": null,
       "admissible": true
     },
@@ -514,7 +514,7 @@
       "stlsq_threshold": 0.1,
       "H_xt": 0.1,
       "rung": "VLF",
-      "score": 0.6982576537027061,
+      "score": 0.6929785462548382,
       "error": null,
       "admissible": true
     },
@@ -522,7 +522,7 @@
       "stlsq_threshold": 0.1,
       "H_xt": 0.1,
       "rung": "PMF",
-      "score": 0.7990829102812113,
+      "score": 0.7929741618646948,
       "error": null,
       "admissible": true
     },
@@ -530,7 +530,7 @@
       "stlsq_threshold": 0.1,
       "H_xt": 0.1,
       "rung": "VMF",
-      "score": 0.7409842116068057,
+      "score": 0.7414556868605118,
       "error": null,
       "admissible": true
     },
@@ -538,7 +538,7 @@
       "stlsq_threshold": 0.1,
       "H_xt": 0.1,
       "rung": "MF_w",
-      "score": 0.8984771098948034,
+      "score": 0.8985619368796517,
       "error": null,
       "admissible": true
     },
@@ -554,7 +554,7 @@
       "stlsq_threshold": 0.1,
       "H_xt": 0.2,
       "rung": "LF",
-      "score": 0.4676168577027856,
+      "score": 0.6749130708151426,
       "error": null,
       "admissible": true
     },
@@ -562,7 +562,7 @@
       "stlsq_threshold": 0.1,
       "H_xt": 0.2,
       "rung": "MF",
-      "score": 0.4933871951234309,
+      "score": 0.7822280680551151,
       "error": null,
       "admissible": true
     },
@@ -578,7 +578,7 @@
       "stlsq_threshold": 0.1,
       "H_xt": 0.2,
       "rung": "VLF",
-      "score": 0.83705253688568,
+      "score": 0.8372575617903862,
       "error": null,
       "admissible": true
     },
@@ -586,7 +586,7 @@
       "stlsq_threshold": 0.1,
       "H_xt": 0.2,
       "rung": "PMF",
-      "score": 0.8731944684410566,
+      "score": 0.8792409619279159,
       "error": null,
       "admissible": true
     },
@@ -594,7 +594,7 @@
       "stlsq_threshold": 0.1,
       "H_xt": 0.2,
       "rung": "VMF",
-      "score": 0.9309990607438812,
+      "score": 0.9311443548709949,
       "error": null,
       "admissible": true
     },
@@ -602,7 +602,7 @@
       "stlsq_threshold": 0.1,
       "H_xt": 0.2,
       "rung": "MF_w",
-      "score": 0.9220230253309787,
+      "score": 0.9220832890066187,
       "error": null,
       "admissible": true
     },
@@ -650,7 +650,7 @@
       "stlsq_threshold": 0.2,
       "H_xt": 0.005,
       "rung": "PMF",
-      "score": -0.7948981842451533,
+      "score": -0.8847006607147752,
       "error": null,
       "admissible": true
     },
@@ -666,7 +666,7 @@
       "stlsq_threshold": 0.2,
       "H_xt": 0.005,
       "rung": "MF_w",
-      "score": -0.811388725544768,
+      "score": -0.7452711856253224,
       "error": null,
       "admissible": true
     },
@@ -690,7 +690,7 @@
       "stlsq_threshold": 0.2,
       "H_xt": 0.01,
       "rung": "MF",
-      "score": -1.0,
+      "score": -0.8053214126688453,
       "error": null,
       "admissible": true
     },
@@ -706,7 +706,7 @@
       "stlsq_threshold": 0.2,
       "H_xt": 0.01,
       "rung": "VLF",
-      "score": -0.9007714386508994,
+      "score": -0.9142427587703486,
       "error": null,
       "admissible": true
     },
@@ -714,7 +714,7 @@
       "stlsq_threshold": 0.2,
       "H_xt": 0.01,
       "rung": "PMF",
-      "score": -0.39285215722100497,
+      "score": -0.7453599452292298,
       "error": null,
       "admissible": true
     },
@@ -722,7 +722,7 @@
       "stlsq_threshold": 0.2,
       "H_xt": 0.01,
       "rung": "VMF",
-      "score": -0.6680505413735875,
+      "score": -0.6480912953377856,
       "error": null,
       "admissible": true
     },
@@ -730,7 +730,7 @@
       "stlsq_threshold": 0.2,
       "H_xt": 0.01,
       "rung": "MF_w",
-      "score": 0.12518690944012661,
+      "score": 0.09555646638178547,
       "error": null,
       "admissible": true
     },
@@ -746,7 +746,7 @@
       "stlsq_threshold": 0.2,
       "H_xt": 0.02,
       "rung": "LF",
-      "score": -1.0,
+      "score": -0.38463506100805256,
       "error": null,
       "admissible": true
     },
@@ -754,7 +754,7 @@
       "stlsq_threshold": 0.2,
       "H_xt": 0.02,
       "rung": "MF",
-      "score": -1.0,
+      "score": -0.1903989877897212,
       "error": null,
       "admissible": true
     },
@@ -770,7 +770,7 @@
       "stlsq_threshold": 0.2,
       "H_xt": 0.02,
       "rung": "VLF",
-      "score": -0.5333030391721765,
+      "score": -0.5367590734179025,
       "error": null,
       "admissible": true
     },
@@ -778,7 +778,7 @@
       "stlsq_threshold": 0.2,
       "H_xt": 0.02,
       "rung": "PMF",
-      "score": -0.5417439213590715,
+      "score": -0.5907561944048098,
       "error": null,
       "admissible": true
     },
@@ -786,7 +786,7 @@
       "stlsq_threshold": 0.2,
       "H_xt": 0.02,
       "rung": "VMF",
-      "score": 0.5337737725476787,
+      "score": 0.528491625743398,
       "error": null,
       "admissible": true
     },
@@ -810,7 +810,7 @@
       "stlsq_threshold": 0.2,
       "H_xt": 0.05,
       "rung": "LF",
-      "score": -0.3848581828690071,
+      "score": 0.3739363042289977,
       "error": null,
       "admissible": true
     },
@@ -818,7 +818,7 @@
       "stlsq_threshold": 0.2,
       "H_xt": 0.05,
       "rung": "MF",
-      "score": -0.35695736367326075,
+      "score": 0.40381154521805973,
       "error": null,
       "admissible": true
     },
@@ -834,7 +834,7 @@
       "stlsq_threshold": 0.2,
       "H_xt": 0.05,
       "rung": "VLF",
-      "score": 0.539920342780799,
+      "score": 0.5410714596959203,
       "error": null,
       "admissible": true
     },
@@ -842,7 +842,7 @@
       "stlsq_threshold": 0.2,
       "H_xt": 0.05,
       "rung": "PMF",
-      "score": 0.7050636652283166,
+      "score": 0.7071072784362192,
       "error": null,
       "admissible": true
     },
@@ -874,7 +874,7 @@
       "stlsq_threshold": 0.2,
       "H_xt": 0.1,
       "rung": "LF",
-      "score": 0.2439107768165969,
+      "score": 0.5348102427668008,
       "error": null,
       "admissible": true
     },
@@ -882,7 +882,7 @@
       "stlsq_threshold": 0.2,
       "H_xt": 0.1,
       "rung": "MF",
-      "score": 0.3490529824478871,
+      "score": 0.7191809627746091,
       "error": null,
       "admissible": true
     },
@@ -906,7 +906,7 @@
       "stlsq_threshold": 0.2,
       "H_xt": 0.1,
       "rung": "PMF",
-      "score": 0.7975830589971269,
+      "score": 0.7981127684549879,
       "error": null,
       "admissible": true
     },
@@ -938,7 +938,7 @@
       "stlsq_threshold": 0.2,
       "H_xt": 0.2,
       "rung": "LF",
-      "score": 0.6862735088506187,
+      "score": 0.7199877098890528,
       "error": null,
       "admissible": true
     },
@@ -946,7 +946,7 @@
       "stlsq_threshold": 0.2,
       "H_xt": 0.2,
       "rung": "MF",
-      "score": 0.49255377870077927,
+      "score": 0.8383309936976426,
       "error": null,
       "admissible": true
     },
@@ -962,7 +962,7 @@
       "stlsq_threshold": 0.2,
       "H_xt": 0.2,
       "rung": "VLF",
-      "score": 0.8179295059719657,
+      "score": 0.818110607583358,
       "error": null,
       "admissible": true
     },
@@ -970,7 +970,7 @@
       "stlsq_threshold": 0.2,
       "H_xt": 0.2,
       "rung": "PMF",
-      "score": 0.8783060661972396,
+      "score": 0.8801914736829299,
       "error": null,
       "admissible": true
     },
@@ -1026,7 +1026,7 @@
       "stlsq_threshold": 0.5,
       "H_xt": 0.005,
       "rung": "VLF",
-      "score": -1.0,
+      "score": -0.8922400315299669,
       "error": null,
       "admissible": true
     },
@@ -1034,7 +1034,7 @@
       "stlsq_threshold": 0.5,
       "H_xt": 0.005,
       "rung": "PMF",
-      "score": -1.0,
+      "score": -0.7776336512757933,
       "error": null,
       "admissible": true
     },
@@ -1050,7 +1050,7 @@
       "stlsq_threshold": 0.5,
       "H_xt": 0.005,
       "rung": "MF_w",
-      "score": -0.6401310900136364,
+      "score": -0.6340262358339686,
       "error": null,
       "admissible": true
     },
@@ -1066,7 +1066,7 @@
       "stlsq_threshold": 0.5,
       "H_xt": 0.01,
       "rung": "LF",
-      "score": -1.0,
+      "score": -0.9942668887115531,
       "error": null,
       "admissible": true
     },
@@ -1098,7 +1098,7 @@
       "stlsq_threshold": 0.5,
       "H_xt": 0.01,
       "rung": "PMF",
-      "score": -0.873853815961373,
+      "score": -0.7417394222499133,
       "error": null,
       "admissible": true
     },
@@ -1106,7 +1106,7 @@
       "stlsq_threshold": 0.5,
       "H_xt": 0.01,
       "rung": "VMF",
-      "score": -0.4739392394001851,
+      "score": -0.44529046973571,
       "error": null,
       "admissible": true
     },
@@ -1114,7 +1114,7 @@
       "stlsq_threshold": 0.5,
       "H_xt": 0.01,
       "rung": "MF_w",
-      "score": -0.17570058649990292,
+      "score": -0.17814082083417032,
       "error": null,
       "admissible": true
     },
@@ -1130,7 +1130,7 @@
       "stlsq_threshold": 0.5,
       "H_xt": 0.02,
       "rung": "LF",
-      "score": -1.0,
+      "score": -0.9928882583256062,
       "error": null,
       "admissible": true
     },
@@ -1138,7 +1138,7 @@
       "stlsq_threshold": 0.5,
       "H_xt": 0.02,
       "rung": "MF",
-      "score": -0.7992257680622291,
+      "score": -0.5445909302863811,
       "error": null,
       "admissible": true
     },
@@ -1154,7 +1154,7 @@
       "stlsq_threshold": 0.5,
       "H_xt": 0.02,
       "rung": "VLF",
-      "score": -0.5993692458368247,
+      "score": -0.6150501972764841,
       "error": null,
       "admissible": true
     },
@@ -1162,7 +1162,7 @@
       "stlsq_threshold": 0.5,
       "H_xt": 0.02,
       "rung": "PMF",
-      "score": -0.49166411958780004,
+      "score": -0.2779917994953629,
       "error": null,
       "admissible": true
     },
@@ -1170,7 +1170,7 @@
       "stlsq_threshold": 0.5,
       "H_xt": 0.02,
       "rung": "VMF",
-      "score": 0.14392524334064588,
+      "score": 0.1441416266181939,
       "error": null,
       "admissible": true
     },
@@ -1178,7 +1178,7 @@
       "stlsq_threshold": 0.5,
       "H_xt": 0.02,
       "rung": "MF_w",
-      "score": 0.543657206317423,
+      "score": 0.5466977600470934,
       "error": null,
       "admissible": true
     },
@@ -1194,7 +1194,7 @@
       "stlsq_threshold": 0.5,
       "H_xt": 0.05,
       "rung": "LF",
-      "score": -1.0,
+      "score": 0.5386347805997829,
       "error": null,
       "admissible": true
     },
@@ -1202,7 +1202,7 @@
       "stlsq_threshold": 0.5,
       "H_xt": 0.05,
       "rung": "MF",
-      "score": -1.0,
+      "score": 0.6582676624056523,
       "error": null,
       "admissible": true
     },
@@ -1226,7 +1226,7 @@
       "stlsq_threshold": 0.5,
       "H_xt": 0.05,
       "rung": "PMF",
-      "score": 0.7127713654213602,
+      "score": 0.712878068978007,
       "error": null,
       "admissible": true
     },
@@ -1258,7 +1258,7 @@
       "stlsq_threshold": 0.5,
       "H_xt": 0.1,
       "rung": "LF",
-      "score": -0.09348107566319586,
+      "score": 0.5313691637568021,
       "error": null,
       "admissible": true
     },
@@ -1266,7 +1266,7 @@
       "stlsq_threshold": 0.5,
       "H_xt": 0.1,
       "rung": "MF",
-      "score": -0.3457422696647985,
+      "score": 0.7210096377807338,
       "error": null,
       "admissible": true
     },
@@ -1282,7 +1282,7 @@
       "stlsq_threshold": 0.5,
       "H_xt": 0.1,
       "rung": "VLF",
-      "score": 0.7257958679477085,
+      "score": 0.7256985455842189,
       "error": null,
       "admissible": true
     },
@@ -1290,7 +1290,7 @@
       "stlsq_threshold": 0.5,
       "H_xt": 0.1,
       "rung": "PMF",
-      "score": 0.7998015020652607,
+      "score": 0.8000521378499068,
       "error": null,
       "admissible": true
     },
@@ -1322,7 +1322,7 @@
       "stlsq_threshold": 0.5,
       "H_xt": 0.2,
       "rung": "LF",
-      "score": -0.2922064149307244,
+      "score": 0.6374333536720218,
       "error": null,
       "admissible": true
     },
@@ -1330,7 +1330,7 @@
       "stlsq_threshold": 0.5,
       "H_xt": 0.2,
       "rung": "MF",
-      "score": -0.4649907501543046,
+      "score": 0.6534240769385115,
       "error": null,
       "admissible": true
     },
@@ -1346,7 +1346,7 @@
       "stlsq_threshold": 0.5,
       "H_xt": 0.2,
       "rung": "VLF",
-      "score": 0.821677027615873,
+      "score": 0.8216656839765466,
       "error": null,
       "admissible": true
     },
@@ -1354,7 +1354,7 @@
       "stlsq_threshold": 0.5,
       "H_xt": 0.2,
       "rung": "PMF",
-      "score": 0.7042018482112271,
+      "score": 0.8713724741674816,
       "error": null,
       "admissible": true
     },
@@ -1370,7 +1370,7 @@
       "stlsq_threshold": 0.5,
       "H_xt": 0.2,
       "rung": "MF_w",
-      "score": 0.8873621311506639,
+      "score": 0.8875119984692216,
       "error": null,
       "admissible": true
     }

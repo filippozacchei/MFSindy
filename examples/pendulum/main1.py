@@ -72,11 +72,16 @@ def support_candidates(cfg) -> list[float]:
 
 def search_grid(cfg) -> dict:
     return {
-        # Log-spaced and wide: with three points most rungs sat on an edge,
-        # so the selection was truncated rather than chosen. With a grid
-        # spanning 0.01-5 the best threshold is interior for every rung
-        # tested. Stops well below the damping coefficient, 0.5, the smallest true term.
-        "stlsq_threshold": [0.005, 0.01, 0.02, 0.05, 0.1, 0.2],
+        # A threshold only means something relative to the smallest coefficient
+        # it has to keep. Here that is the damping, 0.5, so this grid spans
+        # 10-40% of it: low enough that no true term is ever at risk, high
+        # enough to prune noise. The grid used to reach 0.005 -- one percent of
+        # the smallest true term -- and every rung that selected a value below
+        # 0.05 came back with a spurious term. They selected it because weak
+        # R^2 is flat for them here (the whole grid spans 4e-4 in score for
+        # MF_w), so the choice was noise and the grid is what has to keep it
+        # sensible.
+        "stlsq_threshold": [0.01, 0.02, 0.05],
         "H_xt": support_candidates(cfg),
     }
 

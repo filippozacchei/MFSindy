@@ -114,6 +114,7 @@ class BurgersMultiTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
     include_bias: bool = True
 
     stlsq_threshold: float = 0.05
+    stlsq_alpha: float = 1e-12
     n_ensemble_models: int = 20
 
     # random seeds

@@ -70,7 +70,7 @@ def search_grid(cfg) -> dict:
         # so the selection was truncated rather than chosen. With a grid
         # spanning 0.01-5 the best threshold is interior for every rung
         # tested. Extended down: every rung sat on the old lower edge of 0.01.
-        "stlsq_threshold": [0.001, 0.002, 0.005, 0.01, 0.02, 0.05],
+        "stlsq_threshold": [0.01, 0.02, 0.05],
         "H_xt": [[hx, ht] for hx in h_x for ht in h_t],
     }
 

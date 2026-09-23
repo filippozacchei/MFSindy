@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, replace
-from typing import Callable, Dict, List, Tuple, Sequence
+from typing import Any, Callable, Dict, List, Tuple, Sequence
 
 import inspect
 
@@ -208,6 +208,16 @@ class LorenzMultiTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
     deduplicate: bool = True   # drop test functions whose support duplicates another's
     p: int | None = None
     stlsq_threshold: float = 0.5
+    # pysindy's STLSQ defaults to alpha=0.05, a ridge penalty that is not scale
+    # aware. The weak targets here are small -- |b| is order 10 per state -- so
+    # a fixed penalty on coefficients of order 10 biases the fit badly: at 0.05
+    # a clean HF fit returns 9 terms with MAE 0.52 against the truth, at 1e-12
+    # it returns exactly the 7 true terms with MAE 0.0094.
+    #
+    # It also falls unevenly across the rungs. Whitening multiplies Theta and b
+    # by roughly 1/sigma, so the weighted rungs feel a fixed ridge far less than
+    # the unweighted ones, which would flatter the comparison the paper draws.
+    stlsq_alpha: float = 1e-12
     n_ensemble_models: int = 100
 
     # random seeds

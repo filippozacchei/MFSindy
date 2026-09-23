@@ -101,8 +101,20 @@ class EnsembleConfigMixin:
     stlsq_threshold: float = 0.5
     n_ensemble_models: int = 100
 
+    #: Ridge penalty for STLSQ. pysindy defaults this to 0.05, which is not
+    #: scale aware: the penalty is a fixed number while the weak least-squares
+    #: term scales with |b|, and |b| varies by two orders of magnitude between
+    #: these benchmarks -- ~25 per state on Lorenz against ~0.1 on the
+    #: isothermal flow. At 0.05 the isothermal fit is crushed to zero outright,
+    #: and on Lorenz the unweighted rungs lose a factor of two in coefficient
+    #: error. It also falls unevenly across rungs: whitening multiplies Theta
+    #: and b by roughly 1/sigma, so a fixed ridge penalises the unweighted rungs
+    #: and leaves the whitened ones untouched, which flatters the comparison.
+    #: Effectively off by default; a case that wants regularisation sets it.
+    stlsq_alpha: float = 1e-12
+
     def stlsq_kwargs(self) -> Dict[str, Any]:
-        return {}
+        return {"alpha": self.stlsq_alpha}
 
     def ensemble_kwargs(self) -> Dict[str, Any]:
         return {"bagging": True}
