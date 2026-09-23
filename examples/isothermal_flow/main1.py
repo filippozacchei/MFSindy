@@ -70,10 +70,10 @@ def make_config(**overrides) -> NSIsothermalMultiTrajectoryGLSConfig:
 
 
 def search_grid(cfg) -> dict:
-    h_xy = [cfg.L / 5.0]
-    h_t = [cfg.T / 20.0]
+    h_xy = [cfg.L / 20.0, cfg.L / 10.0, cfg.L / 5.0]
+    h_t = [cfg.T / 20.0, cfg.T / 10.0, cfg.T / 5.0]
     return {
-        "stlsq_threshold": [0.1],
+        "stlsq_threshold": [0.1, 0.2, 0.5],
         "H_xt": [[h, h, ht] for h in h_xy for ht in h_t],
     }
 

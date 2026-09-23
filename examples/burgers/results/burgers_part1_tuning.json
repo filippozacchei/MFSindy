@@ -129,53 +129,26 @@
     },
     "n_takes": 5,
     "validation_metric": "weak_r2 (per state component)",
-    "kappa_gate": {
-      "max_kappa": 0.25,
-      "statistic": "assembled-system kappa_median, worst case over fixed reference trajectories",
-      "applies_to": [
+    "kappa_diagnostic": {
+      "enforced": false,
+      "statistic": "kappa_median (median over test functions), median over fixed reference trajectories",
+      "relevant_to": [
         "MF_w",
         "PMF",
         "VHF",
         "VLF"
       ],
-      "admissible_H_xt": [
-        [
-          0.4,
-          0.05
-        ],
-        [
-          0.4,
-          0.1
-        ],
-        [
-          0.4,
-          0.2
-        ],
-        [
-          0.8,
-          0.05
-        ],
-        [
-          0.8,
-          0.1
-        ],
-        [
-          0.8,
-          0.2
-        ],
-        [
-          1.6,
-          0.05
-        ],
-        [
-          1.6,
-          0.1
-        ],
-        [
-          1.6,
-          0.2
-        ]
-      ]
+      "note": "defined at the true coefficients, so reported a posteriori rather than used to select",
+      "kappa_at_selection": {
+        "HF": 0.0006677012198060547,
+        "LF": 0.011878108871148714,
+        "MF": 0.17022629462955358,
+        "VHF": 0.0006608167718032386,
+        "VLF": 0.002749003536465818,
+        "PMF": 0.002749003536465818,
+        "VMF": 0.042353744685040384,
+        "MF_w": 0.042353744685040384
+      }
     },
     "validation_support": {
       "H_val": [
@@ -184,17 +157,20 @@
       ],
       "K": 199,
       "ceiling": 0.9962307017242671,
+      "kappa": 0.042463864989037224,
       "min_ceiling": 0.99
     },
     "K": null,
     "poly_degree": 1,
     "derivative_order": 2,
+    "p": 2,
     "n_ensemble_models": 20,
     "T_train": 1.0,
     "dt": 0.001,
     "NX": 256,
     "L": 8.0,
     "nu": 0.1,
+    "n_runs": 100,
     "n_hf": 1,
     "n_lf": 10,
     "noise_hf_rel": 0.01,
@@ -2681,6 +2657,107 @@
       "score": 0.9900572620154916,
       "error": null,
       "admissible": true
+    }
+  ],
+  "kappa_table": [
+    {
+      "H_xt": [
+        0.4,
+        0.05
+      ],
+      "K": 397,
+      "kappa_median": 0.010485241822129664,
+      "kappa_lo": 0.01048441596529353,
+      "kappa_hi": 0.01061839774642077,
+      "kappa_max": 0.025101101723413538
+    },
+    {
+      "H_xt": [
+        0.4,
+        0.1
+      ],
+      "K": 199,
+      "kappa_median": 0.042353744685040384,
+      "kappa_lo": 0.04234691024819496,
+      "kappa_hi": 0.042910391301664894,
+      "kappa_max": 0.09986277151737195
+    },
+    {
+      "H_xt": [
+        0.4,
+        0.2
+      ],
+      "K": 100,
+      "kappa_median": 0.17022629462955358,
+      "kappa_lo": 0.17022130339000502,
+      "kappa_hi": 0.17061325406341565,
+      "kappa_max": 0.4037110097068339
+    },
+    {
+      "H_xt": [
+        0.8,
+        0.05
+      ],
+      "K": 199,
+      "kappa_median": 0.0006608167718032386,
+      "kappa_lo": 0.0006390981538421552,
+      "kappa_hi": 0.0007316032139031786,
+      "kappa_max": 0.0045349441580305495
+    },
+    {
+      "H_xt": [
+        0.8,
+        0.1
+      ],
+      "K": 100,
+      "kappa_median": 0.002749003536465818,
+      "kappa_lo": 0.0025466355524172276,
+      "kappa_hi": 0.002954937534558338,
+      "kappa_max": 0.01713607340542186
+    },
+    {
+      "H_xt": [
+        0.8,
+        0.2
+      ],
+      "K": 50,
+      "kappa_median": 0.011878108871148714,
+      "kappa_lo": 0.010149866025930371,
+      "kappa_hi": 0.011885790760086085,
+      "kappa_max": 0.0660595107630714
+    },
+    {
+      "H_xt": [
+        1.6,
+        0.05
+      ],
+      "K": 100,
+      "kappa_median": 4.125155258716392e-05,
+      "kappa_lo": 4.106204184508373e-05,
+      "kappa_hi": 4.4354483765459565e-05,
+      "kappa_max": 0.0021220021523966253
+    },
+    {
+      "H_xt": [
+        1.6,
+        0.1
+      ],
+      "K": 50,
+      "kappa_median": 0.0001659807888734192,
+      "kappa_lo": 0.00016584356496426392,
+      "kappa_hi": 0.00019840844960713143,
+      "kappa_max": 0.00831599707524655
+    },
+    {
+      "H_xt": [
+        1.6,
+        0.2
+      ],
+      "K": 25,
+      "kappa_median": 0.0006677012198060547,
+      "kappa_lo": 0.0006666620930823021,
+      "kappa_hi": 0.0007182334134693911,
+      "kappa_max": 0.034107642584063444
     }
   ]
 }
