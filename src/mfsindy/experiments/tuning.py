@@ -313,6 +313,8 @@ def tune_rungs(
 def run_with_tuned_configs(
     runner: Callable[[Any], Any],
     cfg_by_rung: Mapping[str, Any],
+    *,
+    source_col: str = "model",
 ) -> pd.DataFrame:
     """Run the Monte Carlo once per rung, each with its own tuned config.
 
@@ -341,7 +343,7 @@ def run_with_tuned_configs(
         cfg.methods = [rung]
         result = runner(cfg)
         frame = _coerce_results_frame(result)
-        kept = frame[frame["model"] == rung]
+        kept = frame[frame[source_col] == rung]
         if kept.empty:
             raise ValueError(f"Run for rung {rung!r} produced no rows for that rung.")
         frames.append(kept)

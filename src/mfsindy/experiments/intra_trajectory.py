@@ -82,7 +82,7 @@ def run_intra_trajectory_gls_experiment(
     # correlations, so the ladder separates the two ingredients: Ones GLS is
     # correlations without variance, Variance diag is variance without
     # correlations, Variance GLS is both.
-    methods = methods or [
+    methods = methods or getattr(cfg, "methods", None) or [
         "No weighting",
         "Ones GLS",
         "Variance diag",

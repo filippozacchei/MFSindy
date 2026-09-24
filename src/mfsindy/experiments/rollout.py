@@ -251,6 +251,13 @@ def build_polynomial_intra_trajectory_artifacts(
         **common_kwargs,
     )
 
+    if weak_seed is not None:
+        np.random.seed(int(weak_seed))
+    weighted_weak_lib_var_diag = WeightedWeakPDELibrary(
+        spatiotemporal_weights=variance,
+        **common_kwargs,
+        whitener_mode="diag",
+    )
     return IntraTrajectoryGLSData(
         data=data,
         t_argument=t_grid,
@@ -258,6 +265,7 @@ def build_polynomial_intra_trajectory_artifacts(
             "No weighting": weak_lib,
             "Variance GLS": weighted_weak_lib_var,
             "Ones GLS": weighted_weak_lib_ones,
+            "Variance diag": weighted_weak_lib_var_diag,
         },
         true_coefficients=np.empty((0, 0)),
     )

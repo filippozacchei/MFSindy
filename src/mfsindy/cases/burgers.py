@@ -696,7 +696,7 @@ def build_burgers_intra_trajectory_artifacts(
     )
 
     np.random.seed(tf_seed)
-    weak_lib = WeakPDELibrary(**common_kwargs)
+    weak_lib = DedupedWeakPDELibrary(**common_kwargs)
 
     variance_scaled = variance / np.mean(variance)
     np.random.seed(tf_seed)
@@ -711,6 +711,13 @@ def build_burgers_intra_trajectory_artifacts(
         **common_kwargs,
     )
 
+
+    np.random.seed(tf_seed)
+    weighted_weak_lib_var_diag = WeightedWeakPDELibrary(
+        spatiotemporal_weights=variance_scaled,
+        **common_kwargs,
+        whitener_mode="diag",
+    )
     return IntraTrajectoryGLSData(
         data=U,
         t_argument=t_grid,
@@ -718,6 +725,7 @@ def build_burgers_intra_trajectory_artifacts(
             "No weighting": weak_lib,
             "Variance GLS": weighted_weak_lib_var,
             "Ones GLS": weighted_weak_lib_ones,
+            "Variance diag": weighted_weak_lib_var_diag,
         },
         true_coefficients=build_true_burgers_coefficients(cfg.nu),
     )

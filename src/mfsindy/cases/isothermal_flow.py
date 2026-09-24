@@ -1241,7 +1241,7 @@ def build_ns_isothermal_intra_trajectory_artifacts(
     h_xt = _ns_intra_h_xt(cfg)
 
     np.random.seed(tf_seed)
-    weak_lib = WeakPDELibrary(
+    weak_lib = DedupedWeakPDELibrary(
         function_library=base_library,
         derivative_order=cfg.derivative_order,
         spatiotemporal_grid=grid,
@@ -1278,6 +1278,20 @@ def build_ns_isothermal_intra_trajectory_artifacts(
         include_bias=cfg.include_bias,
     )
 
+
+    np.random.seed(tf_seed)
+    weighted_weak_lib_var_diag = WeightedWeakPDELibrary(
+        function_library=base_library,
+        derivative_order=cfg.derivative_order,
+        spatiotemporal_grid=grid,
+        spatiotemporal_weights=variance_scaled,
+        is_uniform=True,
+        K=cfg.K,
+        p=cfg.p,
+        H_xt=h_xt,
+        include_bias=cfg.include_bias,
+        whitener_mode="diag",
+    )
     return IntraTrajectoryGLSData(
         data=data,
         t_argument=t_grid,
@@ -1285,6 +1299,7 @@ def build_ns_isothermal_intra_trajectory_artifacts(
             "No weighting": weak_lib,
             "Variance GLS": weighted_weak_lib_var,
             "Ones GLS": weighted_weak_lib_ones,
+            "Variance diag": weighted_weak_lib_var_diag,
         },
         true_coefficients=
         np.empty((data.shape[-1], 0)) if true_coefficients is None else np.asarray(true_coefficients),
