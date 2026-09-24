@@ -1,0 +1,1884 @@
+{
+  "param_grid": {
+    "stlsq_threshold": [
+      0.005,
+      0.01,
+      0.02,
+      0.05,
+      0.1,
+      0.2
+    ],
+    "H_xt": [
+      0.01,
+      0.02,
+      0.05,
+      0.1,
+      0.2,
+      0.5,
+      1.0
+    ]
+  },
+  "fixed": {
+    "weak_design": {
+      "No weighting": {
+        "K": 50.0,
+        "duplicates_dropped": 0.0,
+        "diag_spread": NaN,
+        "cov_cond": NaN,
+        "cov_rank_deficit": NaN
+      },
+      "Ones GLS": {
+        "K": 20.0,
+        "duplicates_dropped": 0.0,
+        "diag_spread": 1.000000000000007,
+        "cov_cond": 1633.812630184465,
+        "cov_rank_deficit": 0.0
+      },
+      "Variance diag": {
+        "K": 10.0,
+        "duplicates_dropped": 0.0,
+        "diag_spread": 3.086006079282941,
+        "cov_cond": 52.66682351580307,
+        "cov_rank_deficit": 0.0
+      },
+      "Variance GLS": {
+        "K": 10.0,
+        "duplicates_dropped": 0.0,
+        "diag_spread": 3.086006079282941,
+        "cov_cond": 52.66682351580307,
+        "cov_rank_deficit": 0.0
+      }
+    },
+    "n_takes": 5,
+    "validation_metric": "weak_r2",
+    "validation_split": {
+      "fraction": 0.2,
+      "note": "last fraction of the single trajectory, held out; the validation library is unweighted, so the weighting under test decides the fit and not the score"
+    },
+    "validation_support": {
+      "H_val": 0.2,
+      "K": 9,
+      "ceiling": 0.9568431865945,
+      "min_ceiling": 0.95
+    },
+    "kappa_diagnostic": {
+      "definition": "|| sigma phi |grad F| ||^2 / || sigma phi_dot ||^2, per test function, on the training segment",
+      "statistic": "kappa_median (median over test functions); reported, never used to restrict the grid",
+      "kappa_at_selection": {
+        "No weighting": 0.014711216923497765,
+        "Ones GLS": 0.09226040845034529,
+        "Variance diag": 0.4407217266412501,
+        "Variance GLS": 0.4407217266412501
+      }
+    },
+    "K_rule": "max(2, round((t1 - t0) / H_xt))  # coverage 2",
+    "poly_degree": 1,
+    "p": 2,
+    "n_ensemble_models": 100,
+    "t0": 0.0,
+    "t1": 10.0,
+    "dt": 0.001,
+    "n_runs": 100,
+    "seed_base": 0
+  },
+  "selection": {
+    "No weighting": {
+      "best_params": {
+        "stlsq_threshold": 0.05,
+        "H_xt": 0.2
+      },
+      "best_score": 0.9666419014742956,
+      "score_sem": 0.003795127991536661,
+      "n_terms": 3.0,
+      "at_grid_boundary": {},
+      "argmax_params": {
+        "stlsq_threshold": 0.005,
+        "H_xt": 0.2
+      },
+      "argmax_score": 0.9666971863605841
+    },
+    "Ones GLS": {
+      "best_params": {
+        "stlsq_threshold": 0.05,
+        "H_xt": 0.5
+      },
+      "best_score": 0.9653696966249784,
+      "score_sem": 0.003666088153589683,
+      "n_terms": 3.0,
+      "at_grid_boundary": {},
+      "argmax_params": {
+        "stlsq_threshold": 0.01,
+        "H_xt": 0.2
+      },
+      "argmax_score": 0.9655837016797392
+    },
+    "Variance diag": {
+      "best_params": {
+        "stlsq_threshold": 0.05,
+        "H_xt": 1.0
+      },
+      "best_score": 0.9648162409471095,
+      "score_sem": 0.003713918439826049,
+      "n_terms": 3.0,
+      "at_grid_boundary": {
+        "H_xt": "high"
+      },
+      "argmax_params": {
+        "stlsq_threshold": 0.005,
+        "H_xt": 1.0
+      },
+      "argmax_score": 0.9648169926276967
+    },
+    "Variance GLS": {
+      "best_params": {
+        "stlsq_threshold": 0.005,
+        "H_xt": 1.0
+      },
+      "best_score": 0.9648738702404678,
+      "score_sem": 0.0037879881643255193,
+      "n_terms": 3.0,
+      "at_grid_boundary": {
+        "stlsq_threshold": "low",
+        "H_xt": "high"
+      },
+      "argmax_params": {
+        "stlsq_threshold": 0.01,
+        "H_xt": 0.2
+      },
+      "argmax_score": 0.9651816277851921
+    }
+  },
+  "scores": [
+    {
+      "stlsq_threshold": 0.005,
+      "H_xt": 0.01,
+      "rung": "No weighting",
+      "score": 0.03830587050262928,
+      "score_sem": 0.3355581042350229,
+      "n_terms": 4.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.005,
+      "H_xt": 0.01,
+      "rung": "Ones GLS",
+      "score": 0.6001286159744597,
+      "score_sem": 0.17396686620758983,
+      "n_terms": 4.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.005,
+      "H_xt": 0.01,
+      "rung": "Variance diag",
+      "score": 0.7433828276464045,
+      "score_sem": 0.061151581061007564,
+      "n_terms": 4.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.005,
+      "H_xt": 0.01,
+      "rung": "Variance GLS",
+      "score": 0.7393793539338317,
+      "score_sem": 0.11268506155542334,
+      "n_terms": 4.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.005,
+      "H_xt": 0.02,
+      "rung": "No weighting",
+      "score": 0.8570949547806531,
+      "score_sem": 0.027655536569916463,
+      "n_terms": 4.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.005,
+      "H_xt": 0.02,
+      "rung": "Ones GLS",
+      "score": 0.9200912394490774,
+      "score_sem": 0.012765113922939572,
+      "n_terms": 3.8,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.005,
+      "H_xt": 0.02,
+      "rung": "Variance diag",
+      "score": 0.7789142602514054,
+      "score_sem": 0.10581232955096269,
+      "n_terms": 4.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.005,
+      "H_xt": 0.02,
+      "rung": "Variance GLS",
+      "score": 0.9456629563315169,
+      "score_sem": 0.013592711007417204,
+      "n_terms": 4.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.005,
+      "H_xt": 0.05,
+      "rung": "No weighting",
+      "score": 0.9613055030519002,
+      "score_sem": 0.004802211018175002,
+      "n_terms": 4.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.005,
+      "H_xt": 0.05,
+      "rung": "Ones GLS",
+      "score": 0.9574251898067274,
+      "score_sem": 0.005554844135890244,
+      "n_terms": 4.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.005,
+      "H_xt": 0.05,
+      "rung": "Variance diag",
+      "score": 0.9632795510065714,
+      "score_sem": 0.004541979360181147,
+      "n_terms": 3.6,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.005,
+      "H_xt": 0.05,
+      "rung": "Variance GLS",
+      "score": 0.9571743983227254,
+      "score_sem": 0.006188307077732872,
+      "n_terms": 3.8,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.005,
+      "H_xt": 0.1,
+      "rung": "No weighting",
+      "score": 0.9490840490888127,
+      "score_sem": 0.0065118359653528425,
+      "n_terms": 3.8,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.005,
+      "H_xt": 0.1,
+      "rung": "Ones GLS",
+      "score": 0.9557260658917294,
+      "score_sem": 0.0057044221859405275,
+      "n_terms": 3.6,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.005,
+      "H_xt": 0.1,
+      "rung": "Variance diag",
+      "score": 0.9563981731500493,
+      "score_sem": 0.004301139369388369,
+      "n_terms": 4.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.005,
+      "H_xt": 0.1,
+      "rung": "Variance GLS",
+      "score": 0.9614803587265985,
+      "score_sem": 0.0031152406809558508,
+      "n_terms": 3.8,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.005,
+      "H_xt": 0.2,
+      "rung": "No weighting",
+      "score": 0.9666971863605841,
+      "score_sem": 0.00388294987040131,
+      "n_terms": 4.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.005,
+      "H_xt": 0.2,
+      "rung": "Ones GLS",
+      "score": 0.9655749087428024,
+      "score_sem": 0.004058750882442735,
+      "n_terms": 3.8,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.005,
+      "H_xt": 0.2,
+      "rung": "Variance diag",
+      "score": 0.9643849835331959,
+      "score_sem": 0.003968550539366051,
+      "n_terms": 4.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.005,
+      "H_xt": 0.2,
+      "rung": "Variance GLS",
+      "score": 0.9650202712780424,
+      "score_sem": 0.0039030472687980444,
+      "n_terms": 3.8,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.005,
+      "H_xt": 0.5,
+      "rung": "No weighting",
+      "score": 0.9641725712144089,
+      "score_sem": 0.003933148574352404,
+      "n_terms": 3.6,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.005,
+      "H_xt": 0.5,
+      "rung": "Ones GLS",
+      "score": 0.9650567612870329,
+      "score_sem": 0.003961028615915991,
+      "n_terms": 3.2,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.005,
+      "H_xt": 0.5,
+      "rung": "Variance diag",
+      "score": 0.9634659656456452,
+      "score_sem": 0.003759743239892521,
+      "n_terms": 3.6,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.005,
+      "H_xt": 0.5,
+      "rung": "Variance GLS",
+      "score": 0.9642087250319749,
+      "score_sem": 0.0036095452331403725,
+      "n_terms": 3.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.005,
+      "H_xt": 1.0,
+      "rung": "No weighting",
+      "score": 0.9648386965105764,
+      "score_sem": 0.003696297276760654,
+      "n_terms": 3.2,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.005,
+      "H_xt": 1.0,
+      "rung": "Ones GLS",
+      "score": 0.9649617375314335,
+      "score_sem": 0.003764145848519461,
+      "n_terms": 3.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.005,
+      "H_xt": 1.0,
+      "rung": "Variance diag",
+      "score": 0.9648169926276967,
+      "score_sem": 0.003720869606721401,
+      "n_terms": 3.2,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.005,
+      "H_xt": 1.0,
+      "rung": "Variance GLS",
+      "score": 0.9648738702404678,
+      "score_sem": 0.0037879881643255193,
+      "n_terms": 3.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.01,
+      "H_xt": 0.01,
+      "rung": "No weighting",
+      "score": 0.03830587050262928,
+      "score_sem": 0.3355581042350229,
+      "n_terms": 4.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.01,
+      "H_xt": 0.01,
+      "rung": "Ones GLS",
+      "score": 0.6001286159744597,
+      "score_sem": 0.17396686620758983,
+      "n_terms": 4.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.01,
+      "H_xt": 0.01,
+      "rung": "Variance diag",
+      "score": 0.7433828276464045,
+      "score_sem": 0.061151581061007564,
+      "n_terms": 4.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.01,
+      "H_xt": 0.01,
+      "rung": "Variance GLS",
+      "score": 0.7393793539338317,
+      "score_sem": 0.11268506155542334,
+      "n_terms": 4.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.01,
+      "H_xt": 0.02,
+      "rung": "No weighting",
+      "score": 0.8570275238240905,
+      "score_sem": 0.027737989530398625,
+      "n_terms": 4.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.01,
+      "H_xt": 0.02,
+      "rung": "Ones GLS",
+      "score": 0.9201219006953844,
+      "score_sem": 0.012751986045802457,
+      "n_terms": 3.8,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.01,
+      "H_xt": 0.02,
+      "rung": "Variance diag",
+      "score": 0.7789142602514054,
+      "score_sem": 0.10581232955096269,
+      "n_terms": 4.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.01,
+      "H_xt": 0.02,
+      "rung": "Variance GLS",
+      "score": 0.9456696962156022,
+      "score_sem": 0.01359505545878124,
+      "n_terms": 4.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.01,
+      "H_xt": 0.05,
+      "rung": "No weighting",
+      "score": 0.9613165401544587,
+      "score_sem": 0.0048433783318078604,
+      "n_terms": 4.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.01,
+      "H_xt": 0.05,
+      "rung": "Ones GLS",
+      "score": 0.9573041826602576,
+      "score_sem": 0.005606111771558645,
+      "n_terms": 4.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.01,
+      "H_xt": 0.05,
+      "rung": "Variance diag",
+      "score": 0.9635764415685889,
+      "score_sem": 0.004565555175614447,
+      "n_terms": 3.4,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.01,
+      "H_xt": 0.05,
+      "rung": "Variance GLS",
+      "score": 0.9574534319808066,
+      "score_sem": 0.0061528317808474215,
+      "n_terms": 3.4,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.01,
+      "H_xt": 0.1,
+      "rung": "No weighting",
+      "score": 0.9490866835257231,
+      "score_sem": 0.00651436923982423,
+      "n_terms": 3.8,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.01,
+      "H_xt": 0.1,
+      "rung": "Ones GLS",
+      "score": 0.9557428394359645,
+      "score_sem": 0.005700838108205125,
+      "n_terms": 3.6,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.01,
+      "H_xt": 0.1,
+      "rung": "Variance diag",
+      "score": 0.9559476266192751,
+      "score_sem": 0.004242170768307069,
+      "n_terms": 3.4,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.01,
+      "H_xt": 0.1,
+      "rung": "Variance GLS",
+      "score": 0.9617436668187329,
+      "score_sem": 0.003250725845916951,
+      "n_terms": 3.4,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.01,
+      "H_xt": 0.2,
+      "rung": "No weighting",
+      "score": 0.9666815511597662,
+      "score_sem": 0.003878681908167358,
+      "n_terms": 4.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.01,
+      "H_xt": 0.2,
+      "rung": "Ones GLS",
+      "score": 0.9655837016797392,
+      "score_sem": 0.004110892078801163,
+      "n_terms": 3.2,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.01,
+      "H_xt": 0.2,
+      "rung": "Variance diag",
+      "score": 0.9643768640444522,
+      "score_sem": 0.003962422850079222,
+      "n_terms": 4.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.01,
+      "H_xt": 0.2,
+      "rung": "Variance GLS",
+      "score": 0.9651816277851921,
+      "score_sem": 0.0038547538076791604,
+      "n_terms": 3.6,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.01,
+      "H_xt": 0.5,
+      "rung": "No weighting",
+      "score": 0.9643764925976308,
+      "score_sem": 0.003925107412074373,
+      "n_terms": 3.2,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.01,
+      "H_xt": 0.5,
+      "rung": "Ones GLS",
+      "score": 0.9650566275630064,
+      "score_sem": 0.003959580709023812,
+      "n_terms": 3.2,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.01,
+      "H_xt": 0.5,
+      "rung": "Variance diag",
+      "score": 0.9635511816000861,
+      "score_sem": 0.00359563555125226,
+      "n_terms": 3.2,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.01,
+      "H_xt": 0.5,
+      "rung": "Variance GLS",
+      "score": 0.9642051168651591,
+      "score_sem": 0.0036101615060192722,
+      "n_terms": 3.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.01,
+      "H_xt": 1.0,
+      "rung": "No weighting",
+      "score": 0.964834889627473,
+      "score_sem": 0.0036830805298222824,
+      "n_terms": 3.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.01,
+      "H_xt": 1.0,
+      "rung": "Ones GLS",
+      "score": 0.964965214240949,
+      "score_sem": 0.0037646393093212975,
+      "n_terms": 3.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.01,
+      "H_xt": 1.0,
+      "rung": "Variance diag",
+      "score": 0.9648150083542513,
+      "score_sem": 0.0037127214142766876,
+      "n_terms": 3.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.01,
+      "H_xt": 1.0,
+      "rung": "Variance GLS",
+      "score": 0.9648658289551486,
+      "score_sem": 0.003788320461983003,
+      "n_terms": 3.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.02,
+      "H_xt": 0.01,
+      "rung": "No weighting",
+      "score": 0.03830587050262928,
+      "score_sem": 0.3355581042350229,
+      "n_terms": 4.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.02,
+      "H_xt": 0.01,
+      "rung": "Ones GLS",
+      "score": 0.6001286159744597,
+      "score_sem": 0.17396686620758983,
+      "n_terms": 4.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.02,
+      "H_xt": 0.01,
+      "rung": "Variance diag",
+      "score": 0.7433828276464045,
+      "score_sem": 0.061151581061007564,
+      "n_terms": 4.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.02,
+      "H_xt": 0.01,
+      "rung": "Variance GLS",
+      "score": 0.7393793539338317,
+      "score_sem": 0.11268506155542334,
+      "n_terms": 4.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.02,
+      "H_xt": 0.02,
+      "rung": "No weighting",
+      "score": 0.8538666530536325,
+      "score_sem": 0.026799550183598538,
+      "n_terms": 3.8,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.02,
+      "H_xt": 0.02,
+      "rung": "Ones GLS",
+      "score": 0.922332190608311,
+      "score_sem": 0.01202984596683677,
+      "n_terms": 3.6,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.02,
+      "H_xt": 0.02,
+      "rung": "Variance diag",
+      "score": 0.7775204865025558,
+      "score_sem": 0.10715373527268643,
+      "n_terms": 4.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.02,
+      "H_xt": 0.02,
+      "rung": "Variance GLS",
+      "score": 0.9456782545183623,
+      "score_sem": 0.013596765920770613,
+      "n_terms": 4.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.02,
+      "H_xt": 0.05,
+      "rung": "No weighting",
+      "score": 0.9615108972592902,
+      "score_sem": 0.004948581417631748,
+      "n_terms": 3.6,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.02,
+      "H_xt": 0.05,
+      "rung": "Ones GLS",
+      "score": 0.9570803876630796,
+      "score_sem": 0.005857594754913012,
+      "n_terms": 3.4,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.02,
+      "H_xt": 0.05,
+      "rung": "Variance diag",
+      "score": 0.9637845879576933,
+      "score_sem": 0.004581523434873398,
+      "n_terms": 3.2,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.02,
+      "H_xt": 0.05,
+      "rung": "Variance GLS",
+      "score": 0.9573027457067147,
+      "score_sem": 0.0061265798256469415,
+      "n_terms": 3.2,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.02,
+      "H_xt": 0.1,
+      "rung": "No weighting",
+      "score": 0.9493693004054116,
+      "score_sem": 0.006703916979941335,
+      "n_terms": 3.4,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.02,
+      "H_xt": 0.1,
+      "rung": "Ones GLS",
+      "score": 0.9558403707506995,
+      "score_sem": 0.005667146014011913,
+      "n_terms": 3.2,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.02,
+      "H_xt": 0.1,
+      "rung": "Variance diag",
+      "score": 0.9558151911716933,
+      "score_sem": 0.0041745801808290685,
+      "n_terms": 3.2,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.02,
+      "H_xt": 0.1,
+      "rung": "Variance GLS",
+      "score": 0.9617976506220158,
+      "score_sem": 0.0032668151310523636,
+      "n_terms": 3.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.02,
+      "H_xt": 0.2,
+      "rung": "No weighting",
+      "score": 0.9665744438267243,
+      "score_sem": 0.003752144296572022,
+      "n_terms": 3.2,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.02,
+      "H_xt": 0.2,
+      "rung": "Ones GLS",
+      "score": 0.9655723504650826,
+      "score_sem": 0.004121846330112133,
+      "n_terms": 3.2,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.02,
+      "H_xt": 0.2,
+      "rung": "Variance diag",
+      "score": 0.9643872147064381,
+      "score_sem": 0.003596956873507033,
+      "n_terms": 3.4,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.02,
+      "H_xt": 0.2,
+      "rung": "Variance GLS",
+      "score": 0.9643973618225052,
+      "score_sem": 0.0037703461514533255,
+      "n_terms": 3.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.02,
+      "H_xt": 0.5,
+      "rung": "No weighting",
+      "score": 0.9647995866766008,
+      "score_sem": 0.003582835630487407,
+      "n_terms": 3.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.02,
+      "H_xt": 0.5,
+      "rung": "Ones GLS",
+      "score": 0.9653691482241525,
+      "score_sem": 0.0036659937359698534,
+      "n_terms": 3.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.02,
+      "H_xt": 0.5,
+      "rung": "Variance diag",
+      "score": 0.9638449956466981,
+      "score_sem": 0.003600620881190308,
+      "n_terms": 3.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.02,
+      "H_xt": 0.5,
+      "rung": "Variance GLS",
+      "score": 0.9642034018784299,
+      "score_sem": 0.003612896536961044,
+      "n_terms": 3.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.02,
+      "H_xt": 1.0,
+      "rung": "No weighting",
+      "score": 0.9648357807861767,
+      "score_sem": 0.0036830865304949144,
+      "n_terms": 3.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.02,
+      "H_xt": 1.0,
+      "rung": "Ones GLS",
+      "score": 0.964956069217943,
+      "score_sem": 0.0037637086078722024,
+      "n_terms": 3.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.02,
+      "H_xt": 1.0,
+      "rung": "Variance diag",
+      "score": 0.9648158974935239,
+      "score_sem": 0.0037138900839211644,
+      "n_terms": 3.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.02,
+      "H_xt": 1.0,
+      "rung": "Variance GLS",
+      "score": 0.9648581625475394,
+      "score_sem": 0.0037873068463558533,
+      "n_terms": 3.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.05,
+      "H_xt": 0.01,
+      "rung": "No weighting",
+      "score": 0.03757550232971334,
+      "score_sem": 0.336039919776093,
+      "n_terms": 3.6,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.05,
+      "H_xt": 0.01,
+      "rung": "Ones GLS",
+      "score": 0.6005395877011038,
+      "score_sem": 0.17329465257405557,
+      "n_terms": 4.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.05,
+      "H_xt": 0.01,
+      "rung": "Variance diag",
+      "score": 0.7433770644736377,
+      "score_sem": 0.061156196113190696,
+      "n_terms": 4.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.05,
+      "H_xt": 0.01,
+      "rung": "Variance GLS",
+      "score": 0.7393793539338317,
+      "score_sem": 0.11268506155542334,
+      "n_terms": 4.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.05,
+      "H_xt": 0.02,
+      "rung": "No weighting",
+      "score": 0.8526145969526091,
+      "score_sem": 0.027219081132487517,
+      "n_terms": 3.2,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.05,
+      "H_xt": 0.02,
+      "rung": "Ones GLS",
+      "score": 0.9210971469083787,
+      "score_sem": 0.011088879037456405,
+      "n_terms": 3.2,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.05,
+      "H_xt": 0.02,
+      "rung": "Variance diag",
+      "score": 0.7771894924320801,
+      "score_sem": 0.10754758088356482,
+      "n_terms": 3.6,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.05,
+      "H_xt": 0.02,
+      "rung": "Variance GLS",
+      "score": 0.946195266094281,
+      "score_sem": 0.01396898441675785,
+      "n_terms": 3.4,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.05,
+      "H_xt": 0.05,
+      "rung": "No weighting",
+      "score": 0.9612962457586411,
+      "score_sem": 0.004843845853484106,
+      "n_terms": 3.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.05,
+      "H_xt": 0.05,
+      "rung": "Ones GLS",
+      "score": 0.9584172205480066,
+      "score_sem": 0.006092549616331229,
+      "n_terms": 3.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.05,
+      "H_xt": 0.05,
+      "rung": "Variance diag",
+      "score": 0.964753376035173,
+      "score_sem": 0.004603158060826246,
+      "n_terms": 3.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.05,
+      "H_xt": 0.05,
+      "rung": "Variance GLS",
+      "score": 0.957338638466185,
+      "score_sem": 0.0061191671703527874,
+      "n_terms": 3.2,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.05,
+      "H_xt": 0.1,
+      "rung": "No weighting",
+      "score": 0.949262988153355,
+      "score_sem": 0.006719935519533273,
+      "n_terms": 3.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.05,
+      "H_xt": 0.1,
+      "rung": "Ones GLS",
+      "score": 0.9564837181612733,
+      "score_sem": 0.005789393599844458,
+      "n_terms": 3.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.05,
+      "H_xt": 0.1,
+      "rung": "Variance diag",
+      "score": 0.9559404071675781,
+      "score_sem": 0.004181747448225762,
+      "n_terms": 3.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.05,
+      "H_xt": 0.1,
+      "rung": "Variance GLS",
+      "score": 0.9617915350062536,
+      "score_sem": 0.003269840423400444,
+      "n_terms": 3.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.05,
+      "H_xt": 0.2,
+      "rung": "No weighting",
+      "score": 0.9666419014742956,
+      "score_sem": 0.003795127991536661,
+      "n_terms": 3.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.05,
+      "H_xt": 0.2,
+      "rung": "Ones GLS",
+      "score": 0.964686346973178,
+      "score_sem": 0.003895988547781112,
+      "n_terms": 3.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.05,
+      "H_xt": 0.2,
+      "rung": "Variance diag",
+      "score": 0.96433015133424,
+      "score_sem": 0.0036407051930471834,
+      "n_terms": 3.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.05,
+      "H_xt": 0.2,
+      "rung": "Variance GLS",
+      "score": 0.964315815255603,
+      "score_sem": 0.0037830943843452348,
+      "n_terms": 3.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.05,
+      "H_xt": 0.5,
+      "rung": "No weighting",
+      "score": 0.9648471654938342,
+      "score_sem": 0.003572263190506741,
+      "n_terms": 3.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.05,
+      "H_xt": 0.5,
+      "rung": "Ones GLS",
+      "score": 0.9653696966249784,
+      "score_sem": 0.003666088153589683,
+      "n_terms": 3.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.05,
+      "H_xt": 0.5,
+      "rung": "Variance diag",
+      "score": 0.9638523104149778,
+      "score_sem": 0.003600175064120692,
+      "n_terms": 3.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.05,
+      "H_xt": 0.5,
+      "rung": "Variance GLS",
+      "score": 0.9642034018784299,
+      "score_sem": 0.003612896536961044,
+      "n_terms": 3.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.05,
+      "H_xt": 1.0,
+      "rung": "No weighting",
+      "score": 0.9648364104020306,
+      "score_sem": 0.003683143404083257,
+      "n_terms": 3.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.05,
+      "H_xt": 1.0,
+      "rung": "Ones GLS",
+      "score": 0.964956069217943,
+      "score_sem": 0.0037637086078722024,
+      "n_terms": 3.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.05,
+      "H_xt": 1.0,
+      "rung": "Variance diag",
+      "score": 0.9648162409471095,
+      "score_sem": 0.003713918439826049,
+      "n_terms": 3.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.05,
+      "H_xt": 1.0,
+      "rung": "Variance GLS",
+      "score": 0.9648581625475394,
+      "score_sem": 0.0037873068463558533,
+      "n_terms": 3.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": 0.01,
+      "rung": "No weighting",
+      "score": 0.055545035236717145,
+      "score_sem": 0.3226533309200911,
+      "n_terms": 3.4,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": 0.01,
+      "rung": "Ones GLS",
+      "score": 0.6085496834953279,
+      "score_sem": 0.17610001044913182,
+      "n_terms": 3.6,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": 0.01,
+      "rung": "Variance diag",
+      "score": 0.7753038425545282,
+      "score_sem": 0.07417744249771462,
+      "n_terms": 3.4,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": 0.01,
+      "rung": "Variance GLS",
+      "score": 0.740636353153068,
+      "score_sem": 0.09369316792211617,
+      "n_terms": 3.4,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": 0.02,
+      "rung": "No weighting",
+      "score": 0.852255074183241,
+      "score_sem": 0.02688495456870139,
+      "n_terms": 3.2,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": 0.02,
+      "rung": "Ones GLS",
+      "score": 0.9210400201095341,
+      "score_sem": 0.012744976168990256,
+      "n_terms": 3.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": 0.02,
+      "rung": "Variance diag",
+      "score": 0.6494108443477308,
+      "score_sem": 0.16629799216679586,
+      "n_terms": 2.4,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": 0.02,
+      "rung": "Variance GLS",
+      "score": 0.9046386378020438,
+      "score_sem": 0.026560066904628657,
+      "n_terms": 2.6,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": 0.05,
+      "rung": "No weighting",
+      "score": 0.9382647260665605,
+      "score_sem": 0.011939179520458353,
+      "n_terms": 2.4,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": 0.05,
+      "rung": "Ones GLS",
+      "score": 0.953890195836874,
+      "score_sem": 0.00842178968925523,
+      "n_terms": 2.6,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": 0.05,
+      "rung": "Variance diag",
+      "score": 0.9502967299551,
+      "score_sem": 0.013868763086946834,
+      "n_terms": 2.6,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": 0.05,
+      "rung": "Variance GLS",
+      "score": 0.9543084578668836,
+      "score_sem": 0.009504557254789912,
+      "n_terms": 2.8,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": 0.1,
+      "rung": "No weighting",
+      "score": 0.922550789983575,
+      "score_sem": 0.020855334468550833,
+      "n_terms": 2.4,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": 0.1,
+      "rung": "Ones GLS",
+      "score": 0.930136506905287,
+      "score_sem": 0.021931403494904685,
+      "n_terms": 2.6,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": 0.1,
+      "rung": "Variance diag",
+      "score": 0.9150171858455858,
+      "score_sem": 0.031101900006058315,
+      "n_terms": 2.6,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": 0.1,
+      "rung": "Variance GLS",
+      "score": 0.9424442995530704,
+      "score_sem": 0.022446431375143405,
+      "n_terms": 2.8,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": 0.2,
+      "rung": "No weighting",
+      "score": 0.9458296565046757,
+      "score_sem": 0.015135613324838494,
+      "n_terms": 2.4,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": 0.2,
+      "rung": "Ones GLS",
+      "score": 0.9298836727518219,
+      "score_sem": 0.019085199807028774,
+      "n_terms": 2.4,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": 0.2,
+      "rung": "Variance diag",
+      "score": 0.9585665789701604,
+      "score_sem": 0.005432870714898312,
+      "n_terms": 2.8,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": 0.2,
+      "rung": "Variance GLS",
+      "score": 0.9381846370488329,
+      "score_sem": 0.02271861955565448,
+      "n_terms": 2.6,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": 0.5,
+      "rung": "No weighting",
+      "score": 0.9409775524696695,
+      "score_sem": 0.012170105564033916,
+      "n_terms": 2.4,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": 0.5,
+      "rung": "Ones GLS",
+      "score": 0.9521350189093409,
+      "score_sem": 0.008459707634383955,
+      "n_terms": 2.6,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": 0.5,
+      "rung": "Variance diag",
+      "score": 0.9442378208722427,
+      "score_sem": 0.014342155177318188,
+      "n_terms": 2.6,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": 0.5,
+      "rung": "Variance GLS",
+      "score": 0.9403681859032302,
+      "score_sem": 0.00984155519161818,
+      "n_terms": 2.4,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": 1.0,
+      "rung": "No weighting",
+      "score": 0.9499761769757884,
+      "score_sem": 0.008725156115924441,
+      "n_terms": 2.6,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": 1.0,
+      "rung": "Ones GLS",
+      "score": 0.9513542192653184,
+      "score_sem": 0.005930918691092799,
+      "n_terms": 2.4,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": 1.0,
+      "rung": "Variance diag",
+      "score": 0.9462424920397895,
+      "score_sem": 0.005923299905749856,
+      "n_terms": 2.4,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.1,
+      "H_xt": 1.0,
+      "rung": "Variance GLS",
+      "score": 0.9357061129405796,
+      "score_sem": 0.006683547815955814,
+      "n_terms": 2.2,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": 0.01,
+      "rung": "No weighting",
+      "score": 0.10174313546179259,
+      "score_sem": 0.3209050074722698,
+      "n_terms": 2.8,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": 0.01,
+      "rung": "Ones GLS",
+      "score": 0.6477884677798995,
+      "score_sem": 0.132423010685715,
+      "n_terms": 2.8,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": 0.01,
+      "rung": "Variance diag",
+      "score": 0.7346258930117748,
+      "score_sem": 0.1207262718740372,
+      "n_terms": 2.6,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": 0.01,
+      "rung": "Variance GLS",
+      "score": 0.6633527913748896,
+      "score_sem": 0.12408043037224493,
+      "n_terms": 2.2,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": 0.02,
+      "rung": "No weighting",
+      "score": 0.8012933721139983,
+      "score_sem": 0.06291429217703924,
+      "n_terms": 2.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": 0.02,
+      "rung": "Ones GLS",
+      "score": 0.9233317592065525,
+      "score_sem": 0.006895739742267204,
+      "n_terms": 2.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": 0.02,
+      "rung": "Variance diag",
+      "score": 0.6109764843890474,
+      "score_sem": 0.20085961061044091,
+      "n_terms": 2.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": 0.02,
+      "rung": "Variance GLS",
+      "score": 0.7841979582637281,
+      "score_sem": 0.06870821498157485,
+      "n_terms": 2.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": 0.05,
+      "rung": "No weighting",
+      "score": 0.9052864892932476,
+      "score_sem": 0.019733900851370462,
+      "n_terms": 2.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": 0.05,
+      "rung": "Ones GLS",
+      "score": 0.9298825312824375,
+      "score_sem": 0.011127275054979506,
+      "n_terms": 2.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": 0.05,
+      "rung": "Variance diag",
+      "score": 0.875975070346491,
+      "score_sem": 0.03861667667950829,
+      "n_terms": 2.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": 0.05,
+      "rung": "Variance GLS",
+      "score": 0.9118645972988284,
+      "score_sem": 0.01470786994232592,
+      "n_terms": 2.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": 0.1,
+      "rung": "No weighting",
+      "score": 0.9221017718629787,
+      "score_sem": 0.020892732392599117,
+      "n_terms": 2.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": 0.1,
+      "rung": "Ones GLS",
+      "score": 0.9222737180868119,
+      "score_sem": 0.01937354956183621,
+      "n_terms": 2.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": 0.1,
+      "rung": "Variance diag",
+      "score": 0.9045209154384569,
+      "score_sem": 0.03128535748516521,
+      "n_terms": 2.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": 0.1,
+      "rung": "Variance GLS",
+      "score": 0.9216448614440489,
+      "score_sem": 0.017676680717411956,
+      "n_terms": 2.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": 0.2,
+      "rung": "No weighting",
+      "score": 0.9247347219505,
+      "score_sem": 0.012913979320526217,
+      "n_terms": 2.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": 0.2,
+      "rung": "Ones GLS",
+      "score": 0.9201183070907811,
+      "score_sem": 0.018458961022449972,
+      "n_terms": 2.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": 0.2,
+      "rung": "Variance diag",
+      "score": 0.9186847247154291,
+      "score_sem": 0.018654492708163748,
+      "n_terms": 2.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": 0.2,
+      "rung": "Variance GLS",
+      "score": 0.9090282081148156,
+      "score_sem": 0.025565318928039635,
+      "n_terms": 2.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": 0.5,
+      "rung": "No weighting",
+      "score": 0.9214667802467303,
+      "score_sem": 0.01260717593397884,
+      "n_terms": 2.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": 0.5,
+      "rung": "Ones GLS",
+      "score": 0.9235470260272383,
+      "score_sem": 0.008622164414660405,
+      "n_terms": 2.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": 0.5,
+      "rung": "Variance diag",
+      "score": 0.9187328788544367,
+      "score_sem": 0.012468273108773626,
+      "n_terms": 2.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": 0.5,
+      "rung": "Variance GLS",
+      "score": 0.923882095935728,
+      "score_sem": 0.006932225411461641,
+      "n_terms": 2.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": 1.0,
+      "rung": "No weighting",
+      "score": 0.9219918457949943,
+      "score_sem": 0.009607409759387245,
+      "n_terms": 2.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": 1.0,
+      "rung": "Ones GLS",
+      "score": 0.9215193876161688,
+      "score_sem": 0.005998671136465466,
+      "n_terms": 2.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": 1.0,
+      "rung": "Variance diag",
+      "score": 0.921354907333987,
+      "score_sem": 0.010874712967424476,
+      "n_terms": 2.0,
+      "error": null,
+      "admissible": true
+    },
+    {
+      "stlsq_threshold": 0.2,
+      "H_xt": 1.0,
+      "rung": "Variance GLS",
+      "score": 0.9225715891897123,
+      "score_sem": 0.009453933995676842,
+      "n_terms": 2.0,
+      "error": null,
+      "admissible": true
+    }
+  ],
+  "kappa_table": [
+    {
+      "H_xt": 0.01,
+      "K": 750,
+      "kappa_median": 3.365968720847404e-05,
+      "kappa_min": 9.302966697413021e-06,
+      "kappa_max": 3.366037544094202e-05
+    },
+    {
+      "H_xt": 0.02,
+      "K": 385,
+      "kappa_median": 0.00014050954638007438,
+      "kappa_min": 4.2289522898753276e-05,
+      "kappa_max": 0.0001405229830876531
+    },
+    {
+      "H_xt": 0.05,
+      "K": 159,
+      "kappa_median": 0.0009031442273419593,
+      "kappa_min": 0.00025762234995216387,
+      "kappa_max": 0.0009035983803514726
+    },
+    {
+      "H_xt": 0.1,
+      "K": 78,
+      "kappa_median": 0.003648317025658277,
+      "kappa_min": 0.0010017126267829108,
+      "kappa_max": 0.0036562440877070655
+    },
+    {
+      "H_xt": 0.2,
+      "K": 40,
+      "kappa_median": 0.014711216923497765,
+      "kappa_min": 0.004636756252583444,
+      "kappa_max": 0.014804542224533854
+    },
+    {
+      "H_xt": 0.5,
+      "K": 16,
+      "kappa_median": 0.09226040845034529,
+      "kappa_min": 0.037547218567085774,
+      "kappa_max": 0.09769126424963882
+    },
+    {
+      "H_xt": 1.0,
+      "K": 8,
+      "kappa_median": 0.4407217266412501,
+      "kappa_min": 0.19960685423656294,
+      "kappa_max": 0.47193667527669425
+    }
+  ]
+}
