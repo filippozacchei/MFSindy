@@ -506,7 +506,7 @@ class HopfIntraTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
     poly_degree: int = 3
     derivative_order: int = 1
     H_xt: float = 0.01
-    K: int = int(5 * (t1-t0) / H_xt)
+    K: int | None = None                      # derived from H_xt when None
     p: int = 2
     include_bias: bool = False
 
@@ -554,6 +554,18 @@ def _build_hopf_gls_artifacts(
         include_bias=cfg.include_bias,
     )
 
+    # K and the support width are resolved exactly as in Part I: the support sets
+    # the count at coverage 2, so a wider test function gets proportionally fewer.
+    # Part II previously asked for five times as many, of which a third were
+    # duplicates of each other.
+    t_values = np.asarray(XT, dtype=float).ravel()
+    extent = float(t_values.max() - t_values.min())
+    H_weak = cfg.H_xt if cfg.H_xt is not None else extent / 20.0
+    if cfg.K is not None:
+        K_weak = int(cfg.K)
+    else:
+        K_weak = max(2, int(round(extent / H_weak)))
+
     tf_seed = cfg.seed_base + 1000 + run_idx
 
     # Unweighted weak library
@@ -563,8 +575,8 @@ def _build_hopf_gls_artifacts(
         derivative_order=cfg.derivative_order,
         spatiotemporal_grid=XT,
         is_uniform=True,
-        K=cfg.K,
-        H_xt=cfg.H_xt,
+        K=K_weak,
+        H_xt=H_weak,
         include_bias=cfg.include_bias,
     )
 
@@ -577,8 +589,8 @@ def _build_hopf_gls_artifacts(
         spatiotemporal_grid=XT,
         spatiotemporal_weights=weights_scaled,
         is_uniform=True,
-        K=cfg.K,
-        H_xt=cfg.H_xt,
+        K=K_weak,
+        H_xt=H_weak,
         include_bias=cfg.include_bias,
     )
 
@@ -590,8 +602,8 @@ def _build_hopf_gls_artifacts(
         spatiotemporal_grid=XT,
         spatiotemporal_weights=np.ones_like(variance),
         is_uniform=True,
-        K=cfg.K,
-        H_xt=cfg.H_xt,
+        K=K_weak,
+        H_xt=H_weak,
         include_bias=cfg.include_bias,
     )
 
@@ -609,8 +621,8 @@ def _build_hopf_gls_artifacts(
         spatiotemporal_grid=XT,
         spatiotemporal_weights=weights_scaled,
         is_uniform=True,
-        K=cfg.K,
-        H_xt=cfg.H_xt,
+        K=K_weak,
+        H_xt=H_weak,
         include_bias=cfg.include_bias,
         whitener_mode="diag",
     )
