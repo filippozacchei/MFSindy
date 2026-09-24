@@ -280,17 +280,35 @@ def weak_target_noise_ceiling(
     """
 
     rhs = np.asarray(rhs, dtype=float)
+    sigma_field = np.asarray(sigma, dtype=float)
+
+    # sigma may be one number or a field over the grid. Part I's noise is
+    # constant per trajectory, so the scalar factors out; Part II's varies with
+    # the state, and then the noise reaching row k is sum_i sigma_i^2 phi_dot_ki^2
+    # -- the variance has to be carried inside the sum over samples, since a test
+    # function sitting on a quiet stretch inherits less noise than one sitting on
+    # a loud stretch.
     noise_power = 0.0
-    for k in range(int(library.K)):
-        weights = np.asarray(library.fulltweights[k], dtype=float).ravel()
-        noise_power += float(np.sum(weights**2))
+    if sigma_field.ndim == 0:
+        for k in range(int(library.K)):
+            weights = np.asarray(library.fulltweights[k], dtype=float).ravel()
+            noise_power += float(np.sum(weights**2))
+        noise_power *= float(sigma_field) ** 2
+    else:
+        grid_shape = tuple(np.asarray(library.spatiotemporal_grid).shape[:-1])
+        variance = (sigma_field**2).reshape(grid_shape)
+        for k in range(int(library.K)):
+            axes = [np.asarray(ax, dtype=np.intp) for ax in library.inds_k[k]]
+            mesh = np.meshgrid(*axes, indexing="ij")
+            weights = np.asarray(library.fulltweights[k], dtype=float).ravel(order="C")
+            noise_power += float(np.sum(weights**2 * variance[tuple(mesh)].ravel(order="C")))
 
     centered = rhs - np.mean(rhs, axis=0, keepdims=True)
     if rhs.ndim < 2 or rhs.shape[1] < 2:
         ss_total = float(np.sum(centered**2))
         if ss_total <= 0.0:
             return -np.inf
-        return float(1.0 - float(sigma) ** 2 * noise_power / ss_total)
+        return float(1.0 - noise_power / ss_total)
 
     # weak_r2_score averages per-state scores, so the ceiling has to be the
     # average of the per-state ceilings: the noise power per state is the same
@@ -300,7 +318,7 @@ def weak_target_noise_ceiling(
         ss_total = float(np.sum(centered[:, column] ** 2))
         if ss_total <= 0.0:
             continue
-        ceilings.append(1.0 - float(sigma) ** 2 * noise_power / ss_total)
+        ceilings.append(1.0 - noise_power / ss_total)
     if not ceilings:
         return -np.inf
     return float(np.mean(ceilings))

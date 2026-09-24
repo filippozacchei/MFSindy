@@ -576,6 +576,7 @@ def _build_hopf_gls_artifacts(
         spatiotemporal_grid=XT,
         is_uniform=True,
         K=K_weak,
+        p=cfg.p,
         H_xt=H_weak,
         include_bias=cfg.include_bias,
     )
@@ -590,6 +591,7 @@ def _build_hopf_gls_artifacts(
         spatiotemporal_weights=weights_scaled,
         is_uniform=True,
         K=K_weak,
+        p=cfg.p,
         H_xt=H_weak,
         include_bias=cfg.include_bias,
     )
@@ -603,6 +605,7 @@ def _build_hopf_gls_artifacts(
         spatiotemporal_weights=np.ones_like(variance),
         is_uniform=True,
         K=K_weak,
+        p=cfg.p,
         H_xt=H_weak,
         include_bias=cfg.include_bias,
     )
@@ -622,6 +625,7 @@ def _build_hopf_gls_artifacts(
         spatiotemporal_weights=weights_scaled,
         is_uniform=True,
         K=K_weak,
+        p=cfg.p,
         H_xt=H_weak,
         include_bias=cfg.include_bias,
         whitener_mode="diag",
