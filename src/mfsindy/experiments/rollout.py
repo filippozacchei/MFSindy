@@ -271,6 +271,141 @@ def build_polynomial_intra_trajectory_artifacts(
     )
 
 
+def pde_coverage_test_function_count(spatiotemporal_grid, H_xt) -> int:
+    """K at coverage 2 for a spatiotemporal grid: every point under two supports.
+
+    The ODE cases resolve K as ``extent / H``; in more than one dimension the
+    same statement is a ratio of volumes, ``2 * prod(extents) / prod(2H)``. It
+    is written once here because Part I's five case builders each carried a copy
+    and Part II carried none -- the PDE cases asked for a fixed 100 (the flow for
+    1000) whatever the support, which is a different coverage at every candidate
+    and so not a comparison.
+    """
+
+    grid = np.asarray(spatiotemporal_grid, dtype=float)
+    extents = [float(np.ptp(grid[..., axis])) for axis in range(grid.shape[-1])]
+    widths = np.atleast_1d(np.asarray(H_xt, dtype=float))
+    if widths.size == 1:
+        widths = np.full(len(extents), float(widths[0]))
+    domain = float(np.prod(2.0 * widths))
+    if domain <= 0.0:
+        raise ValueError(f"support widths must be positive, got {H_xt!r}.")
+    return max(2, int(round(2.0 * float(np.prod(extents)) / domain)))
+
+
+def build_pde_intra_trajectory_artifacts(
+    data: np.ndarray,
+    spatiotemporal_grid: np.ndarray,
+    *,
+    t_grid: np.ndarray,
+    variance: np.ndarray,
+    derivative_order: int,
+    poly_degree: int | None = None,
+    function_library=None,
+    include_bias: bool = False,
+    function_include_bias: bool | None = None,
+    K: int | None = None,
+    H_xt=None,
+    p: int | None = None,
+    weak_seed: int | None = None,
+    true_coefficients: np.ndarray | None = None,
+) -> IntraTrajectoryGLSData:
+    """The four Part II weightings for one noisy PDE field.
+
+    The PDE counterpart of :func:`build_polynomial_intra_trajectory_artifacts`,
+    and it exists for the same reason: the search has to build libraries on a
+    slice of the data, which the case builder cannot do because it generates its
+    own. Every rung is placed on the same test functions, so the comparison is
+    between covariance models and not between draws.
+
+    ``K`` follows the support at coverage 2 when left out.
+
+    The feature library is either given as ``function_library`` -- the flow case
+    builds a CustomLibrary of its own terms -- or constructed as a polynomial
+    library of degree ``poly_degree``; exactly one of the two is required.
+
+    ``include_bias`` adds the constant term to the weak feature set;
+    ``function_include_bias`` says whether the inner polynomial library carries
+    one too, and defaults to the same. Burgers sets it False while the weak
+    library keeps the bias, because otherwise the constant appears twice and the
+    duplicate column makes Theta rank-deficient.
+    """
+
+    data = np.asarray(data, dtype=float)
+    grid = np.asarray(spatiotemporal_grid, dtype=float)
+    variance = np.asarray(variance, dtype=float)
+
+    if variance.shape != data.shape[:-1]:
+        raise ValueError(
+            f"variance must match the field's grid shape {data.shape[:-1]}, "
+            f"got {variance.shape}."
+        )
+    if grid.shape[:-1] != data.shape[:-1]:
+        raise ValueError(
+            f"spatiotemporal_grid covers {grid.shape[:-1]} but the field is "
+            f"{data.shape[:-1]}; the two must agree point for point."
+        )
+
+    if (function_library is None) == (poly_degree is None):
+        raise ValueError("pass exactly one of function_library or poly_degree.")
+    base_library = function_library
+    if base_library is None:
+        base_library = ps.PolynomialLibrary(
+            degree=poly_degree,
+            include_bias=(
+                include_bias if function_include_bias is None else function_include_bias
+            ),
+        )
+
+    common_kwargs = {
+        "function_library": base_library,
+        "derivative_order": derivative_order,
+        "spatiotemporal_grid": grid,
+        "is_uniform": True,
+        "include_bias": include_bias,
+    }
+    if H_xt is not None:
+        common_kwargs["H_xt"] = H_xt
+    if K is not None:
+        common_kwargs["K"] = int(K)
+    elif H_xt is not None:
+        common_kwargs["K"] = pde_coverage_test_function_count(grid, H_xt)
+    # with neither, the library picks both, which is only sensible for a smoke test
+    if p is not None:
+        common_kwargs["p"] = p
+
+    def seeded():
+        if weak_seed is not None:
+            np.random.seed(int(weak_seed))
+
+    seeded()
+    weak_lib = DedupedWeakPDELibrary(**common_kwargs)
+    seeded()
+    weighted_var = WeightedWeakPDELibrary(spatiotemporal_weights=variance, **common_kwargs)
+    seeded()
+    weighted_ones = WeightedWeakPDELibrary(
+        spatiotemporal_weights=np.ones_like(variance), **common_kwargs
+    )
+    seeded()
+    weighted_var_diag = WeightedWeakPDELibrary(
+        spatiotemporal_weights=variance, **common_kwargs, whitener_mode="diag"
+    )
+
+    return IntraTrajectoryGLSData(
+        data=data,
+        t_argument=np.asarray(t_grid, dtype=float),
+        libraries={
+            "No weighting": weak_lib,
+            "Variance GLS": weighted_var,
+            "Ones GLS": weighted_ones,
+            "Variance diag": weighted_var_diag,
+        },
+        true_coefficients=(
+            np.empty((0, 0)) if true_coefficients is None else np.asarray(true_coefficients)
+        ),
+    )
+
+
 def evaluate_rollout_models(
     models: Mapping[str, PolynomialRolloutModel],
     validation_trajectories: Mapping[str, Sequence[np.ndarray]] | Sequence[np.ndarray],
@@ -402,11 +537,13 @@ def format_model_equations(
 
 __all__ = [
     "PolynomialRolloutModel",
+    "build_pde_intra_trajectory_artifacts",
     "build_polynomial_intra_trajectory_artifacts",
     "build_polynomial_rollout_models",
     "evaluate_rollout_models",
     "evaluate_windowed_rollout_models",
     "format_model_equations",
+    "pde_coverage_test_function_count",
     "rollout_r2_score",
     "split_single_trajectory",
     "split_trajectory_list",

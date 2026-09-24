@@ -51,6 +51,7 @@ from mfsindy.weighted_weak_pde_library import (
 # ---------------------------------------------------------------------------
 # Configuration dataclasses
 # ---------------------------------------------------------------------------
+from ..experiments.rollout import build_pde_intra_trajectory_artifacts
 
 @dataclass
 class BurgersConfig(MonteCarloConfig, EnsembleConfigMixin):
@@ -72,8 +73,13 @@ class BurgersConfig(MonteCarloConfig, EnsembleConfigMixin):
     # Weak-library settings
     poly_degree: int = 1
     derivative_order: int = 2
-    H_xt: list[float] | None = None  # per-dimension test-function support
-    K: int = 100               # number of weak test functions
+    # Per-dimension test-function support [h_x, h_t]. Part II used to leave this
+    # to pysindy and pin K at 100, which is a different coverage at every
+    # support and so not a basis for comparing supports; K now follows H_xt at
+    # coverage 2, as in Part I, unless it is set explicitly.
+    H_xt: list[float] | None = None
+    K: int | None = None
+    p: int | None = None
     include_bias: bool = True
 
     # SINDy / optimizer settings
@@ -271,85 +277,26 @@ def _build_burgers_gls_artifacts(
     X, T = np.meshgrid(x, t)
     XT = np.asarray([X, T]).T                # (NT, NX, 2)
 
-    # 4) Base polynomial library in u
-    base_library = ps.PolynomialLibrary(
-        degree=cfg.poly_degree,
-        include_bias=False,
-    )
-
-    tf_seed = cfg.seed_base + 1000 + run_idx
-
-    # 4a) Unweighted weak library
-    np.random.seed(tf_seed)
-    weak_lib = DedupedWeakPDELibrary(
-        function_library=base_library,
+    # 4) The four weightings, all on the same test functions. K follows the
+    # support at coverage 2 unless the config pins it; the inner polynomial
+    # library carries no bias because the weak library supplies the constant,
+    # and two of them would be the same column twice.
+    artifacts = build_pde_intra_trajectory_artifacts(
+        U_noisy,
+        XT,
+        t_grid=t,
+        variance=variance / np.mean(variance),
+        poly_degree=cfg.poly_degree,
         derivative_order=cfg.derivative_order,
-        spatiotemporal_grid=XT,
-        is_uniform=True,
+        include_bias=cfg.include_bias,
+        function_include_bias=False,
         K=cfg.K,
         H_xt=cfg.H_xt,
-        include_bias=cfg.include_bias,
-    )
-
-    # 4b) Variance-weighted weak library
-    weights_scaled = variance / np.mean(variance)
-    np.random.seed(tf_seed)
-    weighted_weak_lib_var = WeightedWeakPDELibrary(
-        function_library=base_library,
-        derivative_order=cfg.derivative_order,
-        spatiotemporal_grid=XT,
-        spatiotemporal_weights=weights_scaled,
-        is_uniform=True,
-        K=cfg.K,
-        H_xt=cfg.H_xt,
-        include_bias=cfg.include_bias,
-    )
-
-    # 4c) Ones-weighted weak library (GLS with unit weights)
-    np.random.seed(tf_seed)
-    weighted_weak_lib_ones = WeightedWeakPDELibrary(
-        function_library=base_library,
-        derivative_order=cfg.derivative_order,
-        spatiotemporal_grid=XT,
-        spatiotemporal_weights=np.ones_like(variance),
-        is_uniform=True,
-        K=cfg.K,
-        H_xt=cfg.H_xt,
-        include_bias=cfg.include_bias,
-    )
-
-
-    # Same heteroscedastic covariance, diagonal only: each weak equation is
-    # weighted by its own variance, with the correlations between overlapping
-    # test functions discarded. In Part I this rung collapses to one scalar per
-    # group, because the variance is constant along a trajectory there. Here it
-    # does not -- the diagonal spans a factor of ~50 -- so this is what isolates
-    # the off-diagonal contribution from the variance weighting.
-    np.random.seed(tf_seed)
-    weighted_weak_lib_var_diag = WeightedWeakPDELibrary(
-        function_library=base_library,
-        derivative_order=cfg.derivative_order,
-        spatiotemporal_grid=XT,
-        spatiotemporal_weights=weights_scaled,
-        is_uniform=True,
-        K=cfg.K,
-        H_xt=cfg.H_xt,
-        include_bias=cfg.include_bias,
-        whitener_mode="diag",
-    )
-    libraries = {
-        "No weighting": weak_lib,
-        "Variance GLS": weighted_weak_lib_var,
-        "Ones GLS": weighted_weak_lib_ones,
-        "Variance diag": weighted_weak_lib_var_diag,
-    }
-
-    return IntraTrajectoryGLSData(
-        data=U_noisy,
-        t_argument=t,
-        libraries=libraries,
+        p=cfg.p,
+        weak_seed=cfg.seed_base + 1000 + run_idx,
         true_coefficients=build_true_burgers_coefficients(cfg.nu),
     )
+    return artifacts
 
 
 def run_burgers_experiment(

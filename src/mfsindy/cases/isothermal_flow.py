@@ -40,6 +40,10 @@ from mfsindy.experiments import (
     run_intra_trajectory_gls_experiment,
     run_multi_trajectory_gls_experiment,
 )
+from mfsindy.experiments.rollout import (
+    build_pde_intra_trajectory_artifacts,
+    pde_coverage_test_function_count,
+)
 from mfsindy.weighted_weak_pde_library import (
     DedupedWeakPDELibrary,
     WeightedWeakPDELibrary,
@@ -1011,12 +1015,19 @@ def get_ns_isothermal_feature_names(
         )
     else:
         h_xt = _ns_intra_h_xt(cfg)
+        grid_array = np.asarray(grid, dtype=float)
+        # Only the feature names are wanted, but K still has to be a number, and
+        # it follows the support here like everywhere else.
         library = WeakPDELibrary(
             function_library=_build_custom_library(),
             derivative_order=cfg.derivative_order,
-            spatiotemporal_grid=np.asarray(grid, dtype=float),
+            spatiotemporal_grid=grid_array,
             is_uniform=True,
-            K=cfg.K,
+            K=(
+                int(cfg.K)
+                if cfg.K is not None
+                else pde_coverage_test_function_count(grid_array, h_xt)
+            ),
             p=cfg.p,
             H_xt=h_xt,
             include_bias=cfg.include_bias,
@@ -1059,7 +1070,10 @@ class NSIsothermalIntraTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin
     include_bias: bool = False
     p: int = 2
     K_ref: int = 1000
-    K: int = 1000
+    # K follows H_xt at coverage 2 when None. It used to be pinned at 1000
+    # whatever the support, which is a different coverage at every candidate --
+    # around 20 at the default support, where the covariance is near singular.
+    K: int | None = None
     H_xt: list[float] | None = None
 
     # SINDy / optimizer settings
@@ -1095,79 +1109,20 @@ def _build_ns_gls_artifacts(
         U_clean, t, sigma0=cfg.sigma0, alpha=cfg.alpha, rng=rng
     )
 
-    variance_scaled = variance / np.mean(variance)
-    tf_seed = cfg.seed_base + 1000 + run_idx
-    h_xt = _ns_intra_h_xt(cfg)
-
-    np.random.seed(tf_seed)
-    weak_lib = DedupedWeakPDELibrary(
+    # The four weightings, all on the same test functions. K follows the support
+    # at coverage 2 unless the config pins it.
+    return build_pde_intra_trajectory_artifacts(
+        U_noisy,
+        np.asarray(grid, dtype=float),
+        t_grid=t,
+        variance=variance / np.mean(variance),
         function_library=base_library,
         derivative_order=cfg.derivative_order,
-        spatiotemporal_grid=grid,
-        is_uniform=True,
-        K=cfg.K,
-        p=cfg.p,
-        H_xt=h_xt,
         include_bias=cfg.include_bias,
-    )
-
-    np.random.seed(tf_seed)
-    weighted_weak_lib_var = WeightedWeakPDELibrary(
-        function_library=base_library,
-        derivative_order=cfg.derivative_order,
-        spatiotemporal_grid=grid,
-        spatiotemporal_weights=variance_scaled,
-        is_uniform=True,
         K=cfg.K,
+        H_xt=_ns_intra_h_xt(cfg),
         p=cfg.p,
-        H_xt=h_xt,
-        include_bias=cfg.include_bias,
-    )
-
-    np.random.seed(tf_seed)
-    weighted_weak_lib_ones = WeightedWeakPDELibrary(
-        function_library=base_library,
-        derivative_order=cfg.derivative_order,
-        spatiotemporal_grid=grid,
-        spatiotemporal_weights=np.ones_like(variance_scaled),
-        is_uniform=True,
-        K=cfg.K,
-        p=cfg.p,
-        H_xt=h_xt,
-        include_bias=cfg.include_bias,
-    )
-
-
-    # Same heteroscedastic covariance, diagonal only: each weak equation is
-    # weighted by its own variance, with the correlations between overlapping
-    # test functions discarded. In Part I this rung collapses to one scalar per
-    # group, because the variance is constant along a trajectory there. Here it
-    # does not -- the diagonal spans a factor of ~50 -- so this is what isolates
-    # the off-diagonal contribution from the variance weighting.
-    np.random.seed(tf_seed)
-    weighted_weak_lib_var_diag = WeightedWeakPDELibrary(
-        function_library=base_library,
-        derivative_order=cfg.derivative_order,
-        spatiotemporal_grid=grid,
-        spatiotemporal_weights=variance_scaled,
-        is_uniform=True,
-        K=cfg.K,
-        p=cfg.p,
-        H_xt=h_xt,
-        include_bias=cfg.include_bias,
-        whitener_mode="diag",
-    )
-    libraries = {
-        "No weighting": weak_lib,
-        "Variance GLS": weighted_weak_lib_var,
-        "Ones GLS": weighted_weak_lib_ones,
-        "Variance diag": weighted_weak_lib_var_diag,
-    }
-
-    return IntraTrajectoryGLSData(
-        data=U_noisy,
-        t_argument=t,
-        libraries=libraries,
+        weak_seed=cfg.seed_base + 1000 + run_idx,
         true_coefficients=true_coefficients,
     )
 
@@ -1235,74 +1190,25 @@ def build_ns_isothermal_intra_trajectory_artifacts(
     if variance.shape != data.shape[:-1]:
         raise ValueError(f"variance must have shape {data.shape[:-1]}, got {variance.shape}.")
 
-    base_library = _build_custom_library() if base_library is None else base_library
-    variance_scaled = variance / np.mean(variance)
-    tf_seed = cfg.seed_base if weak_seed is None else int(weak_seed)
-    h_xt = _ns_intra_h_xt(cfg)
-
-    np.random.seed(tf_seed)
-    weak_lib = DedupedWeakPDELibrary(
-        function_library=base_library,
+    return build_pde_intra_trajectory_artifacts(
+        data,
+        grid,
+        t_grid=t_grid,
+        variance=variance / np.mean(variance),
+        function_library=(
+            _build_custom_library() if base_library is None else base_library
+        ),
         derivative_order=cfg.derivative_order,
-        spatiotemporal_grid=grid,
-        is_uniform=True,
-        K=cfg.K,
-        p=cfg.p,
-        H_xt=h_xt,
         include_bias=cfg.include_bias,
-    )
-
-    np.random.seed(tf_seed)
-    weighted_weak_lib_var = WeightedWeakPDELibrary(
-        function_library=base_library,
-        derivative_order=cfg.derivative_order,
-        spatiotemporal_grid=grid,
-        spatiotemporal_weights=variance_scaled,
-        is_uniform=True,
         K=cfg.K,
+        H_xt=_ns_intra_h_xt(cfg),
         p=cfg.p,
-        H_xt=h_xt,
-        include_bias=cfg.include_bias,
-    )
-
-    np.random.seed(tf_seed)
-    weighted_weak_lib_ones = WeightedWeakPDELibrary(
-        function_library=base_library,
-        derivative_order=cfg.derivative_order,
-        spatiotemporal_grid=grid,
-        spatiotemporal_weights=np.ones_like(variance_scaled),
-        is_uniform=True,
-        K=cfg.K,
-        p=cfg.p,
-        H_xt=h_xt,
-        include_bias=cfg.include_bias,
-    )
-
-
-    np.random.seed(tf_seed)
-    weighted_weak_lib_var_diag = WeightedWeakPDELibrary(
-        function_library=base_library,
-        derivative_order=cfg.derivative_order,
-        spatiotemporal_grid=grid,
-        spatiotemporal_weights=variance_scaled,
-        is_uniform=True,
-        K=cfg.K,
-        p=cfg.p,
-        H_xt=h_xt,
-        include_bias=cfg.include_bias,
-        whitener_mode="diag",
-    )
-    return IntraTrajectoryGLSData(
-        data=data,
-        t_argument=t_grid,
-        libraries={
-            "No weighting": weak_lib,
-            "Variance GLS": weighted_weak_lib_var,
-            "Ones GLS": weighted_weak_lib_ones,
-            "Variance diag": weighted_weak_lib_var_diag,
-        },
-        true_coefficients=
-        np.empty((data.shape[-1], 0)) if true_coefficients is None else np.asarray(true_coefficients),
+        weak_seed=cfg.seed_base if weak_seed is None else int(weak_seed),
+        true_coefficients=(
+            np.empty((data.shape[-1], 0))
+            if true_coefficients is None
+            else np.asarray(true_coefficients)
+        ),
     )
 
 
