@@ -184,6 +184,70 @@ def build_polynomial_rollout_models(
     }
 
 
+def split_pde_field_in_time(
+    field: np.ndarray,
+    spatiotemporal_grid: np.ndarray,
+    t_grid: np.ndarray,
+    *,
+    variance: np.ndarray,
+    validation_fraction: float = 0.2,
+    time_axis: int = -2,
+) -> tuple[dict, dict]:
+    """Cut a PDE field into contiguous train and validation windows in time.
+
+    The counterpart of :func:`split_single_trajectory` for a field on a
+    spatiotemporal grid: space is kept whole and only time is cut, because the
+    search needs a window the fit never saw and a spatial hold-out would leave
+    the two windows coupled through the equation's own derivatives.
+
+    The two windows share their boundary sample, as in the ODE split, so the
+    validation window starts where the training one ends rather than a step
+    later. Each returns the field, its grid, its time vector -- shifted to start
+    at zero, since supports are expressed relative to the window -- and its
+    variance, ready to hand to
+    :func:`build_pde_intra_trajectory_artifacts`.
+    """
+
+    field = np.asarray(field, dtype=float)
+    grid = np.asarray(spatiotemporal_grid, dtype=float)
+    t_grid = np.asarray(t_grid, dtype=float)
+    variance = np.asarray(variance, dtype=float)
+
+    axis = time_axis % field.ndim
+    n_total = field.shape[axis]
+    if t_grid.shape[0] != n_total:
+        raise ValueError(
+            f"t_grid has {t_grid.shape[0]} samples but the field has {n_total} "
+            f"along axis {axis}."
+        )
+    if not 0.0 < validation_fraction < 1.0:
+        raise ValueError("validation_fraction must lie in (0, 1).")
+
+    n_val = max(2, int(np.ceil(n_total * validation_fraction)))
+    n_val = min(n_val, n_total - 2)
+    n_train = n_total - n_val
+
+    def window(lo, hi):
+        field_slice = [slice(None)] * field.ndim
+        field_slice[axis] = slice(lo, hi)
+        grid_slice = [slice(None)] * grid.ndim
+        grid_slice[axis] = slice(lo, hi)          # grid carries a trailing coord axis
+        variance_slice = [slice(None)] * variance.ndim
+        variance_slice[axis if axis < variance.ndim else -1] = slice(lo, hi)
+
+        times = t_grid[lo:hi] - t_grid[lo]
+        sub_grid = grid[tuple(grid_slice)].copy()
+        sub_grid[..., -1] -= sub_grid[..., -1].min()
+        return {
+            "data": field[tuple(field_slice)].copy(),
+            "grid": sub_grid,
+            "t_grid": times,
+            "variance": variance[tuple(variance_slice)].copy(),
+        }
+
+    return window(0, n_train), window(n_train - 1, n_total)
+
+
 def build_polynomial_intra_trajectory_artifacts(
     data: np.ndarray,
     t_grid: np.ndarray,
@@ -544,6 +608,7 @@ __all__ = [
     "evaluate_windowed_rollout_models",
     "format_model_equations",
     "pde_coverage_test_function_count",
+    "split_pde_field_in_time",
     "rollout_r2_score",
     "split_single_trajectory",
     "split_trajectory_list",

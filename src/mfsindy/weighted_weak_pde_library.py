@@ -176,7 +176,7 @@ def pde_feature_weight_index(library) -> np.ndarray:
     return np.asarray(order, dtype=int)
 
 
-def pde_weak_validity_ratio(library, sensitivity_fields) -> np.ndarray:
+def pde_weak_validity_ratio(library, sensitivity_fields, sigma=None) -> np.ndarray:
     """kappa per test function for a PDE weak system.
 
     The PDE counterpart of :func:`weak_validity_ratio`, and computed the same
@@ -196,6 +196,11 @@ def pde_weak_validity_ratio(library, sensitivity_fields) -> np.ndarray:
     carries ``|Xi_p| * |d(feature_p)/du|`` on the grid -- the coefficient
     included, since a feature the model does not use cannot break it. It is the
     caller's business, as the library map is: each system knows its own.
+
+    ``sigma`` is the noise level on the grid, and follows
+    :func:`weak_validity_ratio`: both terms are driven by the same noise, so a
+    constant sigma cancels and Part I may omit it, while Part II's
+    heteroscedastic noise does not cancel and must be carried.
     """
 
     sensitivity_fields = np.asarray(sensitivity_fields, dtype=float)
@@ -206,11 +211,14 @@ def pde_weak_validity_ratio(library, sensitivity_fields) -> np.ndarray:
             f"but the library has {weight_index.size} output features."
         )
 
+    sigma_field = None if sigma is None else np.asarray(sigma, dtype=float)
+
     ratios: list[float] = []
     for k in range(int(library.K)):
         support = np.ix_(*library.inds_k[k])
         phi_dot = np.asarray(library.fulltweights[k], dtype=float)
-        denominator = float(np.sum(phi_dot**2))
+        scale = 1.0 if sigma_field is None else sigma_field[support]
+        denominator = float(np.sum((scale * phi_dot) ** 2))
         if denominator <= 0.0:
             continue
         numerator_field = np.zeros(phi_dot.shape, dtype=float)
@@ -227,7 +235,7 @@ def pde_weak_validity_ratio(library, sensitivity_fields) -> np.ndarray:
             numerator_field += np.abs(np.asarray(weights, dtype=float)) * (
                 sensitivity_fields[feature][support]
             )
-        ratios.append(float(np.sum(numerator_field**2) / denominator))
+        ratios.append(float(np.sum((scale * numerator_field) ** 2) / denominator))
     return np.asarray(ratios)
 
 

@@ -113,3 +113,53 @@ def test_one_of_function_library_or_poly_degree_is_required():
         build_pde_intra_trajectory_artifacts(
             data, poly_degree=1, function_library=object(), **kwargs
         )
+
+
+def test_constant_sigma_cancels_from_the_pde_kappa():
+    """As for the ODE kappa: one definition serves both parts only if a noise
+    level constant over the grid drops out, which is what lets Part I keep
+    omitting it."""
+
+    from mfsindy.cases.burgers import build_true_burgers_coefficients
+    from mfsindy.weighted_weak_pde_library import (
+        pde_sensitivity_fields,
+        pde_weak_validity_ratio,
+    )
+
+    cfg, artifacts = burgers_artifacts(K=None, H_xt=[2.0, 1.0])
+    library = artifacts.libraries["No weighting"]
+    library.fit_transform([artifacts.data])
+    sensitivity = pde_sensitivity_fields(
+        library, artifacts.data, build_true_burgers_coefficients(cfg.nu)
+    )
+    grid_shape = artifacts.data.shape[:-1]
+
+    unweighted = pde_weak_validity_ratio(library, sensitivity)
+    for level in (1.0, 4.2, 1e-2):
+        weighted = pde_weak_validity_ratio(
+            library, sensitivity, sigma=np.full(grid_shape, level)
+        )
+        assert np.allclose(unweighted, weighted, rtol=0, atol=1e-12)
+
+
+def test_pde_kappa_is_small_where_the_covariance_model_is_claimed_to_hold():
+    """A sanity floor on the diagnostic itself: at a support well inside the
+    grid the neglected term should be a small fraction of the retained one, or
+    the ratio is measuring something other than what the appendix derives."""
+
+    from mfsindy.cases.burgers import build_true_burgers_coefficients
+    from mfsindy.weighted_weak_pde_library import (
+        pde_sensitivity_fields,
+        pde_weak_validity_ratio,
+    )
+
+    cfg, artifacts = burgers_artifacts(K=None, H_xt=[2.0, 1.0])
+    library = artifacts.libraries["No weighting"]
+    library.fit_transform([artifacts.data])
+    ratios = pde_weak_validity_ratio(
+        library,
+        pde_sensitivity_fields(
+            library, artifacts.data, build_true_burgers_coefficients(cfg.nu)
+        ),
+    )
+    assert np.median(ratios) < 1.0
