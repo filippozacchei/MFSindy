@@ -244,6 +244,9 @@ def run_monte_carlo(cfg, selections, *, results_dir: Path = RESULTS_DIR,
         per_rung = deepcopy(cfg)
         for name, value in selection.best_params.items():
             setattr(per_rung, name, value)
+        # results_dir is where this run's output goes, per-rung CSVs included:
+        # without this a scratch run writes over the committed results.
+        per_rung.results_dir = str(results_dir)
         per_rung.results_filename = f"burgers_part1_{rung.lower()}_errors.csv"
         run_cfgs[rung] = per_rung
 

@@ -16,11 +16,14 @@ import numpy as np
 import pandas as pd
 
 from mfsindy.cases.hopf import (
+    _hopf_jacobian_norm,
     generate_hopf_trajectory,
     HopfIntraTrajectoryGLSConfig,
     _build_hopf_gls_artifacts,
     run_hopf_intra_trajectory_gls_experiment,
 )
+
+from mfsindy.weighted_weak_pde_library import weak_validity_ratio
 
 from mfsindy.experiments import (
     TUNING_SEED_OFFSET,
@@ -116,12 +119,19 @@ VALIDATION_FRACTION = 0.2
 #: heteroscedastic noise here is far larger, so no support reaches that.
 MIN_CEILING = 0.95
 
+#: Supports offered to the validation system, as divisors of the held-out slice's
+#: own extent rather than of the full horizon. The validation system is the
+#: measuring instrument, not a candidate, so it is sized by the data it is built
+#: on: pysindy needs 2*H below the extent, which a support wide enough to be
+#: worth searching on the (five times longer) training part would violate.
+VALIDATION_SUPPORT_DIVISORS = (100.0, 50.0, 20.0, 10.0, 5.0, 2.5)
+
 
 def search_grid(cfg) -> dict:
     horizon = cfg.t1 - cfg.t0
     return {
         "stlsq_threshold": [0.02, 0.05, 0.1, 0.2, 0.5],
-        "H_xt": [horizon / d for d in (2000.0, 1000.0, 500.0, 200.0, 100.0, 50.0)],
+        "H_xt": [horizon / d for d in (1000.0, 500.0, 200.0, 100.0, 50.0, 20.0, 10.0)],
     }
 
 
@@ -164,6 +174,54 @@ def _artifacts(cfg, data, t_grid, variance, H_xt, weak_seed):
     )
 
 
+def kappa_by_support(cfg, *, verbose: bool = True) -> pd.DataFrame:
+    """Kappa per candidate fitting support, on the tuning trajectory.
+
+    Part I averages this over several clean reference trajectories, because
+    kappa depends on the trajectory through |grad F(u)| and a single draw makes
+    it a function of the seed. There is one trajectory here, so what varies
+    instead is sigma: the noise is heteroscedastic, so it does not cancel
+    between the two terms of the ratio the way it does in Part I, and it is
+    carried explicitly. ``kappa_min``/``kappa_max`` bracket the median over the
+    test functions of one support, not over trajectories.
+
+    The table is a diagnostic. It does not restrict the grid: kappa governs the
+    covariance model, and a support where it is large is one where the weighting
+    is expected to help least, which is a result rather than a reason to drop
+    the point.
+    """
+
+    noisy, t_grid, variance = tuning_trajectory(cfg)
+    train, _, t_train, _ = split_single_trajectory(
+        noisy, t_grid, validation_fraction=VALIDATION_FRACTION
+    )
+    variance_train = variance[: train.shape[0]]
+    jacobian = _hopf_jacobian_norm(train, cfg)
+    sigma = np.sqrt(variance_train)
+    seed = cfg.seed_base + TUNING_SEED_OFFSET + 2
+
+    rows = []
+    for H in search_grid(cfg)["H_xt"]:
+        library = _artifacts(
+            cfg, train, t_train, variance_train, H, seed
+        ).libraries["No weighting"]
+        library.fit_transform([train])
+        ratios = weak_validity_ratio(library, jacobian, sigma=sigma)
+        rows.append(
+            dict(
+                H_xt=H,
+                K=int(library.K),
+                kappa_median=float(np.median(ratios)),
+                kappa_min=float(np.min(ratios)),
+                kappa_max=float(np.max(ratios)),
+            )
+        )
+    table = pd.DataFrame(rows)
+    if verbose:
+        print(table.to_string(index=False))
+    return table
+
+
 def tune(cfg, *, results_dir: Path = RESULTS_DIR, verbose: bool = True) -> TuningArtifacts:
     """Select hyperparameters per rung and write the record to JSON.
 
@@ -197,10 +255,23 @@ def tune(cfg, *, results_dir: Path = RESULTS_DIR, verbose: bool = True) -> Tunin
         rhs = np.asarray(library.convert_u_dot_integral(validation))
         return library, rhs
 
+    validation_extent = float(t_validation.max() - t_validation.min())
+    # Kappa is reported against each candidate but does not bind here: it governs
+    # the covariance model, and this system invokes none -- the validation
+    # library is unweighted and the score is an unweighted R^2. Kappa belongs to
+    # the rungs that whiten, on their fitting support, which is what
+    # kappa_by_support tabulates.
+    sigma_validation = np.sqrt(variance_validation)
+    jacobian_validation = _hopf_jacobian_norm(validation, cfg)
     support = select_validation_support(
         build_validation,
-        candidates=grid["H_xt"],
-        sigma=np.sqrt(variance_validation),
+        candidates=[validation_extent / d for d in VALIDATION_SUPPORT_DIVISORS],
+        sigma=sigma_validation,
+        kappa_fn=lambda library, _H: float(
+            np.median(
+                weak_validity_ratio(library, jacobian_validation, sigma=sigma_validation)
+            )
+        ),
         min_ceiling=MIN_CEILING,
     )
     if verbose:
@@ -229,6 +300,8 @@ def tune(cfg, *, results_dir: Path = RESULTS_DIR, verbose: bool = True) -> Tunin
             frames.append(evaluate_weak_form_models(coefficients, val_blocks[seed]))
         return pd.concat(frames, ignore_index=True)
 
+    kappa_table = kappa_by_support(cfg, verbose=verbose)
+
     selections, score_table = tune_rungs(
         cfg,
         param_grid=grid,
@@ -237,6 +310,17 @@ def tune(cfg, *, results_dir: Path = RESULTS_DIR, verbose: bool = True) -> Tunin
         reducer=lambda scores: float(np.mean(np.clip(scores, -1.0, 1.0))),
         evaluate=evaluate,
     )
+
+    kappa_at_support = {
+        float(row.H_xt): float(row.kappa_median) for row in kappa_table.itertuples()
+    }
+    kappa_at_selection = {
+        rung: kappa_at_support[float(selection.best_params["H_xt"])]
+        for rung, selection in selections.items()
+    }
+    if verbose:
+        print("\nkappa at each selection: "
+              + ", ".join(f"{r}={k:.3g}" for r, k in kappa_at_selection.items()))
 
     design = {}
     for rung, selection in selections.items():
@@ -250,6 +334,7 @@ def tune(cfg, *, results_dir: Path = RESULTS_DIR, verbose: bool = True) -> Tunin
         selections=selections,
         param_grid=grid,
         table=score_table,
+        kappa_table=kappa_table,
         fixed={
             "weak_design": design,
             "n_takes": N_TAKES,
@@ -265,6 +350,13 @@ def tune(cfg, *, results_dir: Path = RESULTS_DIR, verbose: bool = True) -> Tunin
                 "K": support.K,
                 "ceiling": support.ceiling,
                 "min_ceiling": MIN_CEILING,
+            },
+            "kappa_diagnostic": {
+                "definition": "|| sigma phi |grad F| ||^2 / || sigma phi_dot ||^2,"
+                              " per test function, on the training segment",
+                "statistic": "kappa_median (median over test functions);"
+                             " reported, never used to restrict the grid",
+                "kappa_at_selection": kappa_at_selection,
             },
             "K_rule": "max(2, round((t1 - t0) / H_xt))  # coverage 2",
             "poly_degree": cfg.poly_degree,
@@ -297,6 +389,9 @@ def run_monte_carlo(cfg, selections=None, *, results_dir: Path = RESULTS_DIR,
             per_rung = deepcopy(cfg)
             for name, value in selection.best_params.items():
                 setattr(per_rung, name, value)
+            # results_dir is where this run's output goes, per-rung CSVs included:
+            # without this a scratch run writes over the committed results.
+            per_rung.results_dir = str(results_dir)
             per_rung.results_filename = (
                 f"hopf_part2_{rung.lower().replace(' ', '_')}_errors.csv"
             )

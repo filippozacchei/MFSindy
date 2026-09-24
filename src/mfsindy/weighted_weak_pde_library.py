@@ -70,32 +70,45 @@ class DedupedWeakPDELibrary(WeakPDELibrary):
             drop_duplicate_domains(self) if self.deduplicate else 0
         )
         
-def weak_validity_ratio(library, jacobian_norm) -> np.ndarray:
+def weak_validity_ratio(library, jacobian_norm, sigma=None) -> np.ndarray:
     """kappa per test function: how much of the residual the covariance ignores.
 
     The covariance model keeps only the term in which noise enters through the
     test function's derivative, and neglects the one carrying the library
     Jacobian. The approximation holds where the neglected term is small against
     the retained one, which the appendix writes as a ratio of squared norms,
-    ``kappa = || phi |grad F| ||^2 / || phi_dot ||^2``, predicted to scale as
-    O(h^2) in the support width. Returned per test function so the spread across
-    the weak system is visible, not just its centre.
+    ``kappa = || sigma phi |grad F| ||^2 / || sigma phi_dot ||^2``, predicted to
+    scale as O(h^2) in the support width. Returned per test function so the
+    spread across the weak system is visible, not just its centre.
 
     ``jacobian_norm`` is |grad F(u)| sampled along the trajectory, one value per
     grid point, so it is the caller's business: each system knows its own
     Jacobian.
+
+    ``sigma`` is the noise level at each grid point. Both terms of the ratio are
+    driven by the same noise, so a constant sigma cancels and may be left out --
+    which is why Part I, where the noise is constant along a trajectory, omits
+    it. Under the heteroscedastic noise of Part II it does not cancel: the ratio
+    is then dominated by whichever part of the trajectory is noisiest, and
+    omitting sigma reports the ratio of a different problem.
     """
 
     jacobian_norm = np.asarray(jacobian_norm, dtype=float).ravel()
+    if sigma is None:
+        sigma_field = None
+    else:
+        sigma_field = np.asarray(sigma, dtype=float).ravel()
     ratios = []
     for k in range(int(library.K)):
         indices = np.asarray(library.inds_k[k][0]).ravel()
         phi_dot = np.asarray(library.fulltweights[k], dtype=float).ravel()
         phi = np.asarray(library.fullweights0[k], dtype=float).ravel()
-        denominator = float(np.sum(phi_dot**2))
+        scale = 1.0 if sigma_field is None else sigma_field[indices]
+        denominator = float(np.sum((scale * phi_dot) ** 2))
         if denominator <= 0.0:
             continue
-        ratios.append(float(np.sum((phi * jacobian_norm[indices]) ** 2) / denominator))
+        numerator = float(np.sum((scale * phi * jacobian_norm[indices]) ** 2))
+        ratios.append(numerator / denominator)
     return np.asarray(ratios)
 
 
