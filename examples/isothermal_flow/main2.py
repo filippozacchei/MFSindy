@@ -84,6 +84,28 @@ def make_config(**overrides) -> NSIsothermalIntraTrajectoryGLSConfig:
     return NSIsothermalIntraTrajectoryGLSConfig(**settings)
 
 
+def _truth(cfg):
+    """The grid, feature library and true coefficients the runner builds.
+
+    Reproduced here rather than imported because the runner assembles them
+    inside itself; the tuning path needs the same three, and they are fixed by
+    cfg alone, so both get the identical reference.
+    """
+
+    U_clean_ref, _, grid_ref = generate_isothermal_ns_dataset(
+        N=cfg.N, Nt=cfg.Nt, L=cfg.L, T=cfg.T, mu=cfg.mu, RT=cfg.RT,
+        seed=cfg.seed_base,
+    )
+    coefficients = build_true_ns_isothermal_coefficients(
+        get_ns_isothermal_feature_names(
+            cfg, grid=grid_ref, reference_trajectory=U_clean_ref
+        ),
+        RT=cfg.RT,
+        mu=cfg.mu,
+    )
+    return grid_ref, _build_custom_library(), coefficients
+
+
 def weak_design(cfg, *, run_idx: int = 0) -> pd.DataFrame:
     """What each weighting actually fits.
 
@@ -93,7 +115,18 @@ def weak_design(cfg, *, run_idx: int = 0) -> pd.DataFrame:
     construction, and well above 1 wherever the noise varies along the trajectory.
     """
 
-    artifacts = _build_ns_gls_artifacts(run_idx, cfg, np.random.default_rng(cfg.seed_base))
+    # The builder needs the grid, the feature library and the true coefficients,
+    # which the runner assembles inside itself; _truth rebuilds the same three
+    # from cfg alone. Without them this function could not be called at all.
+    grid, base_library, coefficients = _truth(cfg)
+    artifacts = _build_ns_gls_artifacts(
+        run_idx,
+        cfg,
+        np.random.default_rng(cfg.seed_base),
+        grid=grid,
+        base_library=base_library,
+        true_coefficients=coefficients,
+    )
     rows = []
     for method in METHODS:
         library = artifacts.libraries[method]
@@ -128,7 +161,16 @@ MIN_CEILING = 0.95
 #: window's own extents rather than the whole field's -- the window is a fifth
 #: as long in time, so a support worth searching on the training part does not
 #: fit inside it.
-VALIDATION_SUPPORT_DIVISORS = (16.0, 8.0, 4.0, 2.5)
+#:
+#: Space and time are divided separately because they do not act the same way on
+#: the noise ceiling. Measured over the held-out window, the ceiling is governed
+#: almost entirely by the spatial width: at H_s = 0.61 it runs 0.80 to 0.99 as
+#: the temporal width widens, while at H_s = 1.94 it is negative for every one of
+#: them. A single divisor for both ties the two together and walks the wide end
+#: of the list straight into the unusable corner, which is why no candidate
+#: cleared the floor until they were separated.
+VALIDATION_SPACE_DIVISORS = (16.0, 8.0, 5.0)
+VALIDATION_TIME_DIVISORS = (8.0, 5.0, 4.0, 2.5)
 
 
 def search_grid(cfg) -> dict:
@@ -138,28 +180,6 @@ def search_grid(cfg) -> dict:
         "stlsq_threshold": [0.1, 0.2, 0.5, 1.0],
         "H_xt": [[hs, hs, ht] for hs in h_s for ht in h_t],
     }
-
-
-def _truth(cfg):
-    """The grid, feature library and true coefficients the runner builds.
-
-    Reproduced here rather than imported because the runner assembles them
-    inside itself; the tuning path needs the same three, and they are fixed by
-    cfg alone, so both get the identical reference.
-    """
-
-    U_clean_ref, _, grid_ref = generate_isothermal_ns_dataset(
-        N=cfg.N, Nt=cfg.Nt, L=cfg.L, T=cfg.T, mu=cfg.mu, RT=cfg.RT,
-        seed=cfg.seed_base,
-    )
-    coefficients = build_true_ns_isothermal_coefficients(
-        get_ns_isothermal_feature_names(
-            cfg, grid=grid_ref, reference_trajectory=U_clean_ref
-        ),
-        RT=cfg.RT,
-        mu=cfg.mu,
-    )
-    return grid_ref, _build_custom_library(), coefficients
 
 
 def tuning_trajectory(cfg):
@@ -281,7 +301,11 @@ def tune(cfg, *, results_dir: Path = RESULTS_DIR, verbose: bool = True) -> Tunin
     # the covariance model, and this system invokes none.
     support = select_validation_support(
         build_validation,
-        candidates=[[e / d for e in extents] for d in VALIDATION_SUPPORT_DIVISORS],
+        candidates=[
+            [extents[0] / ds, extents[1] / ds, extents[2] / dt]
+            for ds in VALIDATION_SPACE_DIVISORS
+            for dt in VALIDATION_TIME_DIVISORS
+        ],
         sigma=sigma_validation,
         kappa_fn=lambda library, _H: float(
             np.median(

@@ -129,7 +129,16 @@ MIN_CEILING = 0.95
 #: the measuring instrument, not a candidate, so it is sized by the data it is
 #: built on -- the window is a fifth as long in time, and a support wide enough
 #: to be worth searching on the training part does not fit inside it.
-VALIDATION_SUPPORT_DIVISORS = (20.0, 10.0, 5.0, 2.5)
+#:
+#: Space and time are divided separately. Measured over the held-out window, the
+#: ceiling here is set almost entirely by the temporal width -- at H_t = 0.8 it
+#: is 0.96 to 0.99 whatever H_x does, and at H_t = 0.1 it never exceeds 0.28 --
+#: which is the opposite of the flow, where the spatial width governs. So no
+#: single divisor serves both cases, and tying the two together here left one
+#: qualifying candidate with three rows: a validation system that cannot rank
+#: anything.
+VALIDATION_SPACE_DIVISORS = (20.0, 10.0, 5.0)
+VALIDATION_TIME_DIVISORS = (10.0, 5.0, 2.5)
 
 
 def search_grid(cfg) -> dict:
@@ -270,7 +279,9 @@ def tune(cfg, *, results_dir: Path = RESULTS_DIR, verbose: bool = True) -> Tunin
     support = select_validation_support(
         build_validation,
         candidates=[
-            [extents[0] / d, extents[1] / d] for d in VALIDATION_SUPPORT_DIVISORS
+            [extents[0] / dx, extents[1] / dt]
+            for dx in VALIDATION_SPACE_DIVISORS
+            for dt in VALIDATION_TIME_DIVISORS
         ],
         sigma=sigma_validation,
         kappa_fn=lambda library, _H: float(
