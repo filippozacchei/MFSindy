@@ -1100,7 +1100,7 @@ def _build_ns_gls_artifacts(
     h_xt = _ns_intra_h_xt(cfg)
 
     np.random.seed(tf_seed)
-    weak_lib = WeakPDELibrary(
+    weak_lib = DedupedWeakPDELibrary(
         function_library=base_library,
         derivative_order=cfg.derivative_order,
         spatiotemporal_grid=grid,
@@ -1137,10 +1137,31 @@ def _build_ns_gls_artifacts(
         include_bias=cfg.include_bias,
     )
 
+
+    # Same heteroscedastic covariance, diagonal only: each weak equation is
+    # weighted by its own variance, with the correlations between overlapping
+    # test functions discarded. In Part I this rung collapses to one scalar per
+    # group, because the variance is constant along a trajectory there. Here it
+    # does not -- the diagonal spans a factor of ~50 -- so this is what isolates
+    # the off-diagonal contribution from the variance weighting.
+    np.random.seed(tf_seed)
+    weighted_weak_lib_var_diag = WeightedWeakPDELibrary(
+        function_library=base_library,
+        derivative_order=cfg.derivative_order,
+        spatiotemporal_grid=grid,
+        spatiotemporal_weights=variance_scaled,
+        is_uniform=True,
+        K=cfg.K,
+        p=cfg.p,
+        H_xt=h_xt,
+        include_bias=cfg.include_bias,
+        whitener_mode="diag",
+    )
     libraries = {
         "No weighting": weak_lib,
         "Variance GLS": weighted_weak_lib_var,
         "Ones GLS": weighted_weak_lib_ones,
+        "Variance diag": weighted_weak_lib_var_diag,
     }
 
     return IntraTrajectoryGLSData(

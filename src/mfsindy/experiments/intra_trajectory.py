@@ -78,7 +78,16 @@ def run_intra_trajectory_gls_experiment(
     if not isinstance(cfg, EnsembleConfigMixin):
         raise TypeError("cfg must inherit from EnsembleConfigMixin to run GLS experiments.")
 
-    methods = methods or ["No weighting", "Variance GLS", "Ones GLS"]
+    # "Variance diag" keeps the marginal weak variances and drops the
+    # correlations, so the ladder separates the two ingredients: Ones GLS is
+    # correlations without variance, Variance diag is variance without
+    # correlations, Variance GLS is both.
+    methods = methods or [
+        "No weighting",
+        "Ones GLS",
+        "Variance diag",
+        "Variance GLS",
+    ]
 
     def error_kwargs(method: str) -> Dict[str, Any]:
         if coefficient_error_kwargs is None:
