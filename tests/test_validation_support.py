@@ -376,3 +376,108 @@ def test_missing_library_term_is_not_silently_dropped():
         build_true_ns_isothermal_coefficients(
             ["uu_1", "vu_2", "rho^-1rho_1", "rho^-1u_11"], RT=1.0, mu=1.0
         )
+
+
+# ---------------------------------------------------------------------------
+# Selection: one standard error, then parsimony
+# ---------------------------------------------------------------------------
+
+
+def _surface(rows):
+    """Build an evaluate() from (H_xt, take-scores, n_terms) triples."""
+
+    import pandas as pd
+
+    def evaluate(candidate):
+        scores, n_terms = rows[candidate.H_xt]
+        out = []
+        for s in scores:
+            out.append({"model": "MF_w", "metric": "weak_r2", "value": s})
+            out.append({"model": "MF_w", "metric": "n_active_terms", "value": n_terms})
+        return pd.DataFrame(out)
+
+    return evaluate
+
+
+def test_parsimony_breaks_ties_the_score_cannot_separate():
+    """The isothermal case in miniature: the sparser model loses by 1.4e-4.
+
+    Weak R^2 weights a term by the signal it carries, so on that benchmark a
+    true term is worth 4e-4 to delete -- less than the spread between grid
+    cells. Ranking on score alone then prefers the model with spurious terms.
+    """
+
+    from mfsindy.experiments import tune_rungs
+
+    # Take-to-take spread (different test-function placements) comparable to
+    # the gap between the cells: the regime where the ranking means nothing.
+    rows = {
+        0.05: ([0.9994, 0.9990, 0.9999, 0.9997, 0.9992], 14.0),   # correct, sparse
+        0.02: ([0.9995, 0.9991, 1.0000, 0.9998, 0.9993], 19.0),   # spurious terms
+    }
+    selections, table = tune_rungs(
+        LorenzMultiTrajectoryGLSConfig(), param_grid={"H_xt": [0.02, 0.05]},
+        rungs=["MF_w"], evaluate=_surface(rows), metric="weak_r2",
+    )
+    sel = selections["MF_w"]
+    # The argmax wants the denser model; the rule takes the sparser one.
+    assert sel.argmax_params == {"H_xt": 0.02}
+    assert sel.best_params == {"H_xt": 0.05}
+    assert sel.n_terms == 14.0
+    assert sel.score_sem > 0.0
+    assert "n_terms" in table.columns and "score_sem" in table.columns
+
+
+def test_a_genuinely_worse_cell_never_wins_on_sparsity():
+    """Parsimony only arbitrates ties, so it cannot rescue a bad candidate."""
+
+    from mfsindy.experiments import tune_rungs
+
+    rows = {
+        0.05: ([0.999, 0.999, 0.999, 0.999, 0.999], 14.0),
+        0.20: ([0.2, 0.2, 0.2, 0.2, 0.2], 3.0),      # far worse, and far sparser
+    }
+    selections, _ = tune_rungs(
+        LorenzMultiTrajectoryGLSConfig(), param_grid={"H_xt": [0.05, 0.20]},
+        rungs=["MF_w"], evaluate=_surface(rows), metric="weak_r2",
+    )
+    assert selections["MF_w"].best_params == {"H_xt": 0.05}
+    assert selections["MF_w"].argmax_params is None   # score and rule agree
+
+
+def test_rule_declines_when_the_score_really_does_separate():
+    """If the takes agree far more closely than the cells differ, trust the score.
+
+    One standard error then fails to span the gap and this reduces to the plain
+    argmax -- the honest outcome, since the ranking is meaningful at that scale.
+    """
+
+    from mfsindy.experiments import tune_rungs
+
+    rows = {
+        0.05: ([0.99960, 0.99960, 0.99961, 0.99959, 0.99960], 14.0),
+        0.02: ([0.99974, 0.99974, 0.99975, 0.99973, 0.99974], 19.0),
+    }
+    selections, _ = tune_rungs(
+        LorenzMultiTrajectoryGLSConfig(), param_grid={"H_xt": [0.02, 0.05]},
+        rungs=["MF_w"], evaluate=_surface(rows), metric="weak_r2",
+    )
+    assert selections["MF_w"].best_params == {"H_xt": 0.02}
+    assert selections["MF_w"].argmax_params is None
+
+
+def test_selection_falls_back_to_argmax_without_model_sizes():
+    """An evaluate() that reports no term count still selects, on score alone."""
+
+    import pandas as pd
+    from mfsindy.experiments import tune_rungs
+
+    def evaluate(candidate):
+        return pd.DataFrame([{"model": "MF_w", "metric": "weak_r2",
+                              "value": float(candidate.H_xt)}])
+
+    selections, _ = tune_rungs(
+        LorenzMultiTrajectoryGLSConfig(), param_grid={"H_xt": [0.05, 0.20]},
+        rungs=["MF_w"], evaluate=evaluate, metric="weak_r2",
+    )
+    assert selections["MF_w"].best_params == {"H_xt": 0.20}

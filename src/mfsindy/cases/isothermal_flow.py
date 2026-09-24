@@ -454,7 +454,7 @@ class NSIsothermalMultiTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin
     noise_hf_rel: float = 0.01
 
     # grid / time
-    N: int = 32
+    N: int = 64
     Nt: int = 1001
     Nt_std: int = 1001
     L: float = 5.0

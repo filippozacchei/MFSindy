@@ -73,8 +73,16 @@ def evaluate_weak_form_models(
     metric_name: str = "weak_r2",
     source_col: str = "model",
     per_state: bool = True,
+    complexity_name: str = "n_active_terms",
+    complexity_tol: float = 1e-12,
 ) -> pd.DataFrame:
-    """Score coefficient maps on held-out weak-form blocks."""
+    """Score coefficient maps on held-out weak-form blocks.
+
+    Each model is reported twice: its score, and how many terms it keeps. The
+    score alone cannot separate the top of the surface -- it weights a term by
+    the signal that term carries, so the cheapest true term costs almost
+    nothing to drop -- and the tuner breaks those ties on model size.
+    """
 
     rows: list[dict[str, Any]] = []
     for block in validation_blocks:
@@ -87,14 +95,18 @@ def evaluate_weak_form_models(
                 score = weak_r2_score(rhs, pred, per_state=per_state)
             except Exception:
                 score = -1e12
+            common = {
+                source_col: model_name,
+                "group": block.group,
+                "trajectory": block.trajectory,
+                "block": block.block,
+            }
+            rows.append({**common, "metric": metric_name, "value": float(score)})
             rows.append(
                 {
-                    source_col: model_name,
-                    "group": block.group,
-                    "trajectory": block.trajectory,
-                    "block": block.block,
-                    "metric": metric_name,
-                    "value": float(score),
+                    **common,
+                    "metric": complexity_name,
+                    "value": float(np.count_nonzero(np.abs(coef) > complexity_tol)),
                 }
             )
     return pd.DataFrame(rows)

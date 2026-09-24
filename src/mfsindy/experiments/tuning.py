@@ -49,13 +49,24 @@ class RungTuning:
     restricted: bool = False
     unrestricted_best_params: Dict[str, Any] | None = None
     unrestricted_best_score: float | None = None
+    score_sem: float = float("nan")
+    n_terms: float = float("nan")
+    #: What the plain argmax would have taken, when parsimony moved the choice.
+    argmax_params: Dict[str, Any] | None = None
+    argmax_score: float | None = None
 
     def as_dict(self) -> Dict[str, Any]:
         payload = {
             "best_params": self.best_params,
             "best_score": self.best_score,
+            "score_sem": self.score_sem,
+            "n_terms": self.n_terms,
             "at_grid_boundary": self.at_boundary,
         }
+        if self.argmax_params is not None:
+            # Parsimony moved the choice; record what the score alone wanted.
+            payload["argmax_params"] = self.argmax_params
+            payload["argmax_score"] = self.argmax_score
         if self.restricted:
             # What the rung would have chosen unrestricted, so the price of
             # confining it to a valid covariance model is on the record rather
@@ -114,6 +125,12 @@ def tune_rungs(
     source_col: str = "model",
     maximize: bool = True,
     reducer: Callable[[pd.Series], float] = lambda s: float(s.mean()),
+    spread: Callable[[pd.Series], float] = lambda s: float(
+        np.std(np.clip(np.asarray(s, dtype=float), -1.0, 1.0), ddof=1)
+        / max(np.sqrt(len(s)), 1.0)
+    ) if len(s) > 1 else 0.0,
+    complexity_metric: str = "n_active_terms",
+    sem_multiple: float = 1.0,
     admissible: Callable[[str, Dict[str, Any]], bool] | None = None,
     progress_desc: str = "Tuning grid",
 ) -> tuple[Dict[str, RungTuning], pd.DataFrame]:
@@ -163,12 +180,20 @@ def tune_rungs(
             continue
         for rung in rungs:
             mask = (frame[source_col] == rung) & (frame["metric"] == metric)
-            score = reducer(frame.loc[mask, "value"]) if mask.any() else float("nan")
+            values = frame.loc[mask, "value"]
+            score = reducer(values) if mask.any() else float("nan")
+            size_mask = (frame[source_col] == rung) & (frame["metric"] == complexity_metric)
             rows.append(
                 {
                     **updates,
                     "rung": rung,
                     "score": score,
+                    "score_sem": spread(values) if mask.any() else float("nan"),
+                    "n_terms": (
+                        float(frame.loc[size_mask, "value"].mean())
+                        if size_mask.any()
+                        else float("nan")
+                    ),
                     "error": None,
                     "admissible": True if admissible is None else bool(
                         admissible(rung, dict(updates))
@@ -186,8 +211,52 @@ def tune_rungs(
     table = pd.DataFrame(rows)
 
     def _pick(frame: pd.DataFrame):
+        """The plain argmax, kept for the record of what it would have chosen."""
+
         idx = frame["score"].idxmax() if maximize else frame["score"].idxmin()
         return frame.loc[idx]
+
+    def _select(frame: pd.DataFrame):
+        """One standard error, then parsimony.
+
+        The score cannot separate the top of the surface: on the isothermal
+        flow every candidate lands within 2e-4 of the best, and the cell it
+        prefers by 1.4e-4 is the one carrying spurious terms. Weak R^2 weights
+        each term by the signal it carries, so a true term worth 0.5% of |b|
+        costs 4e-4 to delete -- no re-weighting makes it sensitive to support
+        errors. So rather than pretend the ranking is meaningful at that scale,
+        take every candidate the takes cannot distinguish from the best and let
+        the smallest model win.
+
+        The tolerance is the standard error over the takes, which differ only
+        in where the test functions land. That is the scale at which a score
+        difference is noise, measured rather than assumed, so there is no
+        tolerance to invent. Candidates outside it are still ranked on score,
+        which is why a genuinely bad cell can never win on sparsity alone.
+
+        Whether it fires at all depends on how much the takes disagree. If they
+        agree far more closely than the candidates differ, one standard error
+        will not span the gap and this reduces to the plain argmax -- which is
+        the honest outcome, since the score really is separating them. Raise
+        ``sem_multiple`` to widen the band only with a reason to think the take
+        spread understates how little the ranking means.
+        """
+
+        best_row = _pick(frame)
+        tolerance = float(sem_multiple) * best_row.get("score_sem", float("nan"))
+        if not np.isfinite(tolerance) or "n_terms" not in frame or frame["n_terms"].isna().all():
+            return best_row, best_row
+        if maximize:
+            tied = frame[frame["score"] >= best_row["score"] - tolerance]
+        else:
+            tied = frame[frame["score"] <= best_row["score"] + tolerance]
+        tied = tied.dropna(subset=["n_terms"])
+        if tied.empty:
+            return best_row, best_row
+        order = tied.sort_values(
+            ["n_terms", "score"], ascending=[True, not maximize], kind="mergesort"
+        )
+        return order.iloc[0], best_row
 
     selections: Dict[str, RungTuning] = {}
     for rung in rungs:
@@ -202,7 +271,7 @@ def tune_rungs(
                 "towards the admissible region or relax the bound."
             )
         restricted = len(allowed) < len(sub)
-        best = _pick(allowed)
+        best, argmax_row = _select(allowed)
         params = {n: best[n] for n in names}
         # A rung confined to part of the grid is at an edge of the grid it can
         # actually use, not of the one it was handed.
@@ -226,6 +295,16 @@ def tune_rungs(
             ),
             unrestricted_best_score=(
                 float(unrestricted["score"]) if restricted else None
+            ),
+            score_sem=float(best.get("score_sem", float("nan"))),
+            n_terms=float(best.get("n_terms", float("nan"))),
+            argmax_params=(
+                {n: argmax_row[n] for n in names}
+                if not argmax_row.equals(best)
+                else None
+            ),
+            argmax_score=(
+                float(argmax_row["score"]) if not argmax_row.equals(best) else None
             ),
         )
     return selections, table
@@ -336,6 +415,10 @@ def load_tuning(path: str | Path) -> TuningArtifacts:
             restricted=bool(entry.get("restricted", False)),
             unrestricted_best_params=entry.get("unrestricted_best_params"),
             unrestricted_best_score=entry.get("unrestricted_best_score"),
+            score_sem=float(entry.get("score_sem", float("nan"))),
+            n_terms=float(entry.get("n_terms", float("nan"))),
+            argmax_params=entry.get("argmax_params"),
+            argmax_score=entry.get("argmax_score"),
         )
     scores = payload.get("scores")
     kappa = payload.get("kappa_table")
