@@ -364,6 +364,7 @@ class NSIsothermalMultiTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin
 
     # SINDy / optimizer settings
     n_ensemble_models: int = 100
+    n_jobs: int = 2   # memory-heavy: more parallel runs exhausted 16 GB
 
     # randomness
     seed_base: int = 0
@@ -834,6 +835,7 @@ class NSIsothermalIntraTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin
 
     # SINDy / optimizer settings
     n_ensemble_models: int = 100
+    n_jobs: int = 2   # memory-heavy: more parallel runs exhausted 16 GB
 
     results_filename: str = "ns_isothermal_weighted_errors.csv"
 

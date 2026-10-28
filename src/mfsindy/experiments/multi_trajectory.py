@@ -248,9 +248,6 @@ def run_multi_trajectory_gls_experiment(
     noise_lf_abs = cfg.noise_lf_rel * state_std  # type: ignore[attr-defined]
     methods = list(getattr(cfg, "methods", None) or PART1_METHODS)
 
-    # Every run's reported coefficients, kept for the across-runs plot.
-    estimates: Dict[str, list] = {m: [] for m in methods}
-
     def single_run(run_idx: int):
         batch = dataset_builder(run_idx, cfg, noise_hf_abs, noise_lf_abs)
         fits = {
@@ -269,14 +266,15 @@ def run_multi_trajectory_gls_experiment(
             fits, None if coef_postprocess is None else (lambda coef, _rung: coef_postprocess(coef))
         )
         C_true = true_coefficients(batch, cfg)
-        for m in methods:
-            estimates[m].append(coef_map[m])
-        if run_idx == cfg.n_runs - 1:
-            save_selection(cfg, run_idx, C_true, trace, estimates)
-        return {
-            method: coefficient_errors(coef_map[method], C_true)
-            for method in methods
-        }
+        errors = {method: coefficient_errors(coef_map[method], C_true) for method in methods}
+        # The selection record is kept for the last run only; every run's
+        # coefficients are kept for the across-runs plot.
+        last = run_idx == cfg.n_runs - 1
+        return errors, {"coefs": coef_map, "true": C_true, "trace": trace if last else None}
+
+    def collect(extras):
+        estimates = {m: [e["coefs"][m] for e in extras] for m in methods}
+        save_selection(cfg, cfg.n_runs - 1, extras[-1]["true"], extras[-1]["trace"], estimates)
 
     df_errors, metric1, metric2 = run_monte_carlo_experiment(
         n_runs=cfg.n_runs,
@@ -288,6 +286,8 @@ def run_multi_trajectory_gls_experiment(
         metric2_name=metric2_name,
         source_col=source_col,
         progress_desc=progress_desc,
+        n_jobs=getattr(cfg, "n_jobs", 1),
+        collect=collect,
     )
 
     return df_errors, metric1, metric2, state_std, noise_hf_abs, noise_lf_abs

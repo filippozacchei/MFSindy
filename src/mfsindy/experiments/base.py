@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import os
+import warnings
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence
 
 import numpy as np
 import pandas as pd
@@ -46,10 +47,24 @@ def coefficient_errors(
     return err, l0_err
 
 
+def _run_one(single_run_fn: Callable, run_idx: int, warning_filters: list):
+    """One Monte Carlo run in a worker, with BLAS held to one thread: the runs are
+    the parallel axis, and threaded BLAS inside each would oversubscribe the cores.
+    The caller's warning filters are applied too, since a fresh worker process
+    does not inherit them.
+    """
+
+    from threadpoolctl import threadpool_limits
+
+    with warnings.catch_warnings(), threadpool_limits(limits=1):
+        warnings.filters[:] = warning_filters
+        return single_run_fn(run_idx)
+
+
 def run_monte_carlo_experiment(
     n_runs: int,
     methods: List[str],
-    single_run_fn: Callable[[int], Dict[str, Tuple[float, float]]],
+    single_run_fn: Callable[[int], Any],
     *,
     results_dir: str,
     results_filename: str,
@@ -57,19 +72,40 @@ def run_monte_carlo_experiment(
     metric2_name: str,
     source_col: str,
     progress_desc: str,
+    n_jobs: int = 1,
+    collect: Callable[[List[Any]], None] | None = None,
 ) -> tuple[pd.DataFrame, Dict[str, np.ndarray], Dict[str, np.ndarray]]:
-    """Aggregate per-method metrics over Monte Carlo runs and persist to CSV."""
+    """Aggregate per-method metrics over Monte Carlo runs and persist to CSV.
+
+    ``single_run_fn(k)`` returns the run's ``{method: (metric1, metric2)}``, or a
+    pair of that and anything else the caller wants back; those extras are passed
+    to ``collect`` in run order once every run is done. Runs are independent, so
+    with ``n_jobs > 1`` they are spread over worker processes; each run seeds its
+    own randomness, so the result does not depend on which worker ran it.
+    """
 
     metric1_errors: Dict[str, List[float]] = {m: [] for m in methods}
     metric2_errors: Dict[str, List[float]] = {m: [] for m in methods}
+    extras: List[Any] = []
 
     disable_progress = os.environ.get("MFSINDY_DOCS_BUILD") == "1"
-    for k in tqdm(range(n_runs), desc=progress_desc, disable=disable_progress):
-        errors = single_run_fn(k)
+    if n_jobs == 1:
+        results = (single_run_fn(k) for k in range(n_runs))
+    else:
+        from joblib import Parallel, delayed
+
+        results = Parallel(n_jobs=n_jobs, return_as="generator")(
+            delayed(_run_one)(single_run_fn, k, list(warnings.filters)) for k in range(n_runs)
+        )
+    for result in tqdm(results, total=n_runs, desc=progress_desc, disable=disable_progress):
+        errors, extra = result if isinstance(result, tuple) else (result, None)
+        extras.append(extra)
         for m in methods:
             e1, e2 = errors[m]
             metric1_errors[m].append(e1)
             metric2_errors[m].append(e2)
+    if collect is not None:
+        collect(extras)
 
     os.makedirs(results_dir, exist_ok=True)
     errors_path = os.path.join(results_dir, results_filename)
@@ -117,6 +153,7 @@ class MonteCarloConfig:
 
     n_runs: int = 25
     seed_base: int = 0
+    n_jobs: int = 4                 # Monte Carlo runs in parallel; 1 runs them in turn
     results_dir: str = "results"
     results_filename: str = "errors.csv"
 

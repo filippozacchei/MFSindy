@@ -83,10 +83,10 @@ def run_intra_trajectory_gls_experiment(
             return dict(coefficient_error_kwargs(method))
         return dict(coefficient_error_kwargs)
 
-    # Every run's reported coefficients, kept for the across-runs plot.
-    estimates: Dict[str, list] = {m: [] for m in methods}
-
     def single_run(run_idx: int):
+        # The bagging draws from the global RNG; seeding it by run makes a run's
+        # result independent of the order runs are executed in, and of the worker.
+        np.random.seed((int(cfg.seed_base) + run_idx) % 2**32)
         # One fit per support of cfg.H_grid. The builder is seeded by run, so
         # every support sees the same data and only the test functions change.
         fits, true = {}, None
@@ -96,14 +96,16 @@ def run_intra_trajectory_gls_experiment(
             models = fit_intra_trajectory_gls_model_objects(variant, artifacts, methods)
             fits[support_key(variant.H_xt)] = {m: model.optimizer for m, model in models.items()}
         coef_map, trace = select_rungs(fits, coef_postprocess)
-        for m in methods:
-            estimates[m].append(coef_map[m])
-        if run_idx == cfg.n_runs - 1:
-            save_selection(cfg, run_idx, true, trace, estimates)
-        return {
+        errors = {
             method: coefficient_errors(coef_map[method], true, **error_kwargs(method))
             for method in methods
         }
+        last = run_idx == cfg.n_runs - 1
+        return errors, {"coefs": coef_map, "true": true, "trace": trace if last else None}
+
+    def collect(extras):
+        estimates = {m: [e["coefs"][m] for e in extras] for m in methods}
+        save_selection(cfg, cfg.n_runs - 1, extras[-1]["true"], extras[-1]["trace"], estimates)
 
     return run_monte_carlo_experiment(
         n_runs=cfg.n_runs,
@@ -115,6 +117,8 @@ def run_intra_trajectory_gls_experiment(
         metric2_name=metric2_name,
         source_col=source_col,
         progress_desc=progress_desc,
+        n_jobs=getattr(cfg, "n_jobs", 1),
+        collect=collect,
     )
 
 
