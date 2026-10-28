@@ -14,6 +14,7 @@ from .base import (
     coefficient_errors,
     run_monte_carlo_experiment,
 )
+from .selection import save_selection, select_rungs, support_key, support_variants
 
 
 @dataclass
@@ -42,25 +43,6 @@ def fit_intra_trajectory_gls_model_objects(
     return models
 
 
-def fit_intra_trajectory_gls_models(
-    cfg: EnsembleConfigMixin,
-    artifacts: IntraTrajectoryGLSData,
-    methods: List[str],
-    *,
-    coef_postprocess: Callable[[np.ndarray, str], np.ndarray] | None = None,
-) -> Dict[str, np.ndarray]:
-    """Fit GLS models for each weighting strategy."""
-
-    coefs: Dict[str, np.ndarray] = {}
-    models = fit_intra_trajectory_gls_model_objects(cfg, artifacts, methods)
-    for method, model in models.items():
-        coef = np.asarray(model.optimizer.coef_)
-        if coef_postprocess is not None:
-            coef = coef_postprocess(coef, method)
-        coefs[method] = coef
-    return coefs
-
-
 def run_intra_trajectory_gls_experiment(
     cfg: MonteCarloConfig,
     *,
@@ -73,7 +55,12 @@ def run_intra_trajectory_gls_experiment(
     coef_postprocess: Callable[[np.ndarray, str], np.ndarray] | None = None,
     coefficient_error_kwargs: Callable[[str], Dict[str, Any]] | Dict[str, Any] | None = None,
 ) -> tuple[pd.DataFrame, Dict[str, np.ndarray], Dict[str, np.ndarray]]:
-    """Shared Monte Carlo loop for part-2 (intra-trajectory GLS) experiments."""
+    """Shared Monte Carlo loop for part-2 (intra-trajectory GLS) experiments.
+
+    As in Part I, each run is fitted at every support of ``cfg.H_grid`` and each
+    rung keeps the support its ensemble is tightest at, with the threshold chosen
+    by BIC; the last run's choices are written beside the error table.
+    """
 
     if not isinstance(cfg, EnsembleConfigMixin):
         raise TypeError("cfg must inherit from EnsembleConfigMixin to run GLS experiments.")
@@ -96,20 +83,25 @@ def run_intra_trajectory_gls_experiment(
             return dict(coefficient_error_kwargs(method))
         return dict(coefficient_error_kwargs)
 
+    # Every run's reported coefficients, kept for the across-runs plot.
+    estimates: Dict[str, list] = {m: [] for m in methods}
+
     def single_run(run_idx: int):
-        artifacts = run_builder(run_idx, cfg)
-        coef_map = fit_intra_trajectory_gls_models(
-            cfg,
-            artifacts,
-            methods,
-            coef_postprocess=coef_postprocess,
-        )
+        # One fit per support of cfg.H_grid. The builder is seeded by run, so
+        # every support sees the same data and only the test functions change.
+        fits, true = {}, None
+        for variant in support_variants(cfg):
+            artifacts = run_builder(run_idx, variant)
+            true = artifacts.true_coefficients
+            models = fit_intra_trajectory_gls_model_objects(variant, artifacts, methods)
+            fits[support_key(variant.H_xt)] = {m: model.optimizer for m, model in models.items()}
+        coef_map, trace = select_rungs(fits, coef_postprocess)
+        for m in methods:
+            estimates[m].append(coef_map[m])
+        if run_idx == cfg.n_runs - 1:
+            save_selection(cfg, run_idx, true, trace, estimates)
         return {
-            method: coefficient_errors(
-                coef_map[method],
-                artifacts.true_coefficients,
-                **error_kwargs(method),
-            )
+            method: coefficient_errors(coef_map[method], true, **error_kwargs(method))
             for method in methods
         }
 
@@ -129,6 +121,5 @@ def run_intra_trajectory_gls_experiment(
 __all__ = [
     "IntraTrajectoryGLSData",
     "fit_intra_trajectory_gls_model_objects",
-    "fit_intra_trajectory_gls_models",
     "run_intra_trajectory_gls_experiment",
 ]

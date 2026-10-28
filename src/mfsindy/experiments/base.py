@@ -4,12 +4,17 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 import pandas as pd
-import pysindy as ps
 from tqdm import tqdm
+
+from .selection import BICEnsembleSTLSQ
+
+#: Seed offset for diagnostic draws (kappa reference trajectories), kept away
+#: from the Monte Carlo seeds.
+REFERENCE_SEED_OFFSET = 900_000
 
 
 def coefficient_errors(
@@ -84,6 +89,28 @@ def run_monte_carlo_experiment(
     return df_errors, metric1_arrs, metric2_arrs
 
 
+def paired_comparison(
+    errors: Dict[str, np.ndarray], reference: str, others: List[str] | None = None
+) -> pd.DataFrame:
+    """Run-by-run comparison of ``reference`` against every other model.
+
+    Per model: the median over runs of the error ratio reference / model (below 1:
+    the reference is better), the share of runs the reference wins, and the
+    Wilcoxon signed-rank p-value of the paired difference.
+    """
+
+    from scipy.stats import wilcoxon
+
+    ref = np.asarray(errors[reference], dtype=float)
+    rows = []
+    for model in others or [m for m in errors if m != reference]:
+        other = np.asarray(errors[model], dtype=float)
+        rows.append({"model": model, "median ratio": float(np.median(ref / other)),
+                     "reference wins": float(np.mean(ref < other)),
+                     "p (Wilcoxon)": float(wilcoxon(ref, other).pvalue)})
+    return pd.DataFrame(rows).set_index("model")
+
+
 @dataclass
 class MonteCarloConfig:
     """Common output + Monte Carlo settings shared across experiments."""
@@ -96,45 +123,28 @@ class MonteCarloConfig:
 
 @dataclass
 class EnsembleConfigMixin:
-    """Mixin providing SINDy ensemble hyperparameters."""
+    """Ensemble settings, and the supports the estimator chooses between.
 
-    stlsq_threshold: float = 0.5
+    The threshold is chosen per equation by BIC inside the ensemble, and the
+    support by the spread of the bagged coefficients over ``H_grid``; see
+    :mod:`mfsindy.experiments.selection`. With ``H_grid`` unset the support is
+    ``H_xt`` as given.
+    """
+
     n_ensemble_models: int = 100
+    n_thresholds: int = 20
+    H_grid: Optional[Sequence[Any]] = None
 
-    #: Ridge penalty for STLSQ. pysindy defaults this to 0.05, which is not
-    #: scale aware: the penalty is a fixed number while the weak least-squares
-    #: term scales with |b|, and |b| varies by two orders of magnitude between
-    #: these benchmarks -- ~25 per state on Lorenz against ~0.1 on the
-    #: isothermal flow. At 0.05 the isothermal fit is crushed to zero outright,
-    #: and on Lorenz the unweighted rungs lose a factor of two in coefficient
-    #: error. It also falls unevenly across rungs: whitening multiplies Theta
-    #: and b by roughly 1/sigma, so a fixed ridge penalises the unweighted rungs
-    #: and leaves the whitened ones untouched, which flatters the comparison.
-    #: Effectively off by default; a case that wants regularisation sets it.
-    stlsq_alpha: float = 1e-12
+    def make_optimizer(self) -> BICEnsembleSTLSQ:
+        return BICEnsembleSTLSQ(n_models=self.n_ensemble_models, n_thresholds=self.n_thresholds)
 
-    def stlsq_kwargs(self) -> Dict[str, Any]:
-        return {"alpha": self.stlsq_alpha}
-
-    def ensemble_kwargs(self) -> Dict[str, Any]:
-        return {"bagging": True}
-
-    def make_optimizer(self):
-        base_opt = ps.STLSQ(self.stlsq_threshold, **self.stlsq_kwargs())
-        ensemble_kwargs = self.ensemble_kwargs()
-        if not ensemble_kwargs.get("bagging", False) and not ensemble_kwargs.get(
-            "library_ensemble", False
-        ):
-            return base_opt
-        return ps.EnsembleOptimizer(
-            base_opt,
-            n_models=self.n_ensemble_models,
-            **ensemble_kwargs,
-        )
+    def support_grid(self) -> list:
+        return list(self.H_grid) if self.H_grid is not None else [getattr(self, "H_xt", None)]
 
 
 __all__ = [
     "coefficient_errors",
+    "paired_comparison",
     "run_monte_carlo_experiment",
     "MonteCarloConfig",
     "EnsembleConfigMixin",

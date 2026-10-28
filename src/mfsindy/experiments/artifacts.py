@@ -1,14 +1,11 @@
-"""Rollout-based validation helpers for ODE-style SINDy examples."""
+"""Weak-system builders shared by the Part II cases."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Any, Mapping, Sequence
+from typing import Any, Sequence
 
 import numpy as np
-import pandas as pd
 import pysindy as ps
-from pysindy.feature_library import WeakPDELibrary
 
 from mfsindy.weighted_weak_pde_library import (
     DedupedWeakPDELibrary,
@@ -16,236 +13,6 @@ from mfsindy.weighted_weak_pde_library import (
 )
 
 from .intra_trajectory import IntraTrajectoryGLSData
-
-
-def split_trajectory_list(
-    trajectories: Sequence[np.ndarray],
-    *,
-    validation_fraction: float = 0.2,
-) -> tuple[list[np.ndarray], list[np.ndarray]]:
-    """Split a list of trajectories into train/validation subsets."""
-
-    trajectories = [np.asarray(traj, dtype=float) for traj in trajectories]
-    n_total = len(trajectories)
-    if n_total < 2:
-        raise ValueError("At least two trajectories are required for a train/validation split.")
-    if not 0.0 < validation_fraction < 1.0:
-        raise ValueError("validation_fraction must lie in (0, 1).")
-
-    n_val = max(1, int(np.ceil(n_total * validation_fraction)))
-    n_val = min(n_val, n_total - 1)
-    n_train = n_total - n_val
-    return trajectories[:n_train], trajectories[n_train:]
-
-
-def split_single_trajectory(
-    trajectory: np.ndarray,
-    t_grid: np.ndarray,
-    *,
-    validation_fraction: float = 0.2,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Split one trajectory into contiguous train and validation windows."""
-
-    trajectory = np.asarray(trajectory, dtype=float)
-    t_grid = np.asarray(t_grid, dtype=float)
-
-    if trajectory.ndim != 2:
-        raise ValueError("trajectory must have shape (n_steps, n_states).")
-    if trajectory.shape[0] != t_grid.shape[0]:
-        raise ValueError("trajectory and t_grid must have the same number of time samples.")
-    if not 0.0 < validation_fraction < 1.0:
-        raise ValueError("validation_fraction must lie in (0, 1).")
-
-    n_total = trajectory.shape[0]
-    n_val = max(2, int(np.ceil(n_total * validation_fraction)))
-    n_val = min(n_val, n_total - 2)
-    n_train = n_total - n_val
-
-    train_traj = trajectory[:n_train].copy()
-    val_traj = trajectory[n_train - 1 :].copy()
-
-    train_t = t_grid[:n_train] - t_grid[0]
-    val_t = t_grid[n_train - 1 :] - t_grid[n_train - 1]
-    return train_traj, val_traj, train_t, val_t
-
-
-def rollout_r2_score(y_true: np.ndarray, y_pred: np.ndarray) -> float:
-    """Compute a multivariate rollout R^2 score over time and state dimensions."""
-
-    y_true = np.asarray(y_true, dtype=float)
-    y_pred = np.asarray(y_pred, dtype=float)
-    if y_true.shape != y_pred.shape:
-        raise ValueError(f"Shape mismatch: y_true {y_true.shape}, y_pred {y_pred.shape}.")
-    if not np.all(np.isfinite(y_pred)):
-        return -1e12
-
-    residual = y_true - y_pred
-    centered = y_true - np.mean(y_true, axis=0, keepdims=True)
-    denom = float(np.sum(centered**2))
-    if denom <= 0.0:
-        return -1e12
-    return float(1.0 - np.sum(residual**2) / denom)
-
-
-@dataclass
-class PolynomialRolloutModel:
-    """Lightweight polynomial ODE model used for rollout scoring and equation display."""
-
-    coefficients: np.ndarray
-    library: Any
-    state_names: tuple[str, ...]
-    feature_names: tuple[str, ...]
-
-    def _theta(self, state: np.ndarray) -> np.ndarray:
-        state = np.asarray(state, dtype=float)
-        theta = self.library.transform([state[None, :]])[0]
-        return np.asarray(theta, dtype=float)[0]
-
-    def rhs(self, state: np.ndarray) -> np.ndarray:
-        theta = self._theta(state)
-        return theta @ self.coefficients.T
-
-    def simulate(self, x0: np.ndarray, t_grid: np.ndarray) -> np.ndarray:
-        x0 = np.asarray(x0, dtype=float)
-        t_grid = np.asarray(t_grid, dtype=float)
-        if t_grid.ndim != 1 or t_grid.size < 2:
-            raise ValueError("t_grid must be a 1D array with at least two time samples.")
-
-        out = np.zeros((t_grid.size, x0.size), dtype=float)
-        out[0] = x0
-        for idx in range(1, t_grid.size):
-            dt = float(t_grid[idx] - t_grid[idx - 1])
-            state = out[idx - 1]
-            k1 = self.rhs(state)
-            k2 = self.rhs(state + 0.5 * dt * k1)
-            k3 = self.rhs(state + 0.5 * dt * k2)
-            k4 = self.rhs(state + dt * k3)
-            out[idx] = state + (dt / 6.0) * (k1 + 2.0 * k2 + 2.0 * k3 + k4)
-            if not np.all(np.isfinite(out[idx])):
-                out[idx:] = np.nan
-                break
-        return out
-
-    def equations(self, *, precision: int = 3, tol: float = 1e-10) -> list[str]:
-        lines: list[str] = []
-        for state_name, row in zip(self.state_names, self.coefficients, strict=True):
-            terms: list[str] = []
-            for coef, feature_name in zip(row, self.feature_names, strict=True):
-                coef = float(coef)
-                if abs(coef) <= tol:
-                    continue
-                sign = "-" if coef < 0 else "+"
-                magnitude = abs(coef)
-                if feature_name == "1":
-                    term = f"{magnitude:.{precision}g}"
-                else:
-                    term = f"{magnitude:.{precision}g} {feature_name}"
-                terms.append((sign, term))
-
-            if not terms:
-                rhs = "0"
-            else:
-                first_sign, first_term = terms[0]
-                rhs_parts = [first_term if first_sign == "+" else f"-{first_term}"]
-                rhs_parts.extend(f" {sign} {term}" for sign, term in terms[1:])
-                rhs = "".join(rhs_parts)
-
-            lines.append(f"{state_name}_dot = {rhs}")
-        return lines
-
-
-def build_polynomial_rollout_models(
-    coefficient_map: Mapping[str, np.ndarray],
-    *,
-    poly_degree: int,
-    reference_trajectory: np.ndarray,
-    state_names: Sequence[str],
-    include_bias: bool = False,
-) -> dict[str, PolynomialRolloutModel]:
-    """Create rollout-capable polynomial models from a map of coefficient matrices."""
-
-    state_names = tuple(state_names)
-    reference_trajectory = np.asarray(reference_trajectory, dtype=float)
-    if reference_trajectory.ndim != 2:
-        raise ValueError("reference_trajectory must have shape (n_steps, n_states).")
-
-    library = ps.PolynomialLibrary(degree=poly_degree, include_bias=include_bias)
-    library.fit([reference_trajectory])
-    feature_names = tuple(library.get_feature_names(input_features=list(state_names)))
-
-    return {
-        model_name: PolynomialRolloutModel(
-            coefficients=np.asarray(coefficients, dtype=float),
-            library=library,
-            state_names=state_names,
-            feature_names=feature_names,
-        )
-        for model_name, coefficients in coefficient_map.items()
-    }
-
-
-def split_pde_field_in_time(
-    field: np.ndarray,
-    spatiotemporal_grid: np.ndarray,
-    t_grid: np.ndarray,
-    *,
-    variance: np.ndarray,
-    validation_fraction: float = 0.2,
-    time_axis: int = -2,
-) -> tuple[dict, dict]:
-    """Cut a PDE field into contiguous train and validation windows in time.
-
-    The counterpart of :func:`split_single_trajectory` for a field on a
-    spatiotemporal grid: space is kept whole and only time is cut, because the
-    search needs a window the fit never saw and a spatial hold-out would leave
-    the two windows coupled through the equation's own derivatives.
-
-    The two windows share their boundary sample, as in the ODE split, so the
-    validation window starts where the training one ends rather than a step
-    later. Each returns the field, its grid, its time vector -- shifted to start
-    at zero, since supports are expressed relative to the window -- and its
-    variance, ready to hand to
-    :func:`build_pde_intra_trajectory_artifacts`.
-    """
-
-    field = np.asarray(field, dtype=float)
-    grid = np.asarray(spatiotemporal_grid, dtype=float)
-    t_grid = np.asarray(t_grid, dtype=float)
-    variance = np.asarray(variance, dtype=float)
-
-    axis = time_axis % field.ndim
-    n_total = field.shape[axis]
-    if t_grid.shape[0] != n_total:
-        raise ValueError(
-            f"t_grid has {t_grid.shape[0]} samples but the field has {n_total} "
-            f"along axis {axis}."
-        )
-    if not 0.0 < validation_fraction < 1.0:
-        raise ValueError("validation_fraction must lie in (0, 1).")
-
-    n_val = max(2, int(np.ceil(n_total * validation_fraction)))
-    n_val = min(n_val, n_total - 2)
-    n_train = n_total - n_val
-
-    def window(lo, hi):
-        field_slice = [slice(None)] * field.ndim
-        field_slice[axis] = slice(lo, hi)
-        grid_slice = [slice(None)] * grid.ndim
-        grid_slice[axis] = slice(lo, hi)          # grid carries a trailing coord axis
-        variance_slice = [slice(None)] * variance.ndim
-        variance_slice[axis if axis < variance.ndim else -1] = slice(lo, hi)
-
-        times = t_grid[lo:hi] - t_grid[lo]
-        sub_grid = grid[tuple(grid_slice)].copy()
-        sub_grid[..., -1] -= sub_grid[..., -1].min()
-        return {
-            "data": field[tuple(field_slice)].copy(),
-            "grid": sub_grid,
-            "t_grid": times,
-            "variance": variance[tuple(variance_slice)].copy(),
-        }
-
-    return window(0, n_train), window(n_train - 1, n_total)
 
 
 def build_polynomial_intra_trajectory_artifacts(
@@ -470,146 +237,48 @@ def build_pde_intra_trajectory_artifacts(
     )
 
 
-def evaluate_rollout_models(
-    models: Mapping[str, PolynomialRolloutModel],
-    validation_trajectories: Mapping[str, Sequence[np.ndarray]] | Sequence[np.ndarray],
+def get_library_feature_names(
+    library: Any,
+    reference_data: np.ndarray,
     *,
-    t_grid: np.ndarray,
-    metric_name: str = "rollout_r2",
-    source_col: str = "model",
-) -> pd.DataFrame:
-    """Evaluate rollout R^2 for a collection of models on held-out trajectories."""
+    input_features: Sequence[str] | None = None,
+) -> tuple[str, ...]:
+    """Best-effort feature-name extraction for a fitted SINDy library."""
 
-    if isinstance(validation_trajectories, Mapping):
-        grouped_trajectories = validation_trajectories.items()
-    else:
-        grouped_trajectories = [("validation", validation_trajectories)]
+    try:
+        library.fit([reference_data])
+    except Exception:
+        try:
+            library.fit(reference_data)
+        except Exception:
+            return ()
 
-    rows: list[dict[str, Any]] = []
-    for group_name, trajectories in grouped_trajectories:
-        for traj_idx, trajectory in enumerate(trajectories):
-            trajectory = np.asarray(trajectory, dtype=float)
-            for model_name, model in models.items():
-                try:
-                    pred = model.simulate(trajectory[0], t_grid)
-                    score = rollout_r2_score(trajectory, pred)
-                except Exception:
-                    score = -1e12
-                rows.append(
-                    {
-                        source_col: model_name,
-                        "group": group_name,
-                        "trajectory": traj_idx,
-                        "metric": metric_name,
-                        "value": float(score),
-                    }
-                )
+    getter = getattr(library, "get_feature_names", None)
+    if getter is None:
+        return ()
 
-    return pd.DataFrame(rows)
+    for kwargs in (
+        {"input_features": list(input_features)} if input_features is not None else None,
+        {},
+    ):
+        if kwargs is None:
+            continue
+        try:
+            names = getter(**kwargs)
+            return tuple(str(name) for name in names)
+        except Exception:
+            continue
 
-
-def evaluate_windowed_rollout_models(
-    models: Mapping[str, PolynomialRolloutModel],
-    validation_trajectories: Mapping[str, Sequence[np.ndarray]] | Sequence[np.ndarray] | np.ndarray,
-    *,
-    t_grid: np.ndarray,
-    window_size: int,
-    stride: int = 1,
-    metric_name: str = "short_rollout_r2",
-    source_col: str = "model",
-) -> pd.DataFrame:
-    """Evaluate rollout R^2 on overlapping short windows from held-out trajectories."""
-
-    t_grid = np.asarray(t_grid, dtype=float)
-    if t_grid.ndim != 1 or t_grid.size < 2:
-        raise ValueError("t_grid must be a 1D array with at least two time samples.")
-    if window_size < 2:
-        raise ValueError("window_size must be at least 2.")
-    if stride < 1:
-        raise ValueError("stride must be at least 1.")
-
-    if isinstance(validation_trajectories, Mapping):
-        grouped_trajectories = validation_trajectories.items()
-    elif isinstance(validation_trajectories, np.ndarray):
-        grouped_trajectories = [("validation", [validation_trajectories])]
-    else:
-        grouped_trajectories = [("validation", validation_trajectories)]
-
-    rows: list[dict[str, Any]] = []
-    for group_name, trajectories in grouped_trajectories:
-        for traj_idx, trajectory in enumerate(trajectories):
-            trajectory = np.asarray(trajectory, dtype=float)
-            if trajectory.ndim != 2:
-                raise ValueError("Each validation trajectory must have shape (n_steps, n_states).")
-            if trajectory.shape[0] < 2:
-                raise ValueError("Each validation trajectory must contain at least two samples.")
-            if t_grid.shape[0] < trajectory.shape[0]:
-                raise ValueError("t_grid must be at least as long as each validation trajectory.")
-
-            local_t = t_grid[: trajectory.shape[0]]
-            local_window_size = min(int(window_size), trajectory.shape[0])
-            if trajectory.shape[0] <= local_window_size:
-                start_indices = [0]
-            else:
-                start_indices = list(
-                    range(0, trajectory.shape[0] - local_window_size + 1, int(stride))
-                )
-                final_start = trajectory.shape[0] - local_window_size
-                if start_indices[-1] != final_start:
-                    start_indices.append(final_start)
-
-            for model_name, model in models.items():
-                for window_idx, start in enumerate(start_indices):
-                    stop = start + local_window_size
-                    window_true = trajectory[start:stop]
-                    window_t = local_t[start:stop] - local_t[start]
-                    try:
-                        window_pred = model.simulate(window_true[0], window_t)
-                        score = rollout_r2_score(window_true, window_pred)
-                    except Exception:
-                        score = -1e12
-                    rows.append(
-                        {
-                            source_col: model_name,
-                            "group": group_name,
-                            "trajectory": traj_idx,
-                            "window": window_idx,
-                            "start_index": start,
-                            "metric": metric_name,
-                            "value": float(score),
-                        }
-                    )
-
-    return pd.DataFrame(rows)
-
-
-def format_model_equations(
-    models: Mapping[str, PolynomialRolloutModel],
-    *,
-    precision: int = 3,
-    tol: float = 1e-10,
-) -> str:
-    """Return a compact printable block of equations for several models."""
-
-    sections: list[str] = []
-    for model_name, model in models.items():
-        lines = [model_name]
-        lines.extend(model.equations(precision=precision, tol=tol))
-        sections.append("\n".join(lines))
-    return "\n\n".join(sections)
+    try:
+        names = getter(list(input_features)) if input_features is not None else getter()
+        return tuple(str(name) for name in names)
+    except Exception:
+        return ()
 
 
 __all__ = [
-    "PolynomialRolloutModel",
     "build_pde_intra_trajectory_artifacts",
     "build_polynomial_intra_trajectory_artifacts",
-    "build_polynomial_rollout_models",
-    "evaluate_rollout_models",
-    "evaluate_windowed_rollout_models",
-    "format_model_equations",
+    "get_library_feature_names",
     "pde_coverage_test_function_count",
-    "split_pde_field_in_time",
-    "rollout_r2_score",
-    "split_single_trajectory",
-    "split_trajectory_list",
 ]

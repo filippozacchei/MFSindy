@@ -7,14 +7,13 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Sequence
 
 import numpy as np
-import pysindy as ps
 
 from .base import (
-    EnsembleConfigMixin,
     MonteCarloConfig,
     coefficient_errors,
     run_monte_carlo_experiment,
 )
+from .selection import save_selection, select_rungs, support_key, support_variants
 
 
 #: Part I rungs, in reporting order. PMF and VMF are the baselines required by
@@ -75,9 +74,7 @@ def assemble_weak_rungs(
     ``group_builder(fidelity, weighting)`` returns the weak (theta, rhs) blocks
     for one group; each distinct pair is built at most once, so rungs that share
     a group (MF_w and VHF both use the weighted HF blocks) pay for it once.
-    Restricting ``methods`` matters for per-rung tuning, where every rung is run
-    under its own hyperparameters: without it each run would build and fit all
-    eight rungs and discard seven.
+    Restricting ``methods`` lets a run fit a subset without building the rest.
 
     ``seed`` fixes the bootstrap draws of the ensemble fit, one stream per rung.
     The ensemble optimizer bags from the global RNG, so without this a rung's
@@ -126,25 +123,6 @@ class MultiTrajectoryGLSData:
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 
-def _expand_sample_weights(data: List[np.ndarray], weight: float) -> List[np.ndarray]:
-    weights: List[np.ndarray] = []
-    for traj in data:
-        arr = np.full(traj.shape[:-1], weight, dtype=float)
-        if traj.ndim >= 2:
-            arr = arr[..., None]
-        weights.append(arr)
-    return weights
-
-
-def _median_coefficients(opt: ps.EnsembleOptimizer) -> np.ndarray:
-    coef_list = getattr(opt, "coef_list", None)
-    if coef_list:
-        arr = np.asarray(coef_list)
-        if arr.ndim == 3:
-            return np.median(arr, axis=0)
-    return np.asarray(opt.coef_)
-
-
 def _variance_signature(variance_field: np.ndarray | None):
     """A key for the library a variance field produces, or None if unshareable.
 
@@ -171,8 +149,11 @@ def fit_multi_trajectory_weak_gls_models(
     noise_hf_abs: float,
     noise_lf_abs: float,
     methods: Sequence[str] | None = None,
-) -> Dict[str, np.ndarray]:
+) -> Dict[str, Any]:
     """Fit the requested rungs directly in weak space by stacking per-trajectory blocks.
+
+    Returns the fitted optimizer per rung, so the caller can read what the
+    ensemble chose as well as the coefficients.
 
     ``weak_library_builder(variance_field, whitener_mode=...)`` returns the weak
     library for one group. It is called once per group rather than once per
@@ -180,7 +161,7 @@ def fit_multi_trajectory_weak_gls_models(
     Cholesky depend on the grid, the seed, the support and the variance field,
     all of which a group holds fixed -- only the transform depends on the data.
     Rebuilding per trajectory repeated that work 11 times over for a 10-LF
-    group, which dominated tuning, where the grid is swept 135 times over.
+    group.
 
     Reusing one library per group also enforces what the shared ``weak_seed``
     already intends: every trajectory in a group is integrated against the same
@@ -227,10 +208,10 @@ def fit_multi_trajectory_weak_gls_models(
             rhs_blocks.append(np.asarray(library.convert_u_dot_integral(traj)))
         return theta_blocks, rhs_blocks
 
-    def fit_stacked(theta_blocks: list[np.ndarray], rhs_blocks: list[np.ndarray]) -> np.ndarray:
+    def fit_stacked(theta_blocks: list[np.ndarray], rhs_blocks: list[np.ndarray]):
         optimizer = optimizer_factory()
         optimizer.fit(np.vstack(theta_blocks), np.vstack(rhs_blocks))
-        return _median_coefficients(optimizer)
+        return optimizer
 
     return assemble_weak_rungs(
         build_group,
@@ -240,105 +221,58 @@ def fit_multi_trajectory_weak_gls_models(
     )
 
 
-def fit_multi_trajectory_gls_models(
-    batch: MultiTrajectoryGLSData,
-    library,
-    optimizer_factory: Callable[[], ps.EnsembleOptimizer],
-    *,
-    t_argument: Any,
-    noise_hf_abs: float,
-    noise_lf_abs: float,
-) -> Dict[str, np.ndarray]:
-    """Fit HF/LF/MF/MF_w ensemble models for a given multi-trajectory batch."""
-
-    def make_model() -> ps.SINDy:
-        return ps.SINDy(feature_library=library, optimizer=optimizer_factory())
-
-    model_hf = make_model()
-    model_lf = make_model()
-    model_mf = make_model()
-    model_mf_w = make_model()
-
-    model_hf.fit(batch.hf, t=t_argument)
-    print("MODEL HF:")
-    model_hf.print()
-    model_lf.fit(batch.lf, t=t_argument)
-    print("MODEL LF:")
-    model_lf.print()
-    trajectories = list(batch.hf) + list(batch.lf)
-    model_mf.fit(trajectories, t=t_argument)
-    print("MODEL MF:")
-    model_mf.print()
-
-    eps_hf = max(float(noise_hf_abs), 1e-12)
-    eps_lf = max(float(noise_lf_abs), 1e-12)
-    weights = _expand_sample_weights(batch.hf, (1.0 / eps_hf) ** 2) + _expand_sample_weights(
-        batch.lf, (1.0 / eps_lf) ** 2
-    )
-    model_mf_w.fit(trajectories, t=t_argument, sample_weight=weights)
-    print("MODEL MFW:")
-    model_mf_w.print()
-    return {
-        "HF": _median_coefficients(model_hf.optimizer),
-        "LF": _median_coefficients(model_lf.optimizer),
-        "MF": _median_coefficients(model_mf.optimizer),
-        "MF_w": _median_coefficients(model_mf_w.optimizer),
-    }
-
-
 def run_multi_trajectory_gls_experiment(
     cfg: MonteCarloConfig,
     *,
     reference_state_std: Callable[[Any], float],
     dataset_builder: Callable[[int, Any, float, float], MultiTrajectoryGLSData],
-    library_builder: Callable[[MultiTrajectoryGLSData, Any], Any],
     true_coefficients: Callable[[MultiTrajectoryGLSData, Any], np.ndarray],
-    optimizer_factory: Callable[[], ps.EnsembleOptimizer],
-    fit_models_fn: Callable[..., Dict[str, np.ndarray]] | None = None,
+    optimizer_factory: Callable[[], Any],
+    fit_models_fn: Callable[..., Dict[str, Any]],
     coef_postprocess: Callable[[np.ndarray], np.ndarray] | None = None,
     metric1_name: str = "MAE",
     metric2_name: str = "L0",
     progress_desc: str = "Multi-trajectory GLS",
     source_col: str = "model",
 ) -> tuple[pd.DataFrame, Dict[str, np.ndarray], Dict[str, np.ndarray], float, float, float]:
-    """Shared Monte Carlo loop for part-1 (multi-trajectory) experiments."""
+    """Shared Monte Carlo loop for part-1 (multi-trajectory) experiments.
+
+    Each run is fitted at every support of ``cfg.H_grid``; each rung keeps the
+    support its ensemble is tightest at, with the threshold chosen by BIC inside
+    the ensemble (:mod:`mfsindy.experiments.selection`). The last run's choices
+    are written beside the error table for plotting.
+    """
 
     state_std = float(reference_state_std(cfg))
     noise_hf_abs = cfg.noise_hf_rel * state_std  # type: ignore[attr-defined]
     noise_lf_abs = cfg.noise_lf_rel * state_std  # type: ignore[attr-defined]
     methods = list(getattr(cfg, "methods", None) or PART1_METHODS)
 
+    # Every run's reported coefficients, kept for the across-runs plot.
+    estimates: Dict[str, list] = {m: [] for m in methods}
+
     def single_run(run_idx: int):
         batch = dataset_builder(run_idx, cfg, noise_hf_abs, noise_lf_abs)
-        if fit_models_fn is None:
-            library = library_builder(batch, cfg)
-            coef_map = fit_multi_trajectory_gls_models(
+        fits = {
+            support_key(variant.H_xt): fit_models_fn(
                 batch,
-                library,
-                optimizer_factory,
-                t_argument=batch.t_argument,
-                noise_hf_abs=noise_hf_abs,
-                noise_lf_abs=noise_lf_abs,
-            )
-        else:
-            coef_map = fit_models_fn(
-                batch,
-                cfg,
+                variant,
                 optimizer_factory,
                 t_argument=batch.t_argument,
                 noise_hf_abs=noise_hf_abs,
                 noise_lf_abs=noise_lf_abs,
                 methods=methods,
             )
-        if coef_postprocess is not None:
-            coef_map = {k: coef_postprocess(v) for k, v in coef_map.items()}
+            for variant in support_variants(cfg)
+        }
+        coef_map, trace = select_rungs(
+            fits, None if coef_postprocess is None else (lambda coef, _rung: coef_postprocess(coef))
+        )
         C_true = true_coefficients(batch, cfg)
-        missing = [m for m in methods if m not in coef_map]
-        if missing:
-            raise KeyError(
-                f"Fit function returned no coefficients for {missing}; "
-                f"available rungs are {sorted(coef_map)}."
-            )
+        for m in methods:
+            estimates[m].append(coef_map[m])
+        if run_idx == cfg.n_runs - 1:
+            save_selection(cfg, run_idx, C_true, trace, estimates)
         return {
             method: coefficient_errors(coef_map[method], C_true)
             for method in methods
@@ -365,7 +299,6 @@ __all__ = [
     "WHITENING_RUNGS",
     "FULL_COVARIANCE_RUNGS",
     "assemble_weak_rungs",
-    "fit_multi_trajectory_gls_models",
     "fit_multi_trajectory_weak_gls_models",
     "run_multi_trajectory_gls_experiment",
 ]

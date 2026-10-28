@@ -13,7 +13,7 @@ import numpy as np
 import pytest
 
 from mfsindy.cases.burgers import BurgersConfig, _build_burgers_gls_artifacts
-from mfsindy.experiments.rollout import (
+from mfsindy.experiments.artifacts import (
     build_pde_intra_trajectory_artifacts,
     pde_coverage_test_function_count,
 )

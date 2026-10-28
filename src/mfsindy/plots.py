@@ -9,7 +9,15 @@ import numpy as np
 import seaborn as sns
 import os
 
-__all__ = ["bubble_hist", "tuning_heatmap"]
+__all__ = [
+    "DISPLAY",
+    "PART1_COLORS",
+    "PART2_COLORS",
+    "bubble_hist",
+    "plot_coefficient_ensembles",
+    "plot_coefficient_runs",
+    "plot_selection",
+]
 
 def bubble_hist(
     errors_dict: Mapping[str, Iterable[float]],
@@ -24,6 +32,7 @@ def bubble_hist(
     figsize: tuple[float, float] | None = None,
     max_size: float = 520.0,
     alpha: float = 0.75,
+    xlabel: str | None = None,
     save_path: str | None = None,
     show: bool = True,
 ) -> None:
@@ -179,11 +188,13 @@ def bubble_hist(
     # Stable margins: useful when arranging manually in Keynote. The vertical
     # margins are fixed in inches rather than as a fraction of the figure, so a
     # taller panel adds plotting area instead of white space.
+    if xlabel is not None:
+        ax.set_xlabel(xlabel)
     height = float(figsize[1])
     fig.subplots_adjust(
         left=0.25,
-        right=0.98,
-        bottom=0.60 / height,
+        right=0.93,                       # room for a log tick at the right edge
+        bottom=(0.95 if xlabel is not None else 0.60) / height,
         top=1.0 - 0.10 / height,
     )
 
@@ -208,162 +219,234 @@ def _grid_label(value) -> str:
         return str(value)
 
 
-def tuning_heatmap(
-    score_table,
-    *,
-    selections: Mapping[str, object] | None = None,
-    rungs: Iterable[str] | None = None,
-    x: str = "stlsq_threshold",
-    y: str = "H_xt",
-    score_col: str = "score",
-    rung_col: str = "rung",
-    admissible_col: str = "admissible",
-    ncols: int = 4,
-    cmap: str = "viridis",
-    vmin: float | None = None,
-    vmax: float | None = None,
-    annot: bool = True,
-    figsize: tuple[float, float] | None = None,
-    save_path: str | None = None,
-    show: bool = True,
-):
-    """Show the whole tuning grid per rung, with the selected cell outlined.
+#: Figure style, fixed inside each figure so a notebook's seaborn context or an
+#: earlier bubble_hist call does not leak in: 7 pt sans-serif, thin lines.
+_RC = {"font.family": "sans-serif", "font.size": 7, "axes.titlesize": 7,
+       "axes.labelsize": 7, "xtick.labelsize": 6, "ytick.labelsize": 7,
+       "axes.linewidth": 0.5, "xtick.major.width": 0.5, "ytick.major.width": 0.5,
+       "xtick.major.size": 2, "ytick.major.size": 0, "axes.spines.top": False,
+       "axes.spines.right": False, "pdf.fonttype": 42, "ps.fonttype": 42}
 
-    The selection is one number per rung; the surface behind it is what says
-    whether that number means anything. A rung whose grid is flat was not really
-    tuned, one whose best sits in a spike will not survive a reseed, and one
-    whose best lies on an edge is asking for a wider grid -- none of which is
-    visible from the chosen value alone. Cells that failed to fit are left
-    blank rather than plotted as a low score, so a hole reads as a hole.
+#: Part I models coloured by family: single fidelity unweighted (greys) and
+#: weighted (blues), fusion without fidelity weights (oranges), and fusion with
+#: them (teal for the per-group variances, red for the full weak covariance).
+PART1_COLORS = {"HF": "#5f5f5f", "LF": "#a9a9a9", "VHF": "#2f6fae", "VLF": "#8db5dc",
+                "MF": "#d98c00", "PMF": "#f2c46b", "VMF": "#2a9d8f", "MF_w": "#c0392b"}
+PART2_COLORS = {"No weighting": "#8c8c8c", "Ones GLS": "#d98c00",
+                "Variance diag": "#2a9d8f", "Variance GLS": "#c0392b"}
+#: Display names, as the paper writes them.
+DISPLAY = {"MF_w": "WMF"}
 
-    Where a rung was restricted -- the covariance-weighted rungs are confined to
-    supports on which their covariance model holds -- the cells it could not be
-    selected from are still scored and still drawn, crosshatched. Showing the
-    surface and then ruling part of it out is the point: a reader can see what
-    the restriction cost, which a quietly shrunken grid would hide.
+_GREEK = {"theta": r"\theta", "omega": r"\omega", "rho": r"\rho", "phi": r"\phi"}
 
-    ``score_table`` is the frame :func:`mfsindy.experiments.tune_rungs` returns;
-    ``selections`` its companion mapping, used only to mark the chosen cell.
-    """
 
-    import matplotlib.patches as mpatches
+def _tex(name: str) -> str:
+    """A library or state name as mathtext: Greek words become symbols."""
 
-    table = score_table.copy()
-    for column in (x, y):
-        table[column] = table[column].map(_grid_label)
+    out = str(name)
+    for word, symbol in _GREEK.items():
+        out = out.replace(word, symbol)
+    return f"${out}$"
 
-    model_names = list(rungs) if rungs is not None else list(
-        dict.fromkeys(table[rung_col])
-    )
-    x_levels = list(dict.fromkeys(table[x]))
-    y_levels = list(dict.fromkeys(table[y]))
 
-    finite = table[score_col].to_numpy(dtype=float)
-    finite = finite[np.isfinite(finite)]
-    if vmin is None:
-        vmin = float(np.min(finite)) if finite.size else 0.0
-    if vmax is None:
-        vmax = float(np.max(finite)) if finite.size else 1.0
-    if vmax <= vmin:
-        vmax = vmin + 1e-9
+def _dot(name: str) -> str:
+    return rf"$\dot{{{_tex(name)[1:-1]}}}$"
 
-    ncols = max(1, min(int(ncols), len(model_names)))
-    nrows = int(np.ceil(len(model_names) / ncols))
-    if figsize is None:
-        figsize = (3.1 * ncols + 1.2, 2.5 * nrows + 0.8)
-    fig, axes = plt.subplots(nrows, ncols, figsize=figsize, squeeze=False)
 
-    mesh = None
-    for idx, name in enumerate(model_names):
-        ax = axes[idx // ncols][idx % ncols]
-        sub = table[table[rung_col] == name]
-        grid = (
-            sub.pivot_table(index=y, columns=x, values=score_col, aggfunc="mean")
-            .reindex(index=y_levels, columns=x_levels)
-        )
-        values = np.ma.masked_invalid(grid.to_numpy(dtype=float))
-        mesh = ax.pcolormesh(
-            np.arange(len(x_levels) + 1),
-            np.arange(len(y_levels) + 1),
-            values,
-            cmap=cmap,
-            vmin=vmin,
-            vmax=vmax,
-        )
-        if annot:
-            for row in range(values.shape[0]):
-                for col in range(values.shape[1]):
-                    if values.mask[row, col] if np.ma.is_masked(values) else False:
-                        continue
-                    value = float(values[row, col])
-                    shade = (value - vmin) / (vmax - vmin)
-                    ax.text(
-                        col + 0.5,
-                        row + 0.5,
-                        f"{value:.2f}",
-                        ha="center",
-                        va="center",
-                        fontsize=7,
-                        color="white" if shade < 0.55 else "black",
-                    )
+def _label(name: str) -> str:
+    return DISPLAY.get(name, name)
 
-        if admissible_col in sub.columns:
-            blocked = (
-                sub.pivot_table(
-                    index=y, columns=x, values=admissible_col, aggfunc="min"
-                )
-                .reindex(index=y_levels, columns=x_levels)
-                .to_numpy(dtype=float)
-            )
-            for row in range(blocked.shape[0]):
-                for col in range(blocked.shape[1]):
-                    if blocked[row, col] == 0.0:
-                        ax.add_patch(
-                            mpatches.Rectangle(
-                                (col, row), 1, 1,
-                                fill=False, hatch="xxx",
-                                edgecolor="0.25", linewidth=0.0,
-                            )
-                        )
 
-        chosen = None if selections is None else selections.get(name)
-        best = getattr(chosen, "best_params", None)
-        if best is not None and x in best and y in best:
-            try:
-                col = x_levels.index(_grid_label(best[x]))
-                row = y_levels.index(_grid_label(best[y]))
-            except ValueError:
-                col = row = None
-            if col is not None:
-                ax.add_patch(
-                    mpatches.Rectangle(
-                        (col, row), 1, 1, fill=False, edgecolor="red", linewidth=2.0
-                    )
-                )
-
-        ax.set_xticks(np.arange(len(x_levels)) + 0.5)
-        ax.set_yticks(np.arange(len(y_levels)) + 0.5)
-        ax.set_xticklabels(x_levels, fontsize=7, rotation=45, ha="right")
-        ax.set_yticklabels(y_levels, fontsize=7)
-        ax.set_title(name, fontsize=10)
-        if idx % ncols == 0:
-            ax.set_ylabel(y, fontsize=8)
-        if idx // ncols == nrows - 1:
-            ax.set_xlabel(x, fontsize=8)
-
-    for idx in range(len(model_names), nrows * ncols):
-        axes[idx // ncols][idx % ncols].axis("off")
-
-    if mesh is not None:
-        fig.colorbar(mesh, ax=axes.ravel().tolist(), label=score_col, shrink=0.85)
-    if save_path:
-        directory = os.path.dirname(save_path)
-        if directory:
-            os.makedirs(directory, exist_ok=True)
-        for extension in ("png", "pdf"):
-            fig.savefig(f"{save_path}.{extension}", dpi=200, bbox_inches="tight")
+def _finish(fig, save_path: str | None, show: bool) -> None:
+    if save_path is not None:
+        os.makedirs(os.path.dirname(save_path) or ".", exist_ok=True)
+        fig.savefig(save_path, bbox_inches="tight", dpi=300, transparent=True)
     if show:
         plt.show()
     else:
         plt.close(fig)
-    return fig
+
+
+def plot_selection(
+    record: Mapping,
+    *,
+    rungs: list[str] | tuple[str, ...],
+    colors: Mapping[str, str] | None = None,
+    highlight: Iterable[str] = ("MF_w", "VMF", "Variance GLS", "Variance diag"),
+    equation_names: Iterable[str] | None = None,
+    save_path: str | None = None,
+    show: bool = True,
+) -> None:
+    """How each rung chose its support and its threshold, for one run.
+
+    Left: the spread of the bagged coefficients against the candidate support,
+    the chosen support filled. Then one panel per equation: the rung's
+    fit-complexity Pareto front at its chosen support -- the best RSS reachable
+    with at most that many terms, relative to the rung's best fit, since whitened
+    and plain systems carry different units -- with the BIC choice filled. BIC picks a point on this
+    front, with the trade-off fixed by log N. Rungs in ``highlight`` are drawn
+    full strength, the others thin and light.
+    """
+
+    colors = dict(colors or {})
+    highlight = set(highlight)
+    by_rung = record["rungs"]
+    supports = list(by_rung[rungs[0]]["by_support"])
+    numeric = all(np.ndim(H) == 0 for H in supports)
+    xs = np.asarray(supports, dtype=float) if numeric else np.arange(len(supports))
+    n_eq = np.asarray(by_rung[rungs[0]]["by_support"][supports[0]]["rss"]).shape[1]
+    names = [_dot(n) for n in equation_names] if equation_names is not None else [f"eq. {j}" for j in range(n_eq)]
+
+    def style(rung):
+        strong = rung in highlight
+        return dict(color=colors.get(rung, "k"), lw=1.2 if strong else 0.7,
+                    alpha=1.0 if strong else 0.55, zorder=3 if strong else 2)
+
+    with plt.rc_context(_RC):
+        fig, axes = plt.subplots(1, 1 + n_eq, figsize=(1.75 * (1 + n_eq) + 0.9, 1.7))
+        ax = axes[0]
+        for rung in rungs:
+            rec = by_rung[rung]
+            spread = np.array([rec["by_support"][H]["spread"] for H in supports], dtype=float)
+            st = style(rung)
+            ax.plot(xs, spread, "-", label=_label(rung), **st)
+            k = supports.index(rec["support"])
+            ax.plot(xs[k], spread[k], "o", ms=3.2, color=st["color"], alpha=st["alpha"], zorder=4)
+        if numeric:
+            ax.set_xscale("log")
+        else:
+            ax.set_xticks(xs, [_grid_label(H) for H in supports], rotation=90)
+        ax.set_yscale("log")
+        ax.set_xlabel("support $H$")
+        ax.set_ylabel("coefficient spread")
+        ax.set_title("support")
+
+        for j, ax in enumerate(axes[1:]):
+            for rung in rungs:
+                rec = by_rung[rung]["by_support"][by_rung[rung]["support"]]
+                nnz, rss = np.asarray(rec["nnz"])[:, j], np.asarray(rec["rss"])[:, j]
+                rel = rss / max(rss.min(), 1e-300)
+                # The front: the best fit reachable with at most that many terms
+                # (the non-dominated points of the threshold path).
+                sizes = np.unique(nnz)
+                front = np.minimum.accumulate([rel[nnz == n].min() for n in sizes])
+                st = style(rung)
+                ax.plot(sizes, front, "-", **st)
+                i = int(np.asarray(rec["choice"])[j])
+                ax.plot(nnz[i], rel[i], "o", ms=3.2, color=st["color"], alpha=st["alpha"], zorder=4)
+            ax.set_yscale("log")
+            ax.xaxis.set_major_locator(plt.MaxNLocator(integer=True))
+            ax.set_xlabel("terms kept")
+            ax.set_title(f"threshold (BIC): {names[j]}")
+        axes[1].set_ylabel("RSS / min RSS")
+        for ax in axes:
+            ax.tick_params(axis="y", length=2)
+        handles, labels = axes[0].get_legend_handles_labels()
+        fig.legend(handles, labels, loc="center left", bbox_to_anchor=(1.0, 0.5), frameon=False,
+                   handlelength=1.4)
+        fig.tight_layout(w_pad=1.0)
+        _finish(fig, save_path, show)
+
+
+def _coefficient_panels(
+    samples: Mapping[str, np.ndarray],
+    true: np.ndarray,
+    *,
+    rungs: list[str] | tuple[str, ...],
+    colors: Mapping[str, str] | None,
+    row_names: Iterable[str] | None,
+    col_names: Iterable[str] | None,
+    ncols: int,
+    save_path: str | None,
+    show: bool,
+) -> None:
+    """One small panel per true term, rungs as rows: every sample a dot, the
+    median a tick, the true value a dashed line. ``samples[rung]`` is stacked
+    over its first axis (bags of one run, or runs). Limits follow the
+    interquartile ranges, so a rung that cannot identify the system runs off."""
+
+    colors = dict(colors or {})
+    true = np.asarray(true)
+    cells = sorted(zip(*np.nonzero(true != 0)), key=lambda ij: (ij[1], ij[0]))
+    rows = [_tex(n) for n in row_names] if row_names is not None else [f"term {i}" for i in range(true.shape[0])]
+    cols = [_dot(n) for n in col_names] if col_names is not None else [f"eq. {j}" for j in range(true.shape[1])]
+    order = list(rungs)[::-1]                        # first rung on top
+
+    ncols = min(ncols, len(cells))
+    nrows = int(np.ceil(len(cells) / ncols))
+    rng = np.random.default_rng(0)
+    with plt.rc_context(_RC):
+        fig, axes = plt.subplots(nrows, ncols, figsize=(1.45 * ncols + 0.4, (0.13 * len(rungs) + 0.45) * nrows),
+                                 squeeze=False, sharey=True)
+        for ax, (i, j) in zip(axes.ravel(), cells):
+            quartiles = []
+            for k, rung in enumerate(order):
+                v = np.asarray(samples[rung])[:, i, j]
+                col = colors.get(rung, "k")
+                quartiles += list(np.percentile(v, [25, 75]))
+                ax.scatter(v, k + 0.13 * rng.standard_normal(len(v)), s=1.5, color=col, alpha=0.45,
+                           linewidths=0, rasterized=True)
+                ax.plot([np.median(v)] * 2, [k - 0.36, k + 0.36], "-", lw=1.2, color=col)
+            ax.axvline(true[i, j], ls=(0, (2, 2)), lw=0.6, color="k")
+            lo, hi = min(quartiles + [true[i, j]]), max(quartiles + [true[i, j]])
+            pad = 0.6 * (hi - lo) if hi > lo else 0.1 * max(abs(hi), 1.0)
+            ax.set_xlim(lo - pad, hi + pad)
+            ax.set_ylim(-0.6, len(order) - 0.4)
+            ax.xaxis.set_major_locator(plt.MaxNLocator(3))
+            ax.set_title(f"{cols[j]}: {rows[i]}")
+            ax.spines["left"].set_visible(False)
+        for ax in axes[:, 0]:
+            ax.set_yticks(range(len(order)), [_label(r) for r in order])
+        for ax in axes.ravel()[len(cells):]:
+            ax.axis("off")
+        fig.tight_layout(w_pad=0.6, h_pad=0.8)
+        _finish(fig, save_path, show)
+
+
+def plot_coefficient_ensembles(
+    record: Mapping,
+    *,
+    rungs: list[str] | tuple[str, ...],
+    colors: Mapping[str, str] | None = None,
+    row_names: Iterable[str] | None = None,
+    col_names: Iterable[str] | None = None,
+    ncols: int = 4,
+    save_path: str | None = None,
+    show: bool = True,
+) -> None:
+    """The bagged coefficients of every rung on one run (the last), per true term.
+
+    Every ensemble member is a dot, the median -- the coefficient the rung
+    reports -- a tick, the true value the dashed line. Spurious terms are left
+    out; the front panels of :func:`plot_selection` account for them.
+    """
+
+    _coefficient_panels({r: record["rungs"][r]["bags"] for r in rungs}, record["true"], rungs=rungs,
+                        colors=colors, row_names=row_names, col_names=col_names, ncols=ncols,
+                        save_path=save_path, show=show)
+
+
+def plot_coefficient_runs(
+    record: Mapping,
+    *,
+    rungs: list[str] | tuple[str, ...],
+    colors: Mapping[str, str] | None = None,
+    row_names: Iterable[str] | None = None,
+    col_names: Iterable[str] | None = None,
+    ncols: int = 4,
+    save_path: str | None = None,
+    show: bool = True,
+) -> None:
+    """The coefficient every rung reported on every Monte Carlo run, per true term.
+
+    The across-runs counterpart of :func:`plot_coefficient_ensembles`: each dot is
+    one run's reported (median) coefficient, so the cloud is the estimator's
+    sampling distribution -- its spread the variance, its offset from the dashed
+    true value the bias.
+    """
+
+    if "coefficients" not in record:
+        raise KeyError("This record has no per-run coefficients; rerun the Monte Carlo to store them.")
+    _coefficient_panels(record["coefficients"], record["true"], rungs=rungs, colors=colors,
+                        row_names=row_names, col_names=col_names, ncols=ncols,
+                        save_path=save_path, show=show)

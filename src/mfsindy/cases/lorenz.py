@@ -4,9 +4,8 @@
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass, replace
-from typing import Any, Callable, Dict, List, Tuple, Sequence
+from typing import Dict, Sequence
 
 import inspect
 
@@ -15,20 +14,15 @@ import pandas as pd
 from scipy.integrate import solve_ivp
 
 import pysindy as ps
-from pysindy.feature_library import WeakPDELibrary
 
 from mfsindy.experiments import (
     EnsembleConfigMixin,
     IntraTrajectoryGLSData,
     MonteCarloConfig,
     MultiTrajectoryGLSData,
-    ValidationSupport,
-    WeakValidationBlock,
-    build_polynomial_rollout_models,
     fit_multi_trajectory_weak_gls_models,
     run_intra_trajectory_gls_experiment,
     run_multi_trajectory_gls_experiment,
-    select_validation_support,
 )
 from mfsindy.weighted_weak_pde_library import (
     DedupedWeakPDELibrary,
@@ -38,7 +32,6 @@ from mfsindy.weighted_weak_pde_library import (
 )
 
 LORENZ_STATE_NAMES = ("x", "y", "z")
-
 
 
 def lorenz(
@@ -178,7 +171,6 @@ def build_true_coefficient_matrix() -> np.ndarray:
     return C
 
 
-
 # ---------------------------------------------------------------------------
 # Lorenz multi-fidelity experiment (HF / LF / MF / MF_w)
 # ---------------------------------------------------------------------------
@@ -207,7 +199,6 @@ class LorenzMultiTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
     K: int | None = None            # derived from H_xt when None
     deduplicate: bool = True   # drop test functions whose support duplicates another's
     p: int | None = None
-    stlsq_threshold: float = 0.5
     # pysindy's STLSQ defaults to alpha=0.05, a ridge penalty that is not scale
     # aware. The weak targets here are small -- |b| is order 10 per state -- so
     # a fixed penalty on coefficients of order 10 biases the fit badly: at 0.05
@@ -217,7 +208,6 @@ class LorenzMultiTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
     # It also falls unevenly across the rungs. Whitening multiplies Theta and b
     # by roughly 1/sigma, so the weighted rungs feel a fixed ridge far less than
     # the unweighted ones, which would flatter the comparison the paper draws.
-    stlsq_alpha: float = 1e-12
     n_ensemble_models: int = 100
 
     # random seeds
@@ -268,28 +258,6 @@ def _lorenz_batch(
         lf=X_lf,
         t_argument=cfg.dt,
         metadata={"t_grid": t_train, "weak_seed": cfg.seed_base + 10_000 + run_idx},
-    )
-
-
-def _lorenz_library(batch: MultiTrajectoryGLSData, cfg: LorenzMultiTrajectoryGLSConfig):
-    """Shared weak-form library for all fidelity variants."""
-
-    poly_lib = ps.PolynomialLibrary(
-        degree=cfg.poly_degree,
-        include_bias=False,
-    )
-    weak_kwargs = {}
-    if cfg.K is not None:
-        weak_kwargs["K"] = cfg.K
-    if cfg.H_xt is not None:
-        weak_kwargs["H_xt"] = cfg.H_xt
-    if cfg.p is not None:
-        weak_kwargs["p"] = cfg.p
-
-    return WeakPDELibrary(
-        function_library=poly_lib,
-        spatiotemporal_grid=batch.metadata["t_grid"],
-        **weak_kwargs,
     )
 
 
@@ -393,7 +361,6 @@ def run_lorenz_multi_trajectory_gls_experiment(
         cfg,
         reference_state_std=_lorenz_reference_state_std,
         dataset_builder=_lorenz_batch,
-        library_builder=_lorenz_library,
         true_coefficients=_lorenz_true_coefficients,
         optimizer_factory=cfg.make_optimizer,
         fit_models_fn=_lorenz_fit_multi_trajectory_weak_gls_models,
@@ -466,48 +433,6 @@ def lorenz_weak_design(
     return report
 
 
-def fit_lorenz_multi_trajectory_rollout_models(
-    cfg: LorenzMultiTrajectoryGLSConfig,
-    *,
-    hf_trajectories: list[np.ndarray],
-    lf_trajectories: list[np.ndarray],
-    t_grid: np.ndarray,
-    weak_seed: int | None = None,
-) -> dict[str, Any]:
-    """Fit HF/LF/MF/MF_w Lorenz models and wrap them for rollout validation."""
-
-    if not hf_trajectories and not lf_trajectories:
-        raise ValueError("At least one HF or LF trajectory is required.")
-
-    state_std = _lorenz_reference_state_std(cfg)
-    noise_hf_abs = cfg.noise_hf_rel * state_std
-    noise_lf_abs = cfg.noise_lf_rel * state_std
-    batch = MultiTrajectoryGLSData(
-        hf=hf_trajectories,
-        lf=lf_trajectories,
-        t_argument=cfg.dt,
-        metadata={
-            "t_grid": np.asarray(t_grid, dtype=float),
-            "weak_seed": cfg.seed_base if weak_seed is None else int(weak_seed),
-        },
-    )
-    coef_map = _lorenz_fit_multi_trajectory_weak_gls_models(
-        batch,
-        cfg,
-        cfg.make_optimizer,
-        t_argument=cfg.dt,
-        noise_hf_abs=noise_hf_abs,
-        noise_lf_abs=noise_lf_abs,
-    )
-    reference_trajectory = hf_trajectories[0] if hf_trajectories else lf_trajectories[0]
-    return build_polynomial_rollout_models(
-        coef_map,
-        poly_degree=cfg.poly_degree,
-        reference_trajectory=reference_trajectory,
-        state_names=LORENZ_STATE_NAMES,
-        include_bias=False,
-    )
-
 # ---------------------------------------------------------------------------
 # Lorenz heteroscedastic GLS experiment (weak / weighted-weak SINDy)
 # ---------------------------------------------------------------------------
@@ -521,8 +446,10 @@ class LorenzIntraTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
     t1: float = 10.0
     dt: float = 1e-3
 
-    # heteroscedastic noise level (variance ∝ alpha^2 * ||U||^2)
+    # heteroscedastic noise level: sigma(t) = noise_level * |U(t)| over the
+    # components noise_model names (see lorenz_noise_variance)
     noise_level: float = 0.25
+    noise_model: str = "xy"
 
     # weak-library settings
     poly_degree: int = 2
@@ -533,7 +460,6 @@ class LorenzIntraTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
     include_bias: bool = False
 
     # SINDy / optimizer settings
-    stlsq_threshold: float = 0.5
     n_ensemble_models: int = 100
 
     # random seeds
@@ -541,6 +467,28 @@ class LorenzIntraTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
 
     # output
     results_filename: str = "lorenz_weighted_errors.csv"
+
+
+def lorenz_noise_variance(U_clean: np.ndarray, cfg) -> np.ndarray:
+    """Pointwise noise variance along a clean Lorenz trajectory.
+
+    ``"xy"`` (the default) scales the noise with the distance from the z axis,
+    ``"norm"`` with the full state norm. The difference is whether the
+    trajectory has clean regions. Under ``"norm"`` the relative noise
+    sigma/|U| is exactly ``noise_level`` everywhere, so no stretch of the
+    trajectory is quieter than any other relative to its own signal, and a
+    weighting has nothing to exploit. Under ``"xy"`` it falls towards zero
+    wherever the trajectory crosses between the lobes, while z -- and so the
+    dynamics -- stays large there. ``"norm"`` is kept as the counter-case.
+    """
+
+    if cfg.noise_model == "norm":
+        magnitude = np.linalg.norm(U_clean, axis=1)
+    elif cfg.noise_model == "xy":
+        magnitude = np.linalg.norm(U_clean[:, :2], axis=1)
+    else:
+        raise ValueError(f"noise_model must be 'norm' or 'xy', got {cfg.noise_model!r}.")
+    return np.maximum((cfg.noise_level * magnitude) ** 2, 1e-8)
 
 
 def _make_lorenz_gls_artifacts(
@@ -560,11 +508,8 @@ def _make_lorenz_gls_artifacts(
         seed=None,
     )
 
-    # 2) Heteroscedastic noise: variance ∝ (alpha * ||U||)^2
-    alpha = cfg.noise_level
-    d = np.linalg.norm(U_clean, axis=1)
-    variance = (alpha * d) ** 2
-    variance = np.maximum(variance, 1e-8)
+    # 2) Heteroscedastic noise, as lorenz_noise_variance defines it
+    variance = lorenz_noise_variance(U_clean, cfg)
     std = np.sqrt(variance)
     noise = std[:, None] * rng.standard_normal(size=U_clean.shape)
     U_noisy = U_clean + noise
@@ -675,110 +620,16 @@ def run_lorenz_intra_trajectory_gls_experiment(
     """
     Full heteroscedastic Lorenz GLS experiment.
     """
-    rng = np.random.default_rng(cfg.seed_base)
-
     def builder(run_idx: int, cfg: LorenzIntraTrajectoryGLSConfig) -> IntraTrajectoryGLSData:
-        return _make_lorenz_gls_artifacts(run_idx, cfg, rng)
+        # Seeded by run, not drawn from one stream: the runner builds a run once
+        # per candidate support, and every support must see the same data.
+        return _make_lorenz_gls_artifacts(run_idx, cfg, np.random.default_rng(cfg.seed_base + 100 * run_idx))
 
     return run_intra_trajectory_gls_experiment(
         cfg,
         run_builder=builder,
         progress_desc="Monte Carlo Lorenz GLS",
         coef_postprocess=lambda coef, _method: np.asarray(coef).T,
-    )
-
-
-def build_lorenz_weak_validation_blocks(
-    cfg: LorenzMultiTrajectoryGLSConfig,
-    trajectories: list[np.ndarray],
-    *,
-    t_grid: np.ndarray,
-    H_val=None,
-    weak_seed: int | None = None,
-    group_name: str = "validation",
-) -> list[WeakValidationBlock]:
-    """Held-out weak-form blocks for lorenz trajectories.
-
-    ``H_val`` fixes the support of the validation system independently of the
-    candidate being scored. Without it the target moves with the candidate --
-    a different Theta, a different b and a different R^2 denominator per grid
-    point -- so the scores would not be comparable across the grid, which is
-    the whole purpose of scoring them. ``K`` is left to follow ``H_val``.
-    """
-
-    val_cfg = cfg if H_val is None else replace(cfg, H_xt=H_val, K=None)
-    t_grid = np.asarray(t_grid, dtype=float)
-    seed = cfg.seed_base if weak_seed is None else int(weak_seed)
-
-    blocks: list[WeakValidationBlock] = []
-    for traj_idx, trajectory in enumerate(trajectories):
-        batch = MultiTrajectoryGLSData(
-            hf=[trajectory],
-            lf=[],
-            t_argument=cfg.dt,
-            metadata={"t_grid": t_grid, "weak_seed": seed},
-        )
-        library = _lorenz_make_weak_library(batch, val_cfg, variance_field=None)
-        theta = np.asarray(library.fit_transform([trajectory])[0])
-        rhs = np.asarray(library.convert_u_dot_integral(trajectory))
-        blocks.append(
-            WeakValidationBlock(
-                theta=theta, rhs=rhs, group=group_name, trajectory=traj_idx, block=0
-            )
-        )
-    return blocks
-
-
-def lorenz_validation_support(
-    cfg: LorenzMultiTrajectoryGLSConfig,
-    validation_trajectory: np.ndarray,
-    *,
-    t_grid: np.ndarray,
-    sigma: float,
-    candidates,
-    weak_seed: int | None = None,
-    min_ceiling: float = 0.99,
-    max_kappa: float = float("inf"),
-    min_rows: int | None = None,
-) -> ValidationSupport:
-    """Choose the validation support for lorenz by the stated rule.
-
-    The noise ceiling on ``b`` rejects the narrow supports and the smallest
-    survivor wins, since rows are what let the metric tell candidates apart.
-    Kappa is reported alongside but does not bind: it governs the covariance
-    model, which this system never invokes -- the validation library is built
-    unweighted and scored with an unweighted R^2. Kappa belongs to the rungs
-    that whiten (VHF, VLF, PMF, VMF, MF_w), on their fitting support.
-    See :func:`mfsindy.experiments.select_validation_support`.
-    """
-
-    t_grid = np.asarray(t_grid, dtype=float)
-    seed = cfg.seed_base if weak_seed is None else int(weak_seed)
-    jacobian_norm = _lorenz_jacobian_norm(validation_trajectory, cfg)
-
-    def build(H):
-        batch = MultiTrajectoryGLSData(
-            hf=[validation_trajectory],
-            lf=[],
-            t_argument=cfg.dt,
-            metadata={"t_grid": t_grid, "weak_seed": seed},
-        )
-        library = _lorenz_make_weak_library(
-            batch, replace(cfg, H_xt=H, K=None), variance_field=None
-        )
-        library.fit_transform([validation_trajectory])
-        return library, np.asarray(library.convert_u_dot_integral(validation_trajectory))
-
-    return select_validation_support(
-        build,
-        candidates=candidates,
-        sigma=sigma,
-        kappa_fn=lambda library, _H: float(
-            np.median(weak_validity_ratio(library, jacobian_norm))
-        ),
-        min_ceiling=min_ceiling,
-        max_kappa=max_kappa,
-        min_rows=min_rows,
     )
 
 

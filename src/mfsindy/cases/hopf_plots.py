@@ -84,13 +84,17 @@ def plot_multifidelity_trajectories(X_hf, X_lf, X_clean):
 
 
 
-def plot_trajectories_additive_noise(x_true, alpha=0.05, mu = 1.0):
-    
-    sigma0 = 1e-2
-    alpha = 0.15
+def plot_trajectories_additive_noise(x_true, cfg):
+    """Plot a clean Hopf trajectory with noisy samples drawn from cfg's noise law.
 
-    state_norm = np.linalg.norm(x_true, axis=1, keepdims=True)   # shape (T, 1)
-    noise = (alpha * np.abs(state_norm-mu) + sigma0) * np.random.randn(*x_true.shape)
+    The noise comes from hopf_noise_variance, the function the Monte Carlo uses,
+    so the picture cannot drift from the experiment it illustrates.
+    """
+    from mfsindy.cases.hopf import hopf_noise_variance
+
+    mu = cfg.mu
+    std = np.sqrt(hopf_noise_variance(np.asarray(x_true), cfg))[:, None]
+    noise = std * np.random.randn(*x_true.shape)
 
     x_noisy = x_true + noise
 

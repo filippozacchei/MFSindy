@@ -212,10 +212,16 @@ def plot_multifidelity_trajectories(X_hf, X_lf, X_clean):
     ax.set_axis_off()
     plt.show()
 
-def plot_trajectories_additive_noise(x_true, alpha=0.05):
-    
-    state_norm = np.linalg.norm(x_true, axis=1, keepdims=True)   # shape (T, 1)
-    noise = alpha * state_norm * np.random.randn(*x_true.shape)
+def plot_trajectories_additive_noise(x_true, cfg):
+    """Plot a clean Lorenz trajectory with noisy samples drawn from cfg's noise law.
+
+    The noise comes from lorenz_noise_variance, the function the Monte Carlo
+    uses, so the picture cannot drift from the experiment it illustrates.
+    """
+    from mfsindy.cases.lorenz import lorenz_noise_variance
+
+    std = np.sqrt(lorenz_noise_variance(np.asarray(x_true), cfg))[:, None]
+    noise = std * np.random.randn(*x_true.shape)
 
     x_noisy = x_true + noise
 
