@@ -38,7 +38,7 @@ def hopf(
     t: float,
     u: np.ndarray,
     mu: float = 1.0,
-    omega: float = 1.0,
+    omega: float = 5.0,
 ) -> np.ndarray:
     """
     Planar Hopf normal form:
@@ -74,7 +74,7 @@ def generate_hopf_trajectory(
     T: float = 10.0,
     dt: float = 1e-3,
     mu: float = 1.0,
-    omega: float = 1.0,
+    omega: float = 5.0,
     noise_level: float = 0.0,
     seed: int | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
@@ -118,7 +118,7 @@ def generate_hopf_dataset(
     noise_level: float = 0.0,
     seed: int = 42,
     mu: float = 1.0,
-    omega: float = 1.0,
+    omega: float = 5.0,
 ) -> tuple[list[np.ndarray], np.ndarray, list[np.ndarray]]:
     """
     Generate multiple Hopf trajectories (list-of-trajectories format).
@@ -151,7 +151,7 @@ def generate_hopf_dataset(
     return trajs, times[0], times
 
 
-def build_true_hopf_coefficients(mu: float = 1.0, omega: float = 1.0) -> np.ndarray:
+def build_true_hopf_coefficients(mu: float = 1.0, omega: float = 5.0) -> np.ndarray:
     """
     True polynomial coefficient matrix for the Hopf oscillator.
 
@@ -201,7 +201,7 @@ class HopfMultiTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
 
     # Hopf parameters
     mu: float = 1.0
-    omega: float = 1.0
+    omega: float = 5.0
 
     # SINDy settings
     poly_degree: int = 3
@@ -441,7 +441,7 @@ class HopfIntraTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
 
     # Hopf parameters
     mu: float = 1.0
-    omega: float = 1.0
+    omega: float = 5.0
 
     # per-component noise, as in every Part II case (see the noise function):
     # sigma_i(t) = noise_floor * s_i + noise_level * |x_i(t)|
