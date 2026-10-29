@@ -15,16 +15,16 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from mfsindy.experiments import cli_overrides
 from mfsindy.cases.hopf import (
+    hopf_run_trajectories,
     _hopf_jacobian_norm,
-    generate_hopf_trajectory,
-    hopf_noise_variance,
     HopfIntraTrajectoryGLSConfig,
     _build_hopf_gls_artifacts,
     run_hopf_intra_trajectory_gls_experiment,
 )
 
-from mfsindy.weighted_weak_pde_library import weak_validity_ratio
+from mfsindy.weighted_weak_pde_library import weak_system, weak_validity_ratio
 
 from mfsindy.experiments import (
     REFERENCE_SEED_OFFSET,
@@ -72,11 +72,12 @@ def make_config(**overrides) -> HopfIntraTrajectoryGLSConfig:
 
 
 def _design_artifacts(cfg, run_idx: int):
-    """Run run_idx's data and the four libraries at cfg's support, seeded as
-    the Monte Carlo seeds that run."""
+    """The first trajectory of run run_idx and its four libraries at cfg's
+    support, seeded as the Monte Carlo seeds that run (every trajectory of a run
+    shares the test functions)."""
 
     artifacts = _build_hopf_gls_artifacts(run_idx, cfg, np.random.default_rng(cfg.seed_base + 100 * run_idx))
-    return artifacts
+    return artifacts[0]
 
 
 def weak_design(cfg, *, run_idx: int = 0) -> pd.DataFrame:
@@ -93,16 +94,18 @@ def weak_design(cfg, *, run_idx: int = 0) -> pd.DataFrame:
         artifacts = _design_artifacts(replace(cfg, H_xt=H, K=None), run_idx)
         for method in METHODS:
             library = artifacts.libraries[method]
-            library.fit_transform([artifacts.data])
+            library.fit([artifacts.data])
+            weak_system(library, artifacts.data)
             row = {
                 "K": int(library.K),
                 "duplicates_dropped": int(getattr(library, "n_duplicate_domains_", 0)),
             }
-            chol = getattr(library, "_L_chol", None)
-            if chol is not None:
-                diagonal = np.diag(chol @ chol.T)
+            # One factor per equation when the noise is given per component.
+            chols = getattr(library, "_L_chols", None) or [getattr(library, "_L_chol", None)]
+            if chols[0] is not None:
+                diagonals = [np.diag(L @ L.T) for L in chols]
                 row.update(
-                    diag_spread=float(diagonal.max() / diagonal.min()),
+                    diag_spread=float(max(d.max() / d.min() for d in diagonals)),
                     cov_cond=float(library.cov_cond_),
                     cov_rank_deficit=int(library.cov_rank_deficit_),
                 )
@@ -120,7 +123,18 @@ def supports(cfg) -> list:
 #: ensemble, with the threshold set by BIC inside the ensemble
 #: (mfsindy.experiments.selection): the same procedure for every rung, and no
 #: true coefficients involved. The kappa table covers the same supports.
+#: T/20 leaves 20 test functions per trajectory, at least twice the largest
+#: library (9 terms). T/10 and T/5 go past it; a support is admissible for a
+#: model only if its weak system has at least twice as many rows as library
+#: terms (selection.MIN_ROWS_PER_TERM), which rules them out for one HF trajectory.
 SUPPORT_DIVISORS = (200.0, 100.0, 50.0, 20.0, 10.0, 5.0)
+
+
+def run_trajectories(cfg, run_idx: int = 0):
+    """Run run_idx's trajectories as the Monte Carlo draws them:
+    ``(t, clean, noisy, variance)``, the last three one entry per trajectory."""
+
+    return hopf_run_trajectories(cfg, np.random.default_rng(cfg.seed_base + 100 * run_idx))
 
 
 def reference_trajectory(cfg):
@@ -128,18 +142,8 @@ def reference_trajectory(cfg):
     and a seed disjoint from its runs."""
 
     rng = np.random.default_rng(cfg.seed_base + REFERENCE_SEED_OFFSET)
-    t_eval, clean = generate_hopf_trajectory(
-        u0=rng.uniform(-2.5, 2.5, size=2),
-        T=cfg.t1 - cfg.t0,
-        dt=cfg.dt,
-        mu=cfg.mu,
-        omega=cfg.omega,
-        noise_level=0.0,
-        seed=None,
-    )
-    variance = hopf_noise_variance(clean, cfg)
-    noisy = clean + np.sqrt(variance)[:, None] * rng.standard_normal(size=clean.shape)
-    return noisy, t_eval, variance
+    t_eval, _, noisy, variance = hopf_run_trajectories(cfg, rng)
+    return noisy[0], t_eval, variance[0]
 
 
 def _artifacts(cfg, data, t_grid, variance, H_xt, weak_seed):
@@ -176,7 +180,8 @@ def kappa_by_support(cfg, *, verbose: bool = True) -> pd.DataFrame:
 
     train, t_train, variance_train = reference_trajectory(cfg)
     jacobian = _hopf_jacobian_norm(train, cfg)
-    sigma = np.sqrt(variance_train)
+    # kappa takes one noise level per sample: the components' RMS.
+    sigma = np.sqrt(np.mean(variance_train, axis=1))
     seed = cfg.seed_base + REFERENCE_SEED_OFFSET + 2
 
     rows = []
@@ -216,7 +221,7 @@ def run_monte_carlo(cfg, *, verbose: bool = True) -> pd.DataFrame:
 
 
 def main() -> None:
-    run_monte_carlo(make_config())
+    run_monte_carlo(make_config(**cli_overrides()))
 
 
 if __name__ == "__main__":

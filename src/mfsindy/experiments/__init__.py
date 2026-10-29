@@ -5,12 +5,13 @@ from .base import (
     EnsembleConfigMixin,
     MonteCarloConfig,
     coefficient_errors,
+    cli_overrides,
     paired_comparison,
     run_monte_carlo_experiment,
 )
 from .intra_trajectory import (
     IntraTrajectoryGLSData,
-    fit_intra_trajectory_gls_model_objects,
+    fit_intra_trajectory_gls_optimizers,
     run_intra_trajectory_gls_experiment,
 )
 from .multi_trajectory import (
@@ -30,6 +31,7 @@ from .selection import (
 )
 from .artifacts import (
     build_pde_intra_trajectory_artifacts,
+    build_ode_run_artifacts,
     build_polynomial_intra_trajectory_artifacts,
     get_library_feature_names,
     pde_coverage_test_function_count,
@@ -41,6 +43,7 @@ __all__ = [
     "load_selection",
     "selection_path",
     "coefficient_errors",
+    "cli_overrides",
     "paired_comparison",
     "run_monte_carlo_experiment",
     "MonteCarloConfig",
@@ -54,9 +57,10 @@ __all__ = [
     "fit_multi_trajectory_weak_gls_models",
     "run_multi_trajectory_gls_experiment",
     "IntraTrajectoryGLSData",
-    "fit_intra_trajectory_gls_model_objects",
+    "fit_intra_trajectory_gls_optimizers",
     "run_intra_trajectory_gls_experiment",
     "build_pde_intra_trajectory_artifacts",
+    "build_ode_run_artifacts",
     "build_polynomial_intra_trajectory_artifacts",
     "get_library_feature_names",
     "pde_coverage_test_function_count",

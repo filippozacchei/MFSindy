@@ -15,6 +15,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from mfsindy.experiments import cli_overrides
 from mfsindy.cases.isothermal_flow import (
     NSIsothermalIntraTrajectoryGLSConfig,
     _build_custom_library,
@@ -251,7 +252,7 @@ def run_monte_carlo(cfg, *, verbose: bool = True) -> pd.DataFrame:
 
 
 def main() -> None:
-    run_monte_carlo(make_config())
+    run_monte_carlo(make_config(**cli_overrides()))
 
 
 if __name__ == "__main__":

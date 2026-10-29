@@ -52,12 +52,12 @@ class BurgersConfig(MonteCarloConfig, EnsembleConfigMixin):
 
     # Domain and discretisation
     L: float = 8.0          # half-domain, domain [-L, L]
-    NX: int = 256           # number of spatial points
+    NX: int = 64            # number of spatial points
     t0: float = 0.0
     t1: float = 10.0
     dt: float = 1e-3        # the Part II step shared with the ODE cases; also the
                             # explicit-Euler step of burgers_solver
-    nu: float = 0.1         # viscosity
+    nu: float = 1.0         # viscosity, as in Part I
 
     # Heteroscedastic noise (variance ∝ (alpha * |u_x|)^2)
     noise_level: float = 0.25
@@ -87,10 +87,10 @@ class BurgersMultiTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
 
     # spatial / temporal discretization
     L: float = 8.0
-    NX: int = 256
+    NX: int = 64
     dt: float = 1e-3
     T_train: float = 1.0
-    nu: float = 0.1
+    nu: float = 1.0
 
     # multi-fidelity settings (numbers of trajectories)
     n_lf: int = 10
@@ -280,6 +280,7 @@ def _build_burgers_gls_artifacts(
         function_include_bias=False,
         K=cfg.K,
         H_xt=cfg.H_xt,
+        coverage=cfg.coverage,
         p=cfg.p,
         weak_seed=cfg.seed_base + 1000 + run_idx,
         true_coefficients=build_true_burgers_coefficients(cfg.nu),
@@ -441,7 +442,7 @@ def _burgers_make_weak_library(
         K_requested = int(cfg.K)
     else:
         domain = float(np.prod([2.0 * h for h in np.atleast_1d(H)]))
-        K_requested = max(2, int(round(2.0 * float(np.prod(extents)) / domain)))
+        K_requested = max(2, int(round(cfg.coverage * float(np.prod(extents)) / domain)))
     common_kwargs["K"] = K_requested
     if variance_field is None:
         return DedupedWeakPDELibrary(deduplicate=cfg.deduplicate, **common_kwargs)
@@ -517,7 +518,7 @@ def burgers_weak_design(
         K_requested = int(cfg.K)
     else:
         domain = float(np.prod([2.0 * h for h in np.atleast_1d(H)]))
-        K_requested = max(2, int(round(2.0 * float(np.prod(extents)) / domain)))
+        K_requested = max(2, int(round(cfg.coverage * float(np.prod(extents)) / domain)))
 
     variance_field = np.ones(field_shape, dtype=float)
     library = _burgers_make_weak_library(batch, cfg, variance_field=variance_field)

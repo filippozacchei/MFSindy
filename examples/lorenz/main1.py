@@ -15,6 +15,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from mfsindy.experiments import cli_overrides
 from mfsindy.cases.lorenz import (
     LorenzMultiTrajectoryGLSConfig,
     lorenz_kappa_by_support,
@@ -33,6 +34,10 @@ MODELS = ["HF", "LF", "MF", "VHF", "VLF", "PMF", "VMF", "MF_w"]
 #: among them by the spread of its own ensemble, with the threshold set by BIC
 #: inside the ensemble (mfsindy.experiments.selection): the same procedure for
 #: every model, and no true coefficients involved.
+#: T/20 leaves 20 test functions per trajectory, at least twice the largest
+#: library (9 terms). T/10 and T/5 go past it; a support is admissible for a
+#: model only if its weak system has at least twice as many rows as library
+#: terms (selection.MIN_ROWS_PER_TERM), which rules them out for one HF trajectory.
 SUPPORT_DIVISORS = (200.0, 100.0, 50.0, 20.0, 10.0, 5.0)
 
 
@@ -79,7 +84,7 @@ def run_monte_carlo(cfg, *, verbose: bool = True) -> pd.DataFrame:
 
 
 def main() -> None:
-    cfg = make_config()
+    cfg = make_config(**cli_overrides())
     print(design_report(cfg).to_string(index=False))
     run_monte_carlo(cfg)
 

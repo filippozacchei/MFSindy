@@ -79,12 +79,16 @@ def plot_multifidelity_trajectories(X_hf, X_lf, X_ref):
     plt.show()
 
 
-def plot_trajectories_additive_noise(x_true, alpha=0.15, sigma0=0.0):
-    """Plot a clean pendulum trajectory together with state-dependent noisy samples."""
-    x_true = np.asarray(x_true)
+def plot_trajectories_additive_noise(x_true, cfg):
+    """Plot a clean pendulum trajectory together with state-dependent noisy samples.
 
-    omega_mag = np.abs(x_true[:, 1:2])
-    std = sigma0 + alpha * omega_mag
+    The noise comes from pendulum_noise_variance, the function the Monte Carlo
+    uses, so the plot shows the noise the rungs are fitted on.
+    """
+    from mfsindy.cases.pendulum import pendulum_noise_variance
+
+    x_true = np.asarray(x_true)
+    std = np.sqrt(pendulum_noise_variance(x_true, cfg))   # per component
     x_noisy = x_true + std * np.random.randn(*x_true.shape)
 
     fig, ax = plt.subplots(figsize=(5, 5), dpi=150)

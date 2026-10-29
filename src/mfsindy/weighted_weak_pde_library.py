@@ -396,7 +396,14 @@ class WeightedWeakPDELibrary(DedupedWeakPDELibrary):
         """
         Construct L such that Cov[V] = L L^T with
         Cov[V]_{kℓ} = sum_g w_k[g] w_ℓ[g] σ^2[g].
+
+        The variance field is either shared by every equation (grid shape, or grid
+        shape with a trailing axis of 1) or given per state component (a trailing
+        axis of length d > 1): each equation's weak residual is driven by the noise
+        on its own component, so it then gets a whitener of its own. The conditioning
+        diagnostics report the worst equation.
         """
+        self._L_chols = None
         if self.spatiotemporal_weights is None:
             self._L_chol = None
             return
@@ -407,11 +414,28 @@ class WeightedWeakPDELibrary(DedupedWeakPDELibrary):
 
         if var_grid.shape == expected + (1,):
             var_grid = var_grid[..., 0]
-        elif var_grid.shape != expected:
-            raise ValueError(
-                f"spatiotemporal_weights must have shape {expected} or {expected + (1,)}, "
-                f"got {var_grid.shape}"
-            )
+        if var_grid.shape == expected:
+            self._L_chol = self._whitener_for(var_grid, expected)
+            return
+        if var_grid.ndim == len(expected) + 1 and var_grid.shape[:-1] == expected:
+            factors, worst = [], {}
+            for r in range(var_grid.shape[-1]):
+                factors.append(self._whitener_for(var_grid[..., r], expected))
+                for name in ("cov_cond_", "cov_rank_deficit_", "cov_below_nugget_"):
+                    worst[name] = max(worst.get(name, -np.inf), getattr(self, name))
+                worst["cov_rank_"] = min(worst.get("cov_rank_", np.inf), self.cov_rank_)
+            for name, value in worst.items():
+                setattr(self, name, value)
+            self._L_chols = factors
+            self._L_chol = None
+            return
+        raise ValueError(
+            f"spatiotemporal_weights must have shape {expected}, {expected + (1,)} "
+            f"or {expected} plus a per-component axis, got {var_grid.shape}"
+        )
+
+    def _whitener_for(self, var_grid, expected):
+        """The factor L of Cov[V] for one variance grid, recording its conditioning."""
 
         var_flat = var_grid.ravel(order="C")
         sqrt_var_flat = np.sqrt(var_flat)
@@ -479,8 +503,7 @@ class WeightedWeakPDELibrary(DedupedWeakPDELibrary):
             # the correlations induced by overlapping test-function supports.
             # A diagonal whitener cannot amplify a near-null direction, so the
             # conditioning recorded above does not apply to it.
-            self._L_chol = np.diag(np.sqrt(np.diag(Cov)))
-            return
+            return np.diag(np.sqrt(np.diag(Cov)))
 
         if self.cov_rank_deficit_ > 0:
             warnings.warn(
@@ -494,10 +517,10 @@ class WeightedWeakPDELibrary(DedupedWeakPDELibrary):
             )
 
         try:
-            self._L_chol = np.linalg.cholesky(Cov)
+            return np.linalg.cholesky(Cov)
         except np.linalg.LinAlgError:
             Cov.flat[:: K + 1] += max(1e-10, 1e-6 * avg_diag)
-            self._L_chol = np.linalg.cholesky(Cov)
+            return np.linalg.cholesky(Cov)
 
 
     def _apply_whitener(self, A):
@@ -515,12 +538,32 @@ class WeightedWeakPDELibrary(DedupedWeakPDELibrary):
         if self.spatiotemporal_weights is not None:
             self._build_whitener_from_variance()
 
+    @property
+    def per_equation(self) -> bool:
+        """Whether every equation is whitened by a factor of its own."""
+
+        return getattr(self, "_L_chols", None) is not None
+
     def convert_u_dot_integral(self, u):
-        Vy = super().convert_u_dot_integral(u)  # (K, 1)
-        Vy_w = self._apply_whitener(np.asarray(Vy))
+        Vy = np.asarray(super().convert_u_dot_integral(u))  # (K, d)
+        if self.per_equation:
+            Vy_w = np.column_stack([np.linalg.solve(L, Vy[:, r]) for r, L in enumerate(self._L_chols)])
+        else:
+            Vy_w = self._apply_whitener(Vy)
         return AxesArray(Vy_w, {"ax_sample": 0, "ax_coord": 1})
 
+    def weak_system_per_equation(self, x):
+        """Theta whitened by each equation's own factor: shape (d, K, n_features)."""
+
+        VTheta = np.asarray(super().transform([x])[0])
+        return np.stack([np.linalg.solve(L, VTheta) for L in self._L_chols])
+
     def transform(self, x_full):
+        if self.per_equation:
+            raise ValueError(
+                "This library whitens each equation separately, so there is no single "
+                "whitened Theta; use weak_system(library, x) instead."
+            )
         VTheta_list = super().transform(x_full)  # list of (K, n_features)
         if self._L_chol is None:
             return VTheta_list
@@ -530,3 +573,17 @@ class WeightedWeakPDELibrary(DedupedWeakPDELibrary):
             A_w = self._apply_whitener(A)  # (K, m)
             out.append(AxesArray(A_w, {"ax_sample": 0, "ax_coord": 1}))
         return out
+
+
+def weak_system(library, x):
+    """The weak system (Theta, b) a fitted library poses for trajectory ``x``.
+
+    Theta has shape (K, n_features), or (d, K, n_features) when the library
+    whitens each of the d equations by its own factor; b has shape (K, d).
+    The library must already be fitted.
+    """
+
+    rhs = np.asarray(library.convert_u_dot_integral(x))
+    if getattr(library, "per_equation", False):
+        return library.weak_system_per_equation(x), rhs
+    return np.asarray(library.transform([x])[0]), rhs

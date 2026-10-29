@@ -22,8 +22,13 @@ from mfsindy.weighted_weak_pde_library import WeakCovarianceWarning
 METHODS = ["No weighting", "Ones GLS", "Variance diag", "Variance GLS"]
 
 
+#: The grid and viscosity these properties are stated for, pinned so the tests
+#: do not follow the experiment's defaults while those are being tuned.
+TEST_SETTINGS = dict(NX=256, nu=0.1)
+
+
 def burgers_artifacts(**overrides):
-    cfg = BurgersConfig(n_runs=1, **overrides)
+    cfg = BurgersConfig(n_runs=1, **{**TEST_SETTINGS, **overrides})
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", WeakCovarianceWarning)
         return cfg, _build_burgers_gls_artifacts(

@@ -15,6 +15,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from mfsindy.experiments import cli_overrides
 from mfsindy.cases.burgers import (
     BurgersMultiTrajectoryGLSConfig,
     burgers_kappa_by_support,
@@ -82,7 +83,7 @@ def run_monte_carlo(cfg, *, verbose: bool = True) -> pd.DataFrame:
 
 
 def main() -> None:
-    cfg = make_config()
+    cfg = make_config(**cli_overrides())
     print(design_report(cfg).to_string(index=False))
     run_monte_carlo(cfg)
 

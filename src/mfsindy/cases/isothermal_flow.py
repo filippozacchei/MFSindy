@@ -445,7 +445,7 @@ def _ns_make_weak_library(
         K_requested = int(cfg.K)
     else:
         domain = float(np.prod([2.0 * h for h in np.atleast_1d(H)]))
-        K_requested = max(2, int(round(2.0 * float(np.prod(extents)) / domain)))
+        K_requested = max(2, int(round(cfg.coverage * float(np.prod(extents)) / domain)))
     common_kwargs["K"] = K_requested
     if variance_field is None:
         # Genuinely unweighted, as in the other cases. Passing a field of ones
@@ -599,7 +599,7 @@ def ns_isothermal_weak_design(
         K_requested = int(cfg.K)
     else:
         domain = float(np.prod([2.0 * h for h in np.atleast_1d(H)]))
-        K_requested = max(2, int(round(2.0 * float(np.prod(extents)) / domain)))
+        K_requested = max(2, int(round(cfg.coverage * float(np.prod(extents)) / domain)))
 
     library = _ns_make_weak_library(
         cfg,
@@ -783,7 +783,7 @@ def get_ns_isothermal_feature_names(
             K=(
                 int(cfg.K)
                 if cfg.K is not None
-                else pde_coverage_test_function_count(grid_array, h_xt)
+                else pde_coverage_test_function_count(grid_array, h_xt, cfg.coverage)
             ),
             p=cfg.p,
             H_xt=h_xt,
@@ -877,6 +877,7 @@ def _build_ns_gls_artifacts(
         include_bias=cfg.include_bias,
         K=cfg.K,
         H_xt=_ns_intra_h_xt(cfg),
+        coverage=cfg.coverage,
         p=cfg.p,
         weak_seed=cfg.seed_base + 1000 + run_idx,
         true_coefficients=true_coefficients,
@@ -958,6 +959,7 @@ def build_ns_isothermal_intra_trajectory_artifacts(
         include_bias=cfg.include_bias,
         K=cfg.K,
         H_xt=_ns_intra_h_xt(cfg),
+        coverage=cfg.coverage,
         p=cfg.p,
         weak_seed=cfg.seed_base if weak_seed is None else int(weak_seed),
         true_coefficients=(

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, List
 
 import numpy as np
-import pysindy as ps
+from mfsindy.weighted_weak_pde_library import weak_system
 
 from .base import (
     EnsembleConfigMixin,
@@ -27,26 +27,40 @@ class IntraTrajectoryGLSData:
     true_coefficients: np.ndarray
 
 
-def fit_intra_trajectory_gls_model_objects(
+def fit_intra_trajectory_gls_optimizers(
     cfg: EnsembleConfigMixin,
-    artifacts: IntraTrajectoryGLSData,
+    artifacts: IntraTrajectoryGLSData | List[IntraTrajectoryGLSData],
     methods: List[str],
-) -> Dict[str, ps.SINDy]:
-    """Fit GLS models for each weighting strategy and return the model objects."""
+) -> Dict[str, Any]:
+    """Fit each weighting on its weak system and return the fitted optimizers.
 
-    models: Dict[str, ps.SINDy] = {}
+    The weak system is assembled directly, as in Part I, rather than through
+    ``ps.SINDy``: a library that whitens each equation by its own factor (noise
+    given per state component) poses one design matrix per equation, which the
+    ensemble optimizer takes as is. With several trajectories, each is whitened
+    by its own covariance and the systems are stacked: the noise is independent
+    between trajectories, so the joint covariance is block diagonal.
+    """
+
+    batch = artifacts if isinstance(artifacts, list) else [artifacts]
+    optimizers: Dict[str, Any] = {}
     for method in methods:
-        library = artifacts.libraries[method]
-        model = ps.SINDy(feature_library=library, optimizer=cfg.make_optimizer())
-        model.fit(artifacts.data, t=artifacts.t_argument)
-        models[method] = model
-    return models
+        systems = []
+        for a in batch:
+            library = a.libraries[method]
+            library.fit([a.data])
+            systems.append(weak_system(library, a.data))
+        # Rows are the second-to-last axis of theta: (n, p), or (d, n, p) per equation.
+        theta = np.concatenate([t for t, _ in systems], axis=-2)
+        rhs = np.concatenate([r for _, r in systems], axis=0)
+        optimizers[method] = cfg.make_optimizer().fit(theta, rhs)
+    return optimizers
 
 
 def run_intra_trajectory_gls_experiment(
     cfg: MonteCarloConfig,
     *,
-    run_builder: Callable[[int, Any], IntraTrajectoryGLSData],
+    run_builder: Callable[[int, Any], IntraTrajectoryGLSData | List[IntraTrajectoryGLSData]],
     progress_desc: str,
     methods: List[str] | None = None,
     metric1_name: str = "L1",
@@ -92,9 +106,8 @@ def run_intra_trajectory_gls_experiment(
         fits, true = {}, None
         for variant in support_variants(cfg):
             artifacts = run_builder(run_idx, variant)
-            true = artifacts.true_coefficients
-            models = fit_intra_trajectory_gls_model_objects(variant, artifacts, methods)
-            fits[support_key(variant.H_xt)] = {m: model.optimizer for m, model in models.items()}
+            true = (artifacts[0] if isinstance(artifacts, list) else artifacts).true_coefficients
+            fits[support_key(variant.H_xt)] = fit_intra_trajectory_gls_optimizers(variant, artifacts, methods)
         coef_map, trace = select_rungs(fits, coef_postprocess)
         errors = {
             method: coefficient_errors(coef_map[method], true, **error_kwargs(method))
@@ -124,6 +137,6 @@ def run_intra_trajectory_gls_experiment(
 
 __all__ = [
     "IntraTrajectoryGLSData",
-    "fit_intra_trajectory_gls_model_objects",
+    "fit_intra_trajectory_gls_optimizers",
     "run_intra_trajectory_gls_experiment",
 ]

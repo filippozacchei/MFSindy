@@ -16,7 +16,10 @@ __all__ = [
     "bubble_hist",
     "plot_coefficient_ensembles",
     "plot_coefficient_runs",
+    "plot_run_trajectories",
     "plot_selection",
+    "plot_state_noise",
+    "plot_threshold_path",
 ]
 
 def bubble_hist(
@@ -345,6 +348,160 @@ def plot_selection(
         fig.legend(handles, labels, loc="center left", bbox_to_anchor=(1.0, 0.5), frameon=False,
                    handlelength=1.4)
         fig.tight_layout(w_pad=1.0)
+        _finish(fig, save_path, show)
+
+
+def plot_threshold_path(
+    record: Mapping,
+    *,
+    rungs: list[str] | tuple[str, ...],
+    colors: Mapping[str, str] | None = None,
+    highlight: Iterable[str] = ("MF_w", "VMF", "Variance GLS", "Variance diag"),
+    equation_names: Iterable[str] | None = None,
+    save_path: str | None = None,
+    show: bool = True,
+) -> None:
+    """The whole threshold sweep behind the BIC choice, for one run.
+
+    One column per equation; along the x-axis every threshold tried, relative to
+    the equation's largest least-squares coefficient. Rows: the terms the median
+    model keeps, its RSS relative to the rung's best fit, and its BIC relative to
+    the minimum. Each rung is shown at the support it chose, and the threshold
+    BIC picked is filled. :func:`plot_selection` shows the same sweep reduced to
+    its Pareto front.
+    """
+
+    colors = dict(colors or {})
+    highlight = set(highlight)
+    by_rung = record["rungs"]
+    first = by_rung[rungs[0]]["by_support"][by_rung[rungs[0]]["support"]]
+    n_eq = np.asarray(first["rss"]).shape[1]
+    names = [_dot(n) for n in equation_names] if equation_names is not None else [f"eq. {j}" for j in range(n_eq)]
+    rows = (("nnz", "terms kept", False), ("rss", "RSS / min RSS", True), ("bic", "BIC $-$ min BIC", False))
+
+    with plt.rc_context(_RC):
+        fig, axes = plt.subplots(3, n_eq, figsize=(1.9 * n_eq + 0.9, 4.2), sharex=True, squeeze=False)
+        for j in range(n_eq):
+            for rung in rungs:
+                rec = by_rung[rung]["by_support"][by_rung[rung]["support"]]
+                lam = np.asarray(rec["thresholds"])[:, j]
+                lam = lam / lam.max()
+                i = int(np.asarray(rec["choice"])[j])
+                strong = rung in highlight
+                st = dict(color=colors.get(rung, "k"), lw=1.2 if strong else 0.7,
+                          alpha=1.0 if strong else 0.55, zorder=3 if strong else 2)
+                for r, (key, _, _) in enumerate(rows):
+                    y = np.asarray(rec[key], dtype=float)[:, j]
+                    if key == "rss":
+                        y = y / max(y.min(), 1e-300)
+                    elif key == "bic":
+                        y = y - y.min()
+                    ax = axes[r, j]
+                    ax.plot(lam, y, "-", label=_label(rung) if (r, j) == (0, 0) else None, **st)
+                    ax.plot(lam[i], y[i], "o", ms=3.2, color=st["color"], alpha=st["alpha"], zorder=4)
+            axes[0, j].set_title(names[j])
+            axes[-1, j].set_xlabel("threshold / max coefficient")
+            for r, (_, label, logy) in enumerate(rows):
+                ax = axes[r, j]
+                ax.set_xscale("log")
+                if logy:
+                    ax.set_yscale("log")
+                elif r == 2:
+                    ax.set_yscale("symlog", linthresh=10)
+                    ax.set_ylim(bottom=-1)          # BIC - min BIC is never negative
+                if r == 0:
+                    ax.yaxis.set_major_locator(plt.MaxNLocator(integer=True))
+                if j == 0:
+                    ax.set_ylabel(label)
+                ax.tick_params(axis="y", length=2)
+        handles, labels = axes[0, 0].get_legend_handles_labels()
+        fig.legend(handles, labels, loc="center left", bbox_to_anchor=(1.0, 0.5), frameon=False,
+                   handlelength=1.4)
+        fig.tight_layout(h_pad=0.6, w_pad=1.0)
+        _finish(fig, save_path, show)
+
+
+def plot_run_trajectories(
+    clean: list,
+    noisy: list,
+    *,
+    dims: tuple[int, int] = (0, 1),
+    state_names: Iterable[str] | None = None,
+    reference: tuple[np.ndarray, np.ndarray] | None = None,
+    reference_label: str = "",
+    every: int = 5,
+    color: str = "#2f6fae",
+    save_path: str | None = None,
+    show: bool = True,
+) -> None:
+    """The trajectories of one run in the plane of two state components.
+
+    Each trajectory's noisy samples (every ``every``-th) and clean path, with its
+    start marked. ``reference`` is an optional curve drawn dashed, such as a
+    limit cycle.
+    """
+
+    i, j = dims
+    d = np.asarray(clean[0]).shape[1]
+    names = [_tex(n) for n in state_names] if state_names is not None else [f"$x_{k}$" for k in range(d)]
+    with plt.rc_context(_RC):
+        fig, ax = plt.subplots(figsize=(3.2, 3.2))
+        for x, y in zip(clean, noisy):
+            x, y = np.asarray(x), np.asarray(y)
+            ax.plot(y[::every, i], y[::every, j], ".", ms=1.0, color=color, alpha=0.35, rasterized=True)
+            ax.plot(x[:, i], x[:, j], "-", lw=0.8, color="k")
+            ax.plot(x[0, i], x[0, j], "o", ms=2.5, color="k")
+        if reference is not None:
+            ax.plot(*reference, "--", lw=0.8, color="0.4", label=reference_label or None)
+            if reference_label:
+                ax.legend(loc="upper right", frameon=False, fontsize=6)
+        ax.set_xlabel(names[i])
+        ax.set_ylabel(names[j])
+        ax.set_aspect("equal", "datalim")
+        fig.tight_layout()
+        _finish(fig, save_path, show)
+
+
+def plot_state_noise(
+    t: np.ndarray,
+    x_clean: np.ndarray,
+    x_noisy: np.ndarray,
+    sigma: np.ndarray,
+    *,
+    state_names: Iterable[str] | None = None,
+    every: int = 10,
+    color: str = "#2f6fae",
+    save_path: str | None = None,
+    show: bool = True,
+) -> None:
+    """Each state component against time: clean, noisy, and its noise level.
+
+    One panel per component, sharing the time axis: the noisy samples (every
+    ``every``-th, so the trace stays readable), the clean signal, and a band of
+    plus or minus two standard deviations of that component's noise, which shows
+    where each component is quiet and where it is loud.
+    """
+
+    t = np.asarray(t, dtype=float)
+    x_clean, x_noisy = np.asarray(x_clean, dtype=float), np.asarray(x_noisy, dtype=float)
+    sigma = np.asarray(sigma, dtype=float)
+    sigma = np.broadcast_to(sigma[:, None] if sigma.ndim == 1 else sigma, x_clean.shape)
+    d = x_clean.shape[1]
+    names = [_tex(n) for n in state_names] if state_names is not None else [f"$x_{i}$" for i in range(d)]
+
+    with plt.rc_context(_RC):
+        fig, axes = plt.subplots(d, 1, figsize=(6.5, 0.95 * d + 0.4), sharex=True, squeeze=False)
+        for i, ax in enumerate(axes[:, 0]):
+            ax.fill_between(t, x_clean[:, i] - 2 * sigma[:, i], x_clean[:, i] + 2 * sigma[:, i],
+                            color=color, alpha=0.18, lw=0, label=r"$\pm 2\sigma_i$")
+            ax.plot(t[::every], x_noisy[::every, i], ".", ms=1.2, color=color, alpha=0.6,
+                    label="noisy", rasterized=True)
+            ax.plot(t, x_clean[:, i], "-", lw=0.8, color="k", label="clean")
+            ax.set_ylabel(names[i])
+            ax.tick_params(axis="y", length=2)
+        axes[-1, 0].set_xlabel("$t$")
+        axes[0, 0].legend(loc="upper right", ncol=3, frameon=False, fontsize=6, markerscale=4)
+        fig.tight_layout(h_pad=0.3)
         _finish(fig, save_path, show)
 
 

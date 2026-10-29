@@ -16,6 +16,7 @@ from scipy.integrate import solve_ivp
 import pysindy as ps
 
 from mfsindy.experiments import (
+    build_ode_run_artifacts,
     EnsembleConfigMixin,
     IntraTrajectoryGLSData,
     MonteCarloConfig,
@@ -291,7 +292,7 @@ def _lorenz_make_weak_library(
     if cfg.K is not None:
         K_requested = int(cfg.K)
     else:
-        K_requested = max(2, int(round(extent / H)))
+        K_requested = max(2, int(round(cfg.coverage / 2 * extent / H)))
     common_kwargs["K"] = K_requested
 
     if variance_field is None:
@@ -418,7 +419,7 @@ def lorenz_weak_design(
     extent = float(t_values.max() - t_values.min())
     H = cfg.H_xt if cfg.H_xt is not None else extent / 20.0
     K_requested = (
-        int(cfg.K) if cfg.K is not None else max(2, int(round(extent / H)))
+        int(cfg.K) if cfg.K is not None else max(2, int(round(cfg.coverage / 2 * extent / H)))
     )
 
     variance_field = np.full(batch.hf[0].shape[:-1], noise_hf_abs**2, dtype=float)
@@ -443,13 +444,14 @@ class LorenzIntraTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
 
     # time discretisation
     t0: float = 0.0
-    t1: float = 10.0
+    t1: float = 1.0
+    n_traj: int = 10                # trajectories per run, each from its own start
     dt: float = 1e-3
 
-    # heteroscedastic noise level: sigma(t) = noise_level * |U(t)| over the
-    # components noise_model names (see lorenz_noise_variance)
-    noise_level: float = 0.25
-    noise_model: str = "xy"
+    # per-component noise, as in every Part II case (see lorenz_noise_variance):
+    # sigma_i(t) = noise_floor * s_i + noise_level * |x_i(t)|
+    noise_level: float = 0.15
+    noise_floor: float = 1e-4
 
     # weak-library settings
     poly_degree: int = 2
@@ -470,147 +472,55 @@ class LorenzIntraTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
 
 
 def lorenz_noise_variance(U_clean: np.ndarray, cfg) -> np.ndarray:
-    """Pointwise noise variance along a clean Lorenz trajectory.
+    """Pointwise noise variance per state component, shape (n_samples, n_states).
 
-    ``"xy"`` (the default) scales the noise with the distance from the z axis,
-    ``"norm"`` with the full state norm. The difference is whether the
-    trajectory has clean regions. Under ``"norm"`` the relative noise
-    sigma/|U| is exactly ``noise_level`` everywhere, so no stretch of the
-    trajectory is quieter than any other relative to its own signal, and a
-    weighting has nothing to exploit. Under ``"xy"`` it falls towards zero
-    wherever the trajectory crosses between the lobes, while z -- and so the
-    dynamics -- stays large there. ``"norm"`` is kept as the counter-case.
+    sigma_i(t) = noise_floor * s_i + noise_level * |x_i(t)|: the two-component
+    measurement-error model (an absolute floor plus an error proportional to the
+    reading; Rocke & Lorenzato 1995), applied to each component as if it had its
+    own sensor. s_i is the spread of component i along the trajectory, so the
+    floor is in that component's units.
     """
 
-    if cfg.noise_model == "norm":
-        magnitude = np.linalg.norm(U_clean, axis=1)
-    elif cfg.noise_model == "xy":
-        magnitude = np.linalg.norm(U_clean[:, :2], axis=1)
-    else:
-        raise ValueError(f"noise_model must be 'norm' or 'xy', got {cfg.noise_model!r}.")
-    return np.maximum((cfg.noise_level * magnitude) ** 2, 1e-8)
+    U_clean = np.asarray(U_clean, dtype=float)
+    scale = np.std(U_clean, axis=0)
+    sigma = cfg.noise_floor * scale + cfg.noise_level * np.abs(U_clean)
+    return np.maximum(sigma ** 2, 1e-12)
+
+
+def lorenz_run_trajectories(cfg: LorenzIntraTrajectoryGLSConfig, rng: np.random.Generator):
+    """The cfg.n_traj trajectories of one Part II run, as ``(t, clean, noisy, variance)``.
+
+    Starts are uniform on [-20, 20]^3. Each trajectory gets its own noise,
+    drawn from lorenz_noise_variance. The Monte Carlo builder, main2.py and the
+    notebook all draw through this function, so they show the same data.
+    """
+    clean, noisy, variances = [], [], []
+    for _ in range(cfg.n_traj):
+        t_eval, U_clean, _ = generate_lorenz_trajectory(
+            y0=rng.uniform(-20.0, 20.0, size=3),
+            T=cfg.t1 - cfg.t0,
+            dt=cfg.dt,
+            noise_level=0.0,
+            seed=None,
+        )
+        variance = lorenz_noise_variance(U_clean, cfg)
+        clean.append(U_clean)
+        noisy.append(U_clean + np.sqrt(variance) * rng.standard_normal(size=U_clean.shape))
+        variances.append(variance)
+    return t_eval, clean, noisy, variances
 
 
 def _make_lorenz_gls_artifacts(
     run_idx: int,
     cfg: LorenzIntraTrajectoryGLSConfig,
     rng: np.random.Generator,
-) -> IntraTrajectoryGLSData:
-    """Build data and libraries for one Lorenz GLS run."""
-    # 1) Clean trajectory from random initial condition
-    u0 = rng.uniform(-20.0, 20.0, size=3)
-    T = cfg.t1 - cfg.t0
-    t_eval, U_clean, _ = generate_lorenz_trajectory(
-        y0=u0,
-        T=T,
-        dt=cfg.dt,
-        noise_level=0.0,
-        seed=None,
-    )
-
-    # 2) Heteroscedastic noise, as lorenz_noise_variance defines it
-    variance = lorenz_noise_variance(U_clean, cfg)
-    std = np.sqrt(variance)
-    noise = std[:, None] * rng.standard_normal(size=U_clean.shape)
-    U_noisy = U_clean + noise
-
-    # 3) Spatiotemporal grid and polynomial library
-    XT = t_eval[:, None]
-    base_library = ps.PolynomialLibrary(
-        degree=cfg.poly_degree,
-        include_bias=cfg.include_bias,
-    )
-
-    # K and the support width are resolved exactly as in Part I: the support sets
-    # the count at coverage 2, so a wider test function gets proportionally fewer.
-    # Part II previously asked for five times as many, of which a third were
-    # duplicates of each other.
-    t_values = np.asarray(XT, dtype=float).ravel()
-    extent = float(t_values.max() - t_values.min())
-    H_weak = cfg.H_xt if cfg.H_xt is not None else extent / 20.0
-    if cfg.K is not None:
-        K_weak = int(cfg.K)
-    else:
-        K_weak = max(2, int(round(extent / H_weak)))
-
-    tf_seed = cfg.seed_base + 1000 + run_idx
-
-    # 3a) Unweighted weak library
-    np.random.seed(tf_seed)
-    weak_lib = DedupedWeakPDELibrary(
-        function_library=base_library,
-        derivative_order=cfg.derivative_order,
-        spatiotemporal_grid=XT,
-        is_uniform=True,
-        K=K_weak,
-        p=cfg.p,
-        H_xt=H_weak,
-        include_bias=cfg.include_bias,
-    )
-
-    # 3b) Weighted-by-variance weak library
-    weights_scaled = variance / np.mean(variance)
-    np.random.seed(tf_seed)
-    weighted_weak_lib_var = WeightedWeakPDELibrary(
-        function_library=base_library,
-        derivative_order=cfg.derivative_order,
-        spatiotemporal_grid=XT,
-        spatiotemporal_weights=weights_scaled,
-        is_uniform=True,
-        K=K_weak,
-        p=cfg.p,
-        H_xt=H_weak,
-        include_bias=cfg.include_bias,
-    )
-
-    # 3c) Weighted-by-ones weak library
-    np.random.seed(tf_seed)
-    weighted_weak_lib_ones = WeightedWeakPDELibrary(
-        function_library=base_library,
-        derivative_order=cfg.derivative_order,
-        spatiotemporal_grid=XT,
-        spatiotemporal_weights=np.ones_like(variance),
-        is_uniform=True,
-        K=K_weak,
-        p=cfg.p,
-        H_xt=H_weak,
-        include_bias=cfg.include_bias,
-    )
-
-    C_true = build_true_coefficient_matrix()
-
-
-    # Same heteroscedastic covariance, diagonal only: each weak equation is
-    # weighted by its own variance, with the correlations between overlapping
-    # test functions discarded. In Part I this rung collapses to one scalar per
-    # group, because the variance is constant along a trajectory there. Here it
-    # does not -- the diagonal spans a factor of ~50 -- so this is what isolates
-    # the off-diagonal contribution from the variance weighting.
-    np.random.seed(tf_seed)
-    weighted_weak_lib_var_diag = WeightedWeakPDELibrary(
-        function_library=base_library,
-        derivative_order=cfg.derivative_order,
-        spatiotemporal_grid=XT,
-        spatiotemporal_weights=weights_scaled,
-        is_uniform=True,
-        K=K_weak,
-        p=cfg.p,
-        H_xt=H_weak,
-        include_bias=cfg.include_bias,
-        whitener_mode="diag",
-    )
-    libraries = {
-        "No weighting": weak_lib,
-        "Variance GLS": weighted_weak_lib_var,
-        "Ones GLS": weighted_weak_lib_ones,
-        "Variance diag": weighted_weak_lib_var_diag,
-    }
-
-    return IntraTrajectoryGLSData(
-        data=U_noisy,
-        t_argument=t_eval,
-        libraries=libraries,
-        true_coefficients=C_true,
+) -> list[IntraTrajectoryGLSData]:
+    """The trajectories of one Lorenz GLS run and their libraries."""
+    t_eval, _, noisy, variances = lorenz_run_trajectories(cfg, rng)
+    return build_ode_run_artifacts(
+        cfg, noisy, t_eval, variances,
+        weak_seed=cfg.seed_base + 1000 + run_idx,
+        true_coefficients=build_true_coefficient_matrix(),
     )
 
 

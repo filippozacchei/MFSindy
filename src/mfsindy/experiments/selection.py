@@ -10,8 +10,16 @@ procedure on its own (whitened, where weighted) weak system.
   threshold that minimises it. BIC picks a point on the fit-complexity Pareto
   front, with the trade-off fixed by log N.
 - Support. The rung is fitted at every support of a grid and keeps the one whose
-  bagged coefficients are tightest: the median, over the terms kept, of their
-  interquartile range relative to their magnitude.
+  bagged least-squares coefficients, before any thresholding, are tightest: the
+  median, over every term of the library, of their interquartile range relative
+  to the largest coefficient of the equation. The support is judged on the
+  unthresholded fit so the threshold cannot influence it: measured on the kept
+  terms only, a support where BIC cuts true terms (on Hopf, the near-cancelling
+  radial terms) left a sparse model that the bags agree on closely, and won.
+  A support is admissible only if its weak system has at least twice as many
+  rows as library terms: below that, the minimum-norm bags of an underdetermined
+  system agree with each other without identifying anything, and the spread
+  cannot see it (single-trajectory HF at the widest supports).
 
 Tested against the alternatives on the ODE benchmarks (scratch/esindy, scratch/
 support, scratch/mstls): WSINDy's MSTLS drops true terms when the library is small
@@ -66,26 +74,55 @@ class BICEnsembleSTLSQ(BaseOptimizer):
         self.n_models = n_models
         self.n_thresholds = n_thresholds
 
+    def fit(self, x, y, **kwargs):
+        """Fit on one shared design, or on one design per equation.
+
+        ``x`` of shape (d, n, p) gives equation j its own design ``x[j]``, as a
+        library that whitens each equation separately produces; the bags still
+        draw the same rows (test functions) for every equation.
+        """
+
+        x = np.asarray(x, dtype=float)
+        if x.ndim != 3:
+            return super().fit(x, y, **kwargs)
+        y = np.asarray(y, dtype=float)
+        y = y[:, None] if y.ndim == 1 else y
+        if x.shape[0] != y.shape[1] or x.shape[1] != y.shape[0]:
+            raise ValueError(f"per-equation designs {x.shape} do not match targets {y.shape}.")
+        self._solve(list(x), y)
+        self.ind_ = np.abs(self.coef_) > 1e-14
+        return self
+
     def _reduce(self, x, y):
-        n, p = x.shape
+        self._solve([x] * y.shape[1], y)
+
+    def _solve(self, designs, y):
+        n, p = designs[0].shape
+        self.n_rows_, self.n_terms_ = n, p
         t = y.shape[1]
         bags = [np.random.randint(0, n, n) for _ in range(self.n_models)]
-        w_ls = np.linalg.lstsq(x, y, rcond=None)[0]                       # (p, t)
-        scale = np.max(np.abs(w_ls), axis=0)
+        scale = np.array([np.max(np.abs(np.linalg.lstsq(designs[j], y[:, j], rcond=None)[0]))
+                          for j in range(t)])
         thresholds = np.geomspace(1e-3, 1.0, self.n_thresholds)[:, None] * scale[None, :]
 
         coefs = np.zeros((self.n_thresholds, self.n_models, t, p))
+        ls = np.zeros((self.n_models, t, p))
         for j in range(t):
+            G = designs[j]
+            for k, rows in enumerate(bags):
+                ls[k, j] = np.linalg.lstsq(G[rows], y[rows, j], rcond=None)[0]
             for i in range(self.n_thresholds):
                 for k, rows in enumerate(bags):
-                    coefs[i, k, j] = _stlsq(x[rows], y[rows, j], thresholds[i, j], self.max_iter)
+                    coefs[i, k, j] = _stlsq(G[rows], y[rows, j], thresholds[i, j], self.max_iter)
 
         median = np.median(coefs, axis=1)                                  # (n_thr, t, p)
-        rss = np.sum((np.einsum("np,itp->itn", x, median) - y.T[None]) ** 2, axis=2)
+        rss = np.stack([np.sum((designs[j] @ median[:, j].T - y[:, [j]]) ** 2, axis=0)
+                        for j in range(t)], axis=1)                        # (n_thr, t)
         nnz = np.count_nonzero(median, axis=2)
         bic = n * np.log(np.maximum(rss, 1e-300) / n) + nnz * np.log(n)
         choice = np.argmin(bic, axis=0)                                    # first minimiser
 
+        self.ls_coef_list = ls
         self.coef_list = np.stack([coefs[choice[j], :, j] for j in range(t)], axis=1)
         self.coef_ = np.stack([median[choice[j], j] for j in range(t)])
         self.selection_ = {"thresholds": thresholds, "rss": rss, "nnz": nnz, "bic": bic,
@@ -93,25 +130,36 @@ class BICEnsembleSTLSQ(BaseOptimizer):
 
     @property
     def spread_(self) -> float:
-        """Median relative IQR of the bagged coefficients over the terms kept."""
+        """Median IQR of the bagged least-squares coefficients, before thresholding,
+        each relative to the largest coefficient magnitude of its equation."""
 
-        kept = self.coef_ != 0
-        if not kept.any():
-            return float("inf")
-        q75, q25 = np.percentile(self.coef_list, [75, 25], axis=0)
-        return float(np.median((q75 - q25)[kept] / np.abs(self.coef_[kept])))
+        q75, q50, q25 = np.percentile(self.ls_coef_list, [75, 50, 25], axis=0)   # (t, p)
+        scale = np.max(np.abs(q50), axis=1, keepdims=True)
+        return float(np.median((q75 - q25) / np.maximum(scale, 1e-300)))
+
+
+#: A support is admissible when its weak system has at least this many rows per
+#: library term.
+MIN_ROWS_PER_TERM = 2
 
 
 def select_support(fits_by_support: Mapping[Any, Mapping[str, Any]]) -> Dict[str, Any]:
-    """Per rung, the support whose fitted optimizer has the smallest spread.
+    """Per rung, the admissible support whose unthresholded bags have the smallest spread.
 
     ``fits_by_support`` maps each candidate support, as :func:`support_key`, to
-    ``{rung: optimizer}``. Ties keep the first support in grid order.
+    ``{rung: optimizer}``. Admissible supports have at least
+    ``MIN_ROWS_PER_TERM`` rows per library term; if none is, every support is a
+    candidate. Ties keep the first support in grid order.
     """
 
     supports = list(fits_by_support)
     rungs = list(fits_by_support[supports[0]])
-    return {rung: min(supports, key=lambda H: fits_by_support[H][rung].spread_) for rung in rungs}
+    chosen = {}
+    for rung in rungs:
+        fits = {H: fits_by_support[H][rung] for H in supports}
+        admissible = [H for H, f in fits.items() if f.n_rows_ >= MIN_ROWS_PER_TERM * f.n_terms_]
+        chosen[rung] = min(admissible or supports, key=lambda H: fits[H].spread_)
+    return chosen
 
 
 def selection_record(optimizer: BICEnsembleSTLSQ) -> Dict[str, Any]:

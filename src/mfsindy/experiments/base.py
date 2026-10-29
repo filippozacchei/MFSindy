@@ -18,6 +18,17 @@ from .selection import BICEnsembleSTLSQ
 REFERENCE_SEED_OFFSET = 900_000
 
 
+def cli_overrides(argv: Sequence[str] | None = None) -> Dict[str, Any]:
+    """Config overrides from a main script's command line: ``--runs N`` sets n_runs."""
+
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--runs", type=int, default=None, help="Monte Carlo runs (default: the config's)")
+    args = parser.parse_args(argv)
+    return {} if args.runs is None else {"n_runs": args.runs}
+
+
 def coefficient_errors(
     C_est: np.ndarray,
     C_true: np.ndarray,
@@ -171,6 +182,10 @@ class EnsembleConfigMixin:
     n_ensemble_models: int = 100
     n_thresholds: int = 20
     H_grid: Optional[Sequence[Any]] = None
+    #: How many test functions cover each point on average. K follows from it and
+    #: the support (K = coverage * volume / support volume; extent / H for ODEs at
+    #: the default), so a wider support gets proportionally fewer test functions.
+    coverage: float = 2.0
 
     def make_optimizer(self) -> BICEnsembleSTLSQ:
         return BICEnsembleSTLSQ(n_models=self.n_ensemble_models, n_thresholds=self.n_thresholds)

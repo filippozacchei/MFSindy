@@ -13,6 +13,7 @@ import pandas as pd
 import pysindy as ps
 
 from mfsindy.experiments import (
+    build_ode_run_artifacts,
     EnsembleConfigMixin,
     IntraTrajectoryGLSData,
     MonteCarloConfig,
@@ -53,6 +54,21 @@ def hopf(
     ])
 
 
+#: Starting radii: every trajectory starts at least 0.5 away from the limit
+#: cycle (r = sqrt(mu) = 1). The radial terms of the model vanish on the cycle,
+#: so only the transient towards it identifies them; a start on or near the
+#: cycle leaves nothing to identify them from, whatever the weighting.
+START_RADIUS = (1.5, 2.5)
+
+
+def sample_hopf_initial_condition(rng: np.random.Generator) -> np.ndarray:
+    """A starting point with radius uniform in START_RADIUS and uniform angle."""
+
+    radius = rng.uniform(*START_RADIUS)
+    angle = rng.uniform(0.0, 2.0 * np.pi)
+    return radius * np.array([np.cos(angle), np.sin(angle)])
+
+
 def generate_hopf_trajectory(
     u0: np.ndarray | None = None,
     T: float = 10.0,
@@ -76,7 +92,7 @@ def generate_hopf_trajectory(
     t = np.arange(0.0, T, dt)
 
     if u0 is None:
-        u0 = rng.uniform(-2.0, 2.0, size=2)
+        u0 = sample_hopf_initial_condition(rng)
 
     sol = solve_ivp(
         hopf,
@@ -119,7 +135,7 @@ def generate_hopf_dataset(
     times: list[np.ndarray] = []
 
     for i in range(n_traj):
-        u0 = rng.uniform(-2.5, 2.5, size=2)
+        u0 = sample_hopf_initial_condition(rng)
         t, U = generate_hopf_trajectory(
             u0=u0,
             T=T,
@@ -282,7 +298,7 @@ def _hopf_make_weak_library(
         # 10 ~1e7 -- while the support sets kappa, the validity of the
         # covariance model. Two keeps both in hand: it doubles the number of
         # weak equations over a bare tiling while leaving cond in the hundreds.
-        K_requested = max(2, int(round(extent / H)))
+        K_requested = max(2, int(round(cfg.coverage / 2 * extent / H)))
     common_kwargs["K"] = K_requested
 
     if variance_field is None:
@@ -359,7 +375,7 @@ def hopf_weak_design(
     t_values = np.asarray(batch.metadata["t_grid"], dtype=float).ravel()
     extent = float(t_values.max() - t_values.min())
     H = cfg.H_xt if cfg.H_xt is not None else extent / 20.0
-    K_requested = int(cfg.K) if cfg.K is not None else max(2, int(round(extent / H)))
+    K_requested = int(cfg.K) if cfg.K is not None else max(2, int(round(cfg.coverage / 2 * extent / H)))
 
     variance_field = np.full(batch.hf[0].shape[:-1], noise_hf_abs**2, dtype=float)
     library = _hopf_make_weak_library(batch, cfg, variance_field=variance_field)
@@ -419,19 +435,18 @@ class HopfIntraTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
 
     # time discretisation
     t0: float = 0.0
-    t1: float = 10.0
+    t1: float = 1.0
+    n_traj: int = 10                # trajectories per run, each from its own start
     dt: float = 1e-3
 
     # Hopf parameters
     mu: float = 1.0
     omega: float = 1.0
 
-    # heteroscedastic noise model: sigma(t) = sigma0 + alpha * |r(t) - r*|.
-    # sigma0 is the floor on the limit cycle, where the trajectory spends ~90%
-    # of its time: the lower it is against the transient's noise, the cleaner
-    # that region, and the more a weighting has to exploit.
-    sigma0: float = 1e-3
-    alpha: float = 0.25
+    # per-component noise, as in every Part II case (see the noise function):
+    # sigma_i(t) = noise_floor * s_i + noise_level * |x_i(t)|
+    noise_level: float = 0.15
+    noise_floor: float = 1e-4
 
     # weak-library settings
     poly_degree: int = 3
@@ -448,130 +463,56 @@ class HopfIntraTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
     results_filename: str = "hopf_weighted_errors.csv"
     
 def hopf_noise_variance(U_clean: np.ndarray, cfg) -> np.ndarray:
-    """Pointwise noise variance, sigma0 + alpha * |r - r*|, along a clean trajectory."""
+    """Pointwise noise variance per state component, shape (n_samples, n_states).
 
-    distance = np.abs(np.linalg.norm(U_clean, axis=1) - np.sqrt(cfg.mu))
-    return np.maximum((cfg.sigma0 + cfg.alpha * distance) ** 2, 1e-10)
+    sigma_i(t) = noise_floor * s_i + noise_level * |x_i(t)|: the two-component
+    measurement-error model (an absolute floor plus an error proportional to the
+    reading; Rocke & Lorenzato 1995), applied to each component as if it had its
+    own sensor. s_i is the spread of component i along the trajectory, so the
+    floor is in that component's units.
+    """
+
+    U_clean = np.asarray(U_clean, dtype=float)
+    scale = np.std(U_clean, axis=0)
+    sigma = cfg.noise_floor * scale + cfg.noise_level * np.abs(U_clean)
+    return np.maximum(sigma ** 2, 1e-12)
+
+
+def hopf_run_trajectories(cfg: HopfIntraTrajectoryGLSConfig, rng: np.random.Generator):
+    """The cfg.n_traj trajectories of one Part II run, as ``(t, clean, noisy, variance)``.
+
+    Starts are uniform on [-2, 2]^2, inside and outside the limit cycle (r = 1). Each trajectory gets its own noise,
+    drawn from hopf_noise_variance. The Monte Carlo builder, main2.py and the
+    notebook all draw through this function, so they show the same data.
+    """
+    clean, noisy, variances = [], [], []
+    for _ in range(cfg.n_traj):
+        t_eval, U_clean = generate_hopf_trajectory(
+            u0=rng.uniform(-2.0, 2.0, size=2),
+            T=cfg.t1 - cfg.t0,
+            dt=cfg.dt,
+            mu=cfg.mu,
+            omega=cfg.omega,
+            noise_level=0.0,
+            seed=None,
+        )
+        variance = hopf_noise_variance(U_clean, cfg)
+        clean.append(U_clean)
+        noisy.append(U_clean + np.sqrt(variance) * rng.standard_normal(size=U_clean.shape))
+        variances.append(variance)
+    return t_eval, clean, noisy, variances
 
 
 def _build_hopf_gls_artifacts(
     run_idx: int,
     cfg: HopfIntraTrajectoryGLSConfig,
     rng: np.random.Generator,
-) -> IntraTrajectoryGLSData:
-    """Construct data/libraries for one Hopf GLS run."""
-    T = cfg.t1 - cfg.t0
-    t_eval, U_clean = generate_hopf_trajectory(
-        u0=rng.uniform(-2.5, 2.5, size=2),
-        T=T,
-        dt=cfg.dt,
-        mu=cfg.mu,
-        omega=cfg.omega,
-        noise_level=0.0,
-        seed=None,
-    )
-
-    # Heteroscedastic noise, growing with the distance from the limit cycle
-    variance = hopf_noise_variance(U_clean, cfg)
-    std = np.sqrt(variance)
-
-    noise = std[:, None] * rng.standard_normal(size=U_clean.shape)
-    U_noisy = U_clean + noise
-
-    # Spatiotemporal grid and polynomial library
-    XT = t_eval[:, None]
-    base_library = ps.PolynomialLibrary(
-        degree=cfg.poly_degree,
-        include_bias=cfg.include_bias,
-    )
-
-    # K and the support width are resolved exactly as in Part I: the support sets
-    # the count at coverage 2, so a wider test function gets proportionally fewer.
-    # Part II previously asked for five times as many, of which a third were
-    # duplicates of each other.
-    t_values = np.asarray(XT, dtype=float).ravel()
-    extent = float(t_values.max() - t_values.min())
-    H_weak = cfg.H_xt if cfg.H_xt is not None else extent / 20.0
-    if cfg.K is not None:
-        K_weak = int(cfg.K)
-    else:
-        K_weak = max(2, int(round(extent / H_weak)))
-
-    tf_seed = cfg.seed_base + 1000 + run_idx
-
-    # Unweighted weak library
-    np.random.seed(tf_seed)
-    weak_lib = DedupedWeakPDELibrary(
-        function_library=base_library,
-        derivative_order=cfg.derivative_order,
-        spatiotemporal_grid=XT,
-        is_uniform=True,
-        K=K_weak,
-        p=cfg.p,
-        H_xt=H_weak,
-        include_bias=cfg.include_bias,
-    )
-
-    # Variance-weighted weak library
-    weights_scaled = variance 
-    np.random.seed(tf_seed)
-    weighted_weak_lib_var = WeightedWeakPDELibrary(
-        function_library=base_library,
-        derivative_order=cfg.derivative_order,
-        spatiotemporal_grid=XT,
-        spatiotemporal_weights=weights_scaled,
-        is_uniform=True,
-        K=K_weak,
-        p=cfg.p,
-        H_xt=H_weak,
-        include_bias=cfg.include_bias,
-    )
-
-    # Ones-weighted weak library
-    np.random.seed(tf_seed)
-    weighted_weak_lib_ones = WeightedWeakPDELibrary(
-        function_library=base_library,
-        derivative_order=cfg.derivative_order,
-        spatiotemporal_grid=XT,
-        spatiotemporal_weights=np.ones_like(variance),
-        is_uniform=True,
-        K=K_weak,
-        p=cfg.p,
-        H_xt=H_weak,
-        include_bias=cfg.include_bias,
-    )
-
-
-    # Same heteroscedastic covariance, diagonal only: each weak equation is
-    # weighted by its own variance, with the correlations between overlapping
-    # test functions discarded. In Part I this rung collapses to one scalar per
-    # group, because the variance is constant along a trajectory there. Here it
-    # does not -- the diagonal spans a factor of ~50 -- so this is what isolates
-    # the off-diagonal contribution from the variance weighting.
-    np.random.seed(tf_seed)
-    weighted_weak_lib_var_diag = WeightedWeakPDELibrary(
-        function_library=base_library,
-        derivative_order=cfg.derivative_order,
-        spatiotemporal_grid=XT,
-        spatiotemporal_weights=weights_scaled,
-        is_uniform=True,
-        K=K_weak,
-        p=cfg.p,
-        H_xt=H_weak,
-        include_bias=cfg.include_bias,
-        whitener_mode="diag",
-    )
-    libraries = {
-        "No weighting": weak_lib,
-        "Variance GLS": weighted_weak_lib_var,
-        "Ones GLS": weighted_weak_lib_ones,
-        "Variance diag": weighted_weak_lib_var_diag,
-    }
-
-    return IntraTrajectoryGLSData(
-        data=U_noisy,
-        t_argument=t_eval,
-        libraries=libraries,
+) -> list[IntraTrajectoryGLSData]:
+    """The trajectories of one Hopf GLS run and their libraries."""
+    t_eval, _, noisy, variances = hopf_run_trajectories(cfg, rng)
+    return build_ode_run_artifacts(
+        cfg, noisy, t_eval, variances,
+        weak_seed=cfg.seed_base + 1000 + run_idx,
         true_coefficients=build_true_hopf_coefficients(mu=cfg.mu, omega=cfg.omega),
     )
 

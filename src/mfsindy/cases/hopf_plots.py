@@ -93,7 +93,7 @@ def plot_trajectories_additive_noise(x_true, cfg):
     from mfsindy.cases.hopf import hopf_noise_variance
 
     mu = cfg.mu
-    std = np.sqrt(hopf_noise_variance(np.asarray(x_true), cfg))[:, None]
+    std = np.sqrt(hopf_noise_variance(np.asarray(x_true), cfg))   # per component
     noise = std * np.random.randn(*x_true.shape)
 
     x_noisy = x_true + noise

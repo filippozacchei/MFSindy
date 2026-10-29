@@ -36,9 +36,10 @@ def build_polynomial_intra_trajectory_artifacts(
 
     if data.ndim != 2:
         raise ValueError("data must have shape (n_steps, n_states).")
-    if variance.shape != (data.shape[0],):
+    if variance.shape not in ((data.shape[0],), data.shape):
         raise ValueError(
-            f"variance must have shape ({data.shape[0]},), got {variance.shape}."
+            f"variance must have shape ({data.shape[0]},), or {data.shape} for one variance "
+            f"per component, got {variance.shape}."
         )
     if t_grid.shape != (data.shape[0],):
         raise ValueError(f"t_grid must have shape ({data.shape[0]},), got {t_grid.shape}.")
@@ -78,7 +79,7 @@ def build_polynomial_intra_trajectory_artifacts(
     if weak_seed is not None:
         np.random.seed(int(weak_seed))
     weighted_weak_lib_ones = WeightedWeakPDELibrary(
-        spatiotemporal_weights=np.ones_like(variance),
+        spatiotemporal_weights=np.ones(data.shape[0]),        # one unit variance, shared
         **common_kwargs,
     )
 
@@ -102,8 +103,41 @@ def build_polynomial_intra_trajectory_artifacts(
     )
 
 
-def pde_coverage_test_function_count(spatiotemporal_grid, H_xt) -> int:
-    """K at coverage 2 for a spatiotemporal grid: every point under two supports.
+def build_ode_run_artifacts(
+    cfg,
+    trajectories,
+    t_grid: np.ndarray,
+    variances,
+    *,
+    weak_seed: int,
+    true_coefficients: np.ndarray,
+) -> list[IntraTrajectoryGLSData]:
+    """The four weightings for each trajectory of one Part II ODE run.
+
+    K follows the support at ``cfg.coverage``, as in Part I. Every trajectory and
+    every rung is placed on the same test functions (one seed), so the rungs
+    differ by covariance model alone. The variances are passed as they are, not
+    rescaled per trajectory: the trajectories' weak systems are stacked, and a
+    per-trajectory rescaling would change their relative weights.
+    """
+
+    extent = float(np.ptp(t_grid))
+    H = cfg.H_xt if cfg.H_xt is not None else extent / 20.0
+    K = int(cfg.K) if cfg.K is not None else max(2, int(round(cfg.coverage / 2 * extent / H)))
+    out = []
+    for data, variance in zip(trajectories, variances):
+        artifacts = build_polynomial_intra_trajectory_artifacts(
+            data, t_grid, variance=variance, poly_degree=cfg.poly_degree,
+            derivative_order=cfg.derivative_order, include_bias=cfg.include_bias,
+            K=K, H_xt=H, p=cfg.p, weak_seed=weak_seed,
+        )
+        artifacts.true_coefficients = true_coefficients
+        out.append(artifacts)
+    return out
+
+
+def pde_coverage_test_function_count(spatiotemporal_grid, H_xt, coverage: float = 2.0) -> int:
+    """K at the given coverage (2: every point under two supports) on a grid.
 
     The ODE cases resolve K as ``extent / H``; in more than one dimension the
     same statement is a ratio of volumes, ``2 * prod(extents) / prod(2H)``. It
@@ -121,7 +155,7 @@ def pde_coverage_test_function_count(spatiotemporal_grid, H_xt) -> int:
     domain = float(np.prod(2.0 * widths))
     if domain <= 0.0:
         raise ValueError(f"support widths must be positive, got {H_xt!r}.")
-    return max(2, int(round(2.0 * float(np.prod(extents)) / domain)))
+    return max(2, int(round(coverage * float(np.prod(extents)) / domain)))
 
 
 def build_pde_intra_trajectory_artifacts(
@@ -137,6 +171,7 @@ def build_pde_intra_trajectory_artifacts(
     function_include_bias: bool | None = None,
     K: int | None = None,
     H_xt=None,
+    coverage: float = 2.0,
     p: int | None = None,
     weak_seed: int | None = None,
     true_coefficients: np.ndarray | None = None,
@@ -149,7 +184,7 @@ def build_pde_intra_trajectory_artifacts(
     own. Every rung is placed on the same test functions, so the comparison is
     between covariance models and not between draws.
 
-    ``K`` follows the support at coverage 2 when left out.
+    ``K`` follows the support at ``coverage`` when left out.
 
     The feature library is either given as ``function_library`` -- the flow case
     builds a CustomLibrary of its own terms -- or constructed as a polynomial
@@ -200,7 +235,7 @@ def build_pde_intra_trajectory_artifacts(
     if K is not None:
         common_kwargs["K"] = int(K)
     elif H_xt is not None:
-        common_kwargs["K"] = pde_coverage_test_function_count(grid, H_xt)
+        common_kwargs["K"] = pde_coverage_test_function_count(grid, H_xt, coverage)
     # with neither, the library picks both, which is only sensible for a smoke test
     if p is not None:
         common_kwargs["p"] = p
