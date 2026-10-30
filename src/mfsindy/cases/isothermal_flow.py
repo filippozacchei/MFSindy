@@ -147,7 +147,7 @@ def make_initial_condition(
     #
     # The finest structure in the field is the 2*k_y mode, so k_y is what
     # limits resolution: k_y=2 puts 8 points per wavelength on a 32-point
-    # axis (16 on the 64 used now), so it is capped there. k_x costs nothing by comparison and
+    # axis, which is already the floor. k_x costs nothing by comparison and
     # is given a third value, so there are six structural combinations rather
     # than four and fewer trajectories are structural duplicates.
     k_x = int(rng.integers(1, 4))
@@ -172,9 +172,17 @@ def generate_isothermal_ns_dataset(
     mu: float = 1.0,
     RT: float = 1.0,
     seed: int = 1,
+    refine: int = 4,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Single trajectory of isothermal compressible flow, on an N x N grid.
+
+    The flow is solved on a grid ``refine`` times finer and sampled onto the
+    N x N one. Solving on the measurement grid itself makes the data a solution
+    of the finite-difference scheme rather than of the PDE, and the analytic
+    coefficients then leave a residual on clean data: 2-8% at N = 32, 0.6-1.9%
+    at N = 64, at or above the 1% HF noise, which the HF-trusting models fit with
+    spurious terms. Solved at 4 x 32 = 128 the residual is 0.2-0.7%.
 
     Returns
     -------
@@ -186,7 +194,7 @@ def generate_isothermal_ns_dataset(
         Spatiotemporal grid (x, y, t).
     """
 
-    U = _solve_isothermal_ns(int(N), int(Nt), float(L), float(T), float(mu), float(RT), int(seed))
+    U = _solve_isothermal_ns(int(N), int(Nt), float(L), float(T), float(mu), float(RT), int(seed), int(refine))
     t = np.linspace(0.0, T, Nt)
     x = np.linspace(0.0, L, N, endpoint=False)
     X, Y = np.meshgrid(x, x, indexing="ij")
@@ -198,12 +206,13 @@ def generate_isothermal_ns_dataset(
 
 
 @functools.lru_cache(maxsize=16)
-def _solve_isothermal_ns(N, Nt, L, T, mu, RT, seed) -> np.ndarray:
+def _solve_isothermal_ns(N, Nt, L, T, mu, RT, seed, refine) -> np.ndarray:
     """The flow of ``generate_isothermal_ns_dataset``, cached: a Part II run is
-    rebuilt once per candidate support, and the solve is the slow part."""
+    rebuilt once per candidate support, and the fine solve is the slow part."""
 
     rng = np.random.default_rng(seed)
-    x = np.linspace(0.0, L, N, endpoint=False)
+    n_fine = N * refine
+    x = np.linspace(0.0, L, n_fine, endpoint=False)
     X, Y = np.meshgrid(x, x, indexing="ij")
     U0, V0, RHO0 = make_initial_condition(X, Y, L, rng=rng)
     y0 = np.stack([U0, V0, RHO0], axis=-1)
@@ -213,12 +222,12 @@ def _solve_isothermal_ns(N, Nt, L, T, mu, RT, seed) -> np.ndarray:
         (0.0, T),
         y0.reshape(-1),
         t_eval=np.linspace(0.0, T, Nt),
-        args=(x[1] - x[0], N, mu, RT),
+        args=(x[1] - x[0], n_fine, mu, RT),
         method="RK45",
         rtol=1e-8,
         atol=1e-8,
     )
-    U = sol.y.reshape(N, N, 3, -1).transpose(0, 1, 3, 2)
+    U = sol.y.reshape(n_fine, n_fine, 3, -1).transpose(0, 1, 3, 2)[::refine, ::refine]
     U = np.ascontiguousarray(U)
     U.flags.writeable = False
     return U
@@ -360,7 +369,7 @@ class NSIsothermalMultiTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin
     noise_hf_rel: float = 0.01
 
     # grid / time
-    N: int = 64
+    N: int = 32
     Nt: int = 1001
     Nt_std: int = 1001
     L: float = 5.0
@@ -382,9 +391,8 @@ class NSIsothermalMultiTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin
 
     # SINDy / optimizer settings
     n_ensemble_models: int = 100  # as every case; the bags are most of a run's time here
-    # About 3 GB per worker at N = 32 and roughly four times that at N = 64,
-    # so one worker in 16 GB.
-    n_jobs: int = 1
+    # About 3 GB per worker, so two fit in 16 GB.
+    n_jobs: int = 2
 
     # randomness
     seed_base: int = 0
@@ -792,7 +800,7 @@ class NSIsothermalIntraTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin
     """
 
     # grid / time
-    N: int = 64
+    N: int = 32
     Nt: int = 1001          # linspace(0, T, Nt): dt = T / (Nt - 1) = 1e-3
     L: float = 5.0
     T: float = 1.0
@@ -821,7 +829,7 @@ class NSIsothermalIntraTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin
     # SINDy / optimizer settings
     n_ensemble_models: int = 100  # as every case; the bags are most of a run's time here
     # A run holds 10 flows x 4 libraries on one shared set of test functions
-    # (_share_test_functions): about 7 GB at its peak at N = 64.
+    # (_share_test_functions): under 2 GB at N = 32, 7.6 GB at N = 64.
     n_jobs: int = 1
 
     results_filename: str = "ns_isothermal_weighted_errors.csv"

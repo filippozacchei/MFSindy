@@ -235,7 +235,7 @@ class PendulumMultiTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
     # physical parameters
     g: float = 1.0
     L: float = 1.0
-    c: float = 1.0
+    c: float = 0.1
 
     # SINDy settings
     poly_degree: int = 1
@@ -473,7 +473,7 @@ class PendulumIntraTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
     # physical parameters
     g: float = 1.0
     L: float = 1.0
-    c: float = 1.0
+    c: float = 0.1
 
     # per-component noise, as in every Part II case (see the noise function):
     # sigma_i(t) = noise_floor * s_i + noise_level * |x_i(t)|, for x = [theta, omega]

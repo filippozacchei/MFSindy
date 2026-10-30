@@ -52,7 +52,7 @@ class BurgersConfig(MonteCarloConfig, EnsembleConfigMixin):
 
     # Domain and discretisation
     L: float = 8.0          # half-domain, domain [-L, L]
-    NX: int = 128           # number of spatial points
+    NX: int = 32            # measured points; solved on NX * SOLVER_REFINE
     t0: float = 0.0
     t1: float = 1.0
     n_traj: int = 10        # fields per run, each from its own initial condition
@@ -90,7 +90,7 @@ class BurgersMultiTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
 
     # spatial / temporal discretization
     L: float = 8.0
-    NX: int = 128
+    NX: int = 32            # measured points; solved on NX * SOLVER_REFINE
     dt: float = 1e-3
     T_train: float = 1.0
     nu: float = 0.1
@@ -149,10 +149,10 @@ def burgers_solver(u0: np.ndarray, cfg: BurgersConfig) -> np.ndarray:
     U : (NT, NX)
         Time snapshots, with time along axis 0.
     """
-    x, t = make_space_time_grid(cfg)
-    dx = x[1] - x[0]
-    NT = len(t)
+    _, t = make_space_time_grid(cfg)
     NX = u0.shape[0]
+    dx = 2.0 * cfg.L / NX       # the grid of u0, which may be finer than cfg's
+    NT = len(t)
 
     u = u0.copy()
     U = np.zeros((NT, NX))
@@ -165,6 +165,21 @@ def burgers_solver(u0: np.ndarray, cfg: BurgersConfig) -> np.ndarray:
         U[n] = u
 
     return U
+
+
+#: The fields are solved on a grid this many times finer in space and sampled
+#: onto the measurement grid. Solved on the measurement grid itself, the data
+#: is a solution of the finite-difference scheme rather than of the PDE, and the
+#: true coefficients leave a residual of the size of the HF noise.
+SOLVER_REFINE = 4
+
+
+def solve_random_field(rng: np.random.Generator, cfg) -> np.ndarray:
+    """One clean field ``(NT, NX)`` from a random bump, solved SOLVER_REFINE
+    times finer in space and sampled onto cfg's grid."""
+
+    fine = replace(cfg, NX=cfg.NX * SOLVER_REFINE)
+    return burgers_solver(random_initial_condition(rng, fine), fine)[:, ::SOLVER_REFINE]
 
 
 def random_initial_condition(
@@ -263,7 +278,7 @@ def burgers_run_trajectories(cfg: BurgersConfig, rng: np.random.Generator):
     x, t = make_space_time_grid(cfg)
     clean, noisy, variances = [], [], []
     for _ in range(cfg.n_traj):
-        U_clean = burgers_solver(random_initial_condition(rng, cfg), cfg).T[:, :, None]
+        U_clean = solve_random_field(rng, cfg).T[:, :, None]
         variance = burgers_noise_variance(U_clean[:, :, 0], cfg)
         clean.append(U_clean)
         noisy.append(U_clean + np.sqrt(variance)[:, :, None] * rng.standard_normal(size=U_clean.shape))
@@ -363,8 +378,7 @@ def generate_burgers_dataset(
 
     X_list = []
     for _ in range(n_traj):
-        u0 = random_initial_condition(rng, cfg_tmp)
-        U_clean = burgers_solver(u0, cfg_tmp).T      # (Nx, Nt)
+        U_clean = solve_random_field(rng, cfg_tmp).T  # (Nx, Nt)
         U = U_clean                                  # (Nx, Nt)
 
         noise = noise_level * rng.standard_normal(size=U.shape)
