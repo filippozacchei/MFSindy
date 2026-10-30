@@ -1,0 +1,62 @@
+#!/bin/bash
+#PBS -S /bin/bash
+#PBS -l walltime=120:00:00
+#PBS -l nodes=1:ppn=96
+#PBS -N MFSindy_all
+#PBS -j oe
+
+# Every case, Parts I and II, on one node: qsub scripts/cluster/run_all.pbs
+#
+# Each case gets as many workers (Monte Carlo runs in parallel) as the node's
+# memory allows, capped at the cores: the peak memory of one worker was measured
+# with scratch/mem_probe.py and is listed below. The number of workers does not
+# change the results (runs are seeded by index). Per-case logs are written to
+# examples/<case>/results/main<part>.log, this job's own to $LOG.
+
+ROOT=/u/zacchei/WLS-Sindy
+LOG="$ROOT/scripts/cluster/run_all_${PBS_JOBID:-local}.log"
+cd "$ROOT" || exit 1
+
+source /u/zacchei/miniconda3/etc/profile.d/conda.sh
+conda activate sindy
+
+# One BLAS thread per process: the parallelism is across runs, and 48 workers
+# each starting a BLAS thread per core would oversubscribe the node many times over.
+export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
+export PYTHONUNBUFFERED=1
+
+# The whole node is requested (96 logical cores) but at most 48 workers run:
+# the physical cores, as a second hyperthread adds little to numerical work.
+CORES=48
+MEM_GB=$(awk '/MemAvailable/ {printf "%d", $2 / 1048576}' /proc/meminfo)
+
+# Workers for a case whose worker peaks at $1 GB: 80% of the free memory, at
+# most one per core and at most the 100 runs.
+workers() {
+    awk -v mem="$MEM_GB" -v gb="$1" -v cores="$CORES" 'BEGIN {
+        n = int(0.8 * mem / gb); if (n > cores) n = cores; if (n > 100) n = 100
+        if (n < 1) n = 1; print n }'
+}
+
+# Peak GB of one worker, measured on one run of each case.
+ODE_GB=0.5
+BURGERS_GB=2.5   # Part II 2.0, Part I 0.4
+NS_GB=8          # 64 x 64: Part II about 7 (10 flows), Part I above 5
+
+{
+    echo "=========================================="
+    echo "Start time: $(date)"
+    echo "PBS_JOBID = ${PBS_JOBID}"
+    echo "Node: $(cat "${PBS_NODEFILE:-/dev/null}" 2>/dev/null | sort -u | tr '\n' ' ')"
+    echo "Cores: $CORES, free memory: ${MEM_GB} GB"
+    echo "Workers: ODEs $(workers $ODE_GB), burgers $(workers $BURGERS_GB), isothermal_flow $(workers $NS_GB)"
+    echo "=========================================="
+} > "$LOG"
+
+status=0
+scripts/run_all.sh --odes --jobs "$(workers $ODE_GB)" >> "$LOG" 2>&1 || status=1
+scripts/run_all.sh --cases burgers --jobs "$(workers $BURGERS_GB)" >> "$LOG" 2>&1 || status=1
+scripts/run_all.sh --cases isothermal_flow --jobs "$(workers $NS_GB)" >> "$LOG" 2>&1 || status=1
+
+echo "End time: $(date)" >> "$LOG"
+exit $status

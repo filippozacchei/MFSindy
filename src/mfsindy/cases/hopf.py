@@ -457,7 +457,7 @@ class HopfIntraTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
     include_bias: bool = False
 
     # SINDy / optimizer settings
-    n_ensemble_models: int = 20
+    n_ensemble_models: int = 100
 
     # output
     results_filename: str = "hopf_weighted_errors.csv"

@@ -47,7 +47,7 @@ TIME_DIVISORS = (20.0, 10.0, 5.0)
 
 def make_config(**overrides) -> NSIsothermalMultiTrajectoryGLSConfig:
     settings = dict(
-        n_runs=25,
+        n_runs=100,
         n_lf=10,
         n_hf=1,
         p=2,

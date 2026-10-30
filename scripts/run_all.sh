@@ -7,6 +7,7 @@
 #   scripts/run_all.sh --cases hopf lorenz   # only these cases
 #   scripts/run_all.sh --parts 2             # only Part II (combine with any of the above)
 #   scripts/run_all.sh --runs 25             # 25 Monte Carlo runs each (default: each config's, 100)
+#   scripts/run_all.sh --jobs 8              # 8 runs in parallel in each case (default: each config's)
 #
 # Cases run one after the other; each Monte Carlo is parallel inside (cfg.n_jobs).
 # A failing run is reported at the end and does not stop the others. Each run's
@@ -22,7 +23,7 @@ cases=("${ODES[@]}")
 parts=(1 2)
 runs_args=()
 
-usage() { sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
+usage() { sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -32,7 +33,9 @@ while [[ $# -gt 0 ]]; do
         --cases)        shift; cases=()
                         while [[ $# -gt 0 && "$1" != --* ]]; do cases+=("$1"); shift; done ;;
         --runs)         [[ $# -ge 2 && "$2" =~ ^[0-9]+$ ]] || { echo "--runs needs a number" >&2; exit 1; }
-                        runs_args=(--runs "$2"); shift 2 ;;
+                        runs_args+=(--runs "$2"); shift 2 ;;
+        --jobs)         [[ $# -ge 2 && "$2" =~ ^[0-9]+$ ]] || { echo "--jobs needs a number" >&2; exit 1; }
+                        runs_args+=(--jobs "$2"); shift 2 ;;
         --parts)        shift; parts=()
                         while [[ $# -gt 0 && "$1" != --* ]]; do parts+=("$1"); shift; done ;;
         -h|--help)      usage ;;

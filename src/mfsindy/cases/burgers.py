@@ -74,7 +74,7 @@ class BurgersConfig(MonteCarloConfig, EnsembleConfigMixin):
     # coverage 2, as in Part I, unless it is set explicitly.
     H_xt: list[float] | None = None
     K: int | None = None
-    p: int | None = None
+    p: int = 2                 # as every other case; unset, pysindy's default is 4
     include_bias: bool = True
 
     # SINDy / optimizer settings
@@ -113,7 +113,7 @@ class BurgersMultiTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
     include_interaction: bool = True
     include_bias: bool = True
 
-    n_ensemble_models: int = 20
+    n_ensemble_models: int = 100
 
     # random seeds
     seed_base: int = 231

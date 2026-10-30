@@ -66,7 +66,7 @@ METHOD_COLORS = {
 
 def make_config(**overrides) -> NSIsothermalIntraTrajectoryGLSConfig:
     settings = dict(
-        n_runs=25,
+        n_runs=100,
         results_dir=str(RESULTS_DIR),
         results_filename=ERRORS_PATH.name,
     )

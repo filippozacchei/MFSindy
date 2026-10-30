@@ -381,7 +381,7 @@ class NSIsothermalMultiTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin
     H_xt: list[float] | None = None
 
     # SINDy / optimizer settings
-    n_ensemble_models: int = 20   # 100 bags cost ~85% of a run on the 114-term library
+    n_ensemble_models: int = 100  # as every case; the bags are most of a run's time here
     # About 3 GB per worker at N = 32 and roughly four times that at N = 64,
     # so one worker in 16 GB.
     n_jobs: int = 1
@@ -819,9 +819,9 @@ class NSIsothermalIntraTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin
     H_xt: list[float] | None = None
 
     # SINDy / optimizer settings
-    n_ensemble_models: int = 20   # 100 bags cost ~85% of a run on the 114-term library
-    # A run holds 10 flows x 4 libraries, each with its own test-function
-    # weights: about 7 GB at N = 32, and well beyond that at N = 64.
+    n_ensemble_models: int = 100  # as every case; the bags are most of a run's time here
+    # A run holds 10 flows x 4 libraries on one shared set of test functions
+    # (_share_test_functions): about 7 GB at its peak at N = 64.
     n_jobs: int = 1
 
     results_filename: str = "ns_isothermal_weighted_errors.csv"

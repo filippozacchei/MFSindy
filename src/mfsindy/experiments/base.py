@@ -19,14 +19,18 @@ REFERENCE_SEED_OFFSET = 900_000
 
 
 def cli_overrides(argv: Sequence[str] | None = None) -> Dict[str, Any]:
-    """Config overrides from a main script's command line: ``--runs N`` sets n_runs."""
+    """Config overrides from a main script's command line: ``--runs N`` sets
+    n_runs, ``--jobs N`` n_jobs. Runs are seeded by index, so the number of
+    workers does not change the results."""
 
     import argparse
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--runs", type=int, default=None, help="Monte Carlo runs (default: the config's)")
+    parser.add_argument("--jobs", type=int, default=None, help="runs in parallel (default: the config's)")
     args = parser.parse_args(argv)
-    return {} if args.runs is None else {"n_runs": args.runs}
+    overrides = {"n_runs": args.runs, "n_jobs": args.jobs}
+    return {k: v for k, v in overrides.items() if v is not None}
 
 
 def coefficient_errors(
