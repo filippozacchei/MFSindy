@@ -30,12 +30,16 @@ ERRORS_PATH = RESULTS_DIR / "burgers_part1_errors.csv"
 
 MODELS = ["HF", "LF", "MF", "VHF", "VLF", "PMF", "VMF", "MF_w"]
 
-#: Candidate supports, as divisors of the training horizon and domain. Every model picks
+#: Candidate supports [h_x, h_t]. In time, the ODE divisors of the horizon
+#: without T/200; in space, divisors of the domain 2L. The narrowest of each
+#: are left out for cost: they set K, and the covariance grows as K^2. Every model picks
 #: among them by the spread of its own ensemble, with the threshold set by BIC
 #: inside the ensemble (mfsindy.experiments.selection): the same procedure for
-#: every model, and no true coefficients involved.
-SPACE_DIVISORS = (20.0, 10.0, 5.0)
-TIME_DIVISORS = (20.0, 10.0, 5.0)
+#: every model, and no true coefficients involved. A support is admissible for a
+#: model only if its weak system has at least twice as many rows as library terms
+#: (selection.MIN_ROWS_PER_TERM), which rules out the widest for one HF field.
+SPACE_DIVISORS = (16.0, 8.0, 4.0)
+SUPPORT_DIVISORS = (100.0, 50.0, 20.0, 10.0, 5.0)
 
 
 def make_config(**overrides) -> BurgersMultiTrajectoryGLSConfig:
@@ -50,7 +54,7 @@ def make_config(**overrides) -> BurgersMultiTrajectoryGLSConfig:
     settings.update(overrides)
     cfg = BurgersMultiTrajectoryGLSConfig(**settings)
     if cfg.H_grid is None:
-        cfg.H_grid = [[cfg.L / dx, cfg.T_train / dt] for dx in SPACE_DIVISORS for dt in TIME_DIVISORS]
+        cfg.H_grid = [[2.0 * cfg.L / ds, cfg.T_train / d] for ds in SPACE_DIVISORS for d in SUPPORT_DIVISORS]
     return cfg
 
 

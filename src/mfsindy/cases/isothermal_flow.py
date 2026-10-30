@@ -5,7 +5,7 @@ Isothermal compressible Navier–Stokes utilities.
 Includes:
 
 1) PDE + dataset generator
-2) Heteroscedastic noise model based on temporal derivatives
+2) Heteroscedastic noise sigma_i = a s_i + b |u_i| per component (Part 2, as in the ODE cases)
 3) Coefficient error metrics + generic MC wrapper
 4) Multi-fidelity SINDy experiment (Part 1: HF / LF / MF / MF_w)
 5) Heteroscedastic GLS experiment (Part 2: No weighting / Variance GLS / Ones GLS)
@@ -13,6 +13,8 @@ Includes:
 
 from __future__ import annotations
 
+import functools
+import itertools
 from dataclasses import dataclass, replace
 from typing import Any, Dict, Sequence
 
@@ -21,7 +23,7 @@ import pandas as pd
 from scipy.integrate import solve_ivp
 
 import pysindy as ps
-from pysindy.feature_library import WeakPDELibrary
+from pysindy.utils import AxesArray
 
 from mfsindy.experiments.multi_trajectory import _variance_signature
 from mfsindy.experiments import (
@@ -35,7 +37,6 @@ from mfsindy.experiments import (
     run_multi_trajectory_gls_experiment,
 )
 from mfsindy.experiments.artifacts import (
-    build_pde_intra_trajectory_artifacts,
     pde_coverage_test_function_count,
 )
 from mfsindy.weighted_weak_pde_library import (
@@ -146,7 +147,7 @@ def make_initial_condition(
     #
     # The finest structure in the field is the 2*k_y mode, so k_y is what
     # limits resolution: k_y=2 puts 8 points per wavelength on a 32-point
-    # axis, which is already the floor. k_x costs nothing by comparison and
+    # axis (16 on the 64 used now), so it is capped there. k_x costs nothing by comparison and
     # is given a third value, so there are six structural combinations rather
     # than four and fewer trajectories are structural duplicates.
     k_x = int(rng.integers(1, 4))
@@ -173,141 +174,158 @@ def generate_isothermal_ns_dataset(
     seed: int = 1,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
-    Single trajectory of isothermal compressible flow.
+    Single trajectory of isothermal compressible flow, on an N x N grid.
 
     Returns
     -------
     U_clean : (N, N, Nt, 3)
-        States (u, v, rho).
+        States (u, v, rho). Read-only: it may be shared through the cache.
     t : (Nt,)
         Time vector.
     grid : (N, N, Nt, 3)
         Spatiotemporal grid (x, y, t).
     """
-    rng = np.random.default_rng(seed)
 
+    U = _solve_isothermal_ns(int(N), int(Nt), float(L), float(T), float(mu), float(RT), int(seed))
     t = np.linspace(0.0, T, Nt)
     x = np.linspace(0.0, L, N, endpoint=False)
-    y = np.linspace(0.0, L, N, endpoint=False)
-    dx = x[1] - x[0]
-    X, Y = np.meshgrid(x, y, indexing="ij")
-
-    # Initial condition
-    U0, V0, RHO0 = make_initial_condition(
-        X, Y, L, rng=rng
-    )
-    y0 = np.zeros((N, N, 3))
-    y0[:, :, 0] = U0
-    y0[:, :, 1] = V0
-    y0[:, :, 2] = RHO0
-
-    sol = solve_ivp(
-        compressible,
-        (t[0], t[-1]),
-        y0.reshape(-1),
-        t_eval=t,
-        args=(dx, N, mu, RT),
-        method="RK45",
-        rtol=1e-8,
-        atol=1e-8,
-    )
-
-    u_field = sol.y.reshape(N, N, 3, -1).transpose(0, 1, 3, 2)  # (N, N, Nt, 3)
-
-    # Spatiotemporal grid
+    X, Y = np.meshgrid(x, x, indexing="ij")
     grid = np.zeros((N, N, Nt, 3))
     grid[:, :, :, 0] = X[:, :, None]
     grid[:, :, :, 1] = Y[:, :, None]
     grid[:, :, :, 2] = t[None, None, :]
+    return U, t, grid
 
-    return u_field, t, grid
+
+@functools.lru_cache(maxsize=16)
+def _solve_isothermal_ns(N, Nt, L, T, mu, RT, seed) -> np.ndarray:
+    """The flow of ``generate_isothermal_ns_dataset``, cached: a Part II run is
+    rebuilt once per candidate support, and the solve is the slow part."""
+
+    rng = np.random.default_rng(seed)
+    x = np.linspace(0.0, L, N, endpoint=False)
+    X, Y = np.meshgrid(x, x, indexing="ij")
+    U0, V0, RHO0 = make_initial_condition(X, Y, L, rng=rng)
+    y0 = np.stack([U0, V0, RHO0], axis=-1)
+
+    sol = solve_ivp(
+        compressible,
+        (0.0, T),
+        y0.reshape(-1),
+        t_eval=np.linspace(0.0, T, Nt),
+        args=(x[1] - x[0], N, mu, RT),
+        method="RK45",
+        rtol=1e-8,
+        atol=1e-8,
+    )
+    U = sol.y.reshape(N, N, 3, -1).transpose(0, 1, 3, 2)
+    U = np.ascontiguousarray(U)
+    U.flags.writeable = False
+    return U
 
 
 # ---------------------------------------------------------------------------
-# Heteroscedastic noise (Part 2): your derivative-based construction
+# Conservative-form library + reference coefficients (Parts 1 and 2)
 # ---------------------------------------------------------------------------
+#
+# The momentum equations are identified for rho*u and rho*v rather than for u
+# and v. In primitive form every pressure and viscous term carries 1/rho, and
+# 1/rho evaluated on noisy data is biased and heavy-tailed (errors in
+# variables): at 25% noise the fits shrank every rho^-1 term to 0.4-0.8 of its
+# value and spurious terms made up the rest. In conservative form the system is
+#
+#     (rho u)_t = -(rho u u)_x - (rho u v)_y - RT rho_x + mu (u_xx + u_yy)
+#     (rho v)_t = -(rho u v)_x - (rho v v)_y - RT rho_y + mu (v_xx + v_yy)
+#     rho_t     = -(rho u)_x - (rho v)_y
+#
+# which is what ``compressible`` integrates, rewritten exactly. Every term is a
+# derivative of a polynomial in (u, v, rho), so the weak form moves the whole
+# derivative onto the test function: the library is the integrals of every
+# monomial of degree <= 3 against phi and its derivatives, and products of
+# independent noise are unbiased.
 
-def _ddt_centered(f: np.ndarray, dt: float) -> np.ndarray:
-    """Centered finite difference in time (axis=2) with one-sided boundaries."""
-    if f.ndim < 3:
-        raise ValueError("Expected an array with time on axis 2.")
-    if f.shape[2] < 2:
-        raise ValueError("At least two time samples are required.")
-
-    ddt = np.empty_like(f, dtype=float)
-    if f.shape[2] == 2:
-        slope = (f[:, :, 1] - f[:, :, 0]) / dt
-        ddt[:, :, 0] = slope
-        ddt[:, :, 1] = slope
-        return ddt
-
-    ddt[:, :, 1:-1] = (f[:, :, 2:] - f[:, :, :-2]) / (2.0 * dt)
-    ddt[:, :, 0] = (f[:, :, 1] - f[:, :, 0]) / dt
-    ddt[:, :, -1] = (f[:, :, -1] - f[:, :, -2]) / dt
-    return ddt
+#: The monomials of (rho, u, v) of degree 1 to 3, as the library's input fields.
+_NS_MONOMIALS: tuple[tuple[int, ...], ...] = tuple(
+    combo
+    for degree in (1, 2, 3)
+    for combo in itertools.combinations_with_replacement((2, 0, 1), degree)
+)
+_NS_STATE_NAMES = {0: "u", 1: "v", 2: "rho"}
+_NS_MONOMIAL_NAMES: tuple[str, ...] = tuple(
+    "*".join(_NS_STATE_NAMES[i] for i in combo) for combo in _NS_MONOMIALS
+)
+#: The fields whose time derivatives are identified: rho*u, rho*v and rho.
+_NS_TARGETS: tuple[int, ...] = tuple(
+    _NS_MONOMIAL_NAMES.index(name) for name in ("rho*u", "rho*v", "rho")
+)
 
 
-def add_heteroscedastic_noise_temporal_derivative(
-    U_clean: np.ndarray,
-    t: np.ndarray,
-    sigma0: float = 1e-3,
-    alpha: float = 0.025,
-    rng: np.random.Generator | None = None,
-) -> tuple[np.ndarray, np.ndarray]:
+def ns_monomial_fields(U: np.ndarray) -> np.ndarray:
+    """The monomials of ``(u, v, rho)`` as fields, shape ``(..., 19)``."""
+
+    U = np.asarray(U, dtype=float)
+    return np.stack([np.prod(U[..., list(combo)], axis=-1) for combo in _NS_MONOMIALS], axis=-1)
+
+
+def ns_target_variance(U_clean: np.ndarray, variance: np.ndarray) -> np.ndarray:
+    """Noise variance of the targets ``(rho u, rho v, rho)`` from that of ``(u, v, rho)``.
+
+    For independent noise e on each component, rho*u + noise has variance
+    rho^2 var(e_u) + u^2 var(e_rho) + var(e_u) var(e_rho), exactly.
     """
-    Noise model used in PART 2:
 
-        time_deriv_mag = sqrt(u_t^2 + v_t^2)
-        variance       = (sigma0 + alpha * time_deriv_mag)^2
+    u, v, rho = (U_clean[..., i] for i in range(3))
+    var_u, var_v, var_rho = (variance[..., i] for i in range(3))
+    return np.stack(
+        [
+            rho**2 * var_u + u**2 * var_rho + var_u * var_rho,
+            rho**2 * var_v + v**2 * var_rho + var_v * var_rho,
+            var_rho,
+        ],
+        axis=-1,
+    )
 
-    Noise is added to all state components (u, v, rho) with this variance.
+
+class ConservativeWeakPDELibrary(DedupedWeakPDELibrary):
+    """A weak library on the monomials of ``(u, v, rho)``, identifying the
+    conservative targets.
+
+    It takes the flow as ``(u, v, rho)`` like any other library and expands it
+    to the monomial fields itself, so callers and stored data stay three
+    components wide; ``convert_u_dot_integral`` keeps only the targets. Use
+    ``include_interaction=False``: the pure integral terms already hold every
+    derivative of every monomial.
     """
-    if rng is None:
-        rng = np.random.default_rng()
 
-    dt = t[1] - t[0]
+    def fit(self, x_full, y=None):
+        return super().fit([ns_monomial_fields(x) for x in x_full], y)
 
-    u = U_clean[..., 0]
-    v = U_clean[..., 1]
-    p = U_clean[..., 2]
+    def transform(self, x_full):
+        out = super().transform([ns_monomial_fields(x) for x in x_full])
+        # pysindy keeps the data and its derivatives on every subdomain, rebuilt
+        # on each transform and read by nothing after it: 2 GB per library at
+        # N = 64, with forty libraries alive in a Part II run.
+        self.x_k = self.dx_k_j = self.dfx_k_j = None
+        return out
 
-    u_t = _ddt_centered(u, dt)
-    v_t = _ddt_centered(v, dt)
-
-    time_deriv_mag = np.sqrt(u ** 2 + v ** 2 + 0*p ** 2)  # (N, N, Nt)
-    variance = (sigma0 + alpha * time_deriv_mag) ** 2
-    variance = np.maximum(variance, 1e-16)
-    std = np.sqrt(variance)
-
-    noise = std[..., None] * rng.standard_normal(size=U_clean.shape)
-    U_noisy = U_clean + noise
-
-    return U_noisy, variance
+    def convert_u_dot_integral(self, u):
+        full = np.asarray(super().convert_u_dot_integral(ns_monomial_fields(u)))
+        return AxesArray(full[:, list(_NS_TARGETS)], {"ax_sample": 0, "ax_coord": 1})
 
 
-# ---------------------------------------------------------------------------
-# Custom library + reference coefficients (used by both Part 1 and Part 2)
-# ---------------------------------------------------------------------------
+class WeightedConservativeWeakPDELibrary(WeightedWeakPDELibrary, ConservativeWeakPDELibrary):
+    """The weighted library on the conservative targets.
+
+    The method order puts the expansion between the whitening and pysindy, so
+    the whitener sees the three target columns: a per-component variance is
+    given for (rho u, rho v, rho), see :func:`ns_target_variance`.
+    """
+
 
 def _build_custom_library():
-    """
-    Custom feature library as in your code:
+    """The function library on the monomial fields: the fields themselves."""
 
-        library_functions = [x, 1 / (1e-6 + |x|)]
-    """
-    library_functions = [
-        lambda x: x,
-        lambda x: 1.0 / (1e-6 + np.abs(x)),
-    ]
-    library_function_names = [
-        lambda x: x,
-        lambda x: x + "^-1",
-    ]
-    base_library = ps.CustomLibrary(
-        library_functions=library_functions,
-        function_names=library_function_names,
-    )
-    return base_library
+    return ps.PolynomialLibrary(degree=1, include_bias=False)
 
 
 def _ns_multi_h_xt(cfg: "NSIsothermalMultiTrajectoryGLSConfig") -> list[float]:
@@ -363,8 +381,10 @@ class NSIsothermalMultiTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin
     H_xt: list[float] | None = None
 
     # SINDy / optimizer settings
-    n_ensemble_models: int = 100
-    n_jobs: int = 2   # memory-heavy: more parallel runs exhausted 16 GB
+    n_ensemble_models: int = 20   # 100 bags cost ~85% of a run on the 114-term library
+    # About 3 GB per worker at N = 32 and roughly four times that at N = 64,
+    # so one worker in 16 GB.
+    n_jobs: int = 1
 
     # randomness
     seed_base: int = 0
@@ -432,10 +452,8 @@ def _ns_make_weak_library(
         spatiotemporal_grid=grid,
         is_uniform=True,
         include_bias=cfg.include_bias,
+        include_interaction=False,
     )
-    # Coverage 2: the test functions cover the grid twice over. Coverage sets
-    # the conditioning of the weak covariance and the support sets kappa, so the
-    # two are chosen independently.
     extents = tuple(float(np.ptp(grid[..., axis])) for axis in range(grid.shape[-1]))
     H = _ns_multi_h_xt(cfg)
     common_kwargs["H_xt"] = H
@@ -451,8 +469,8 @@ def _ns_make_weak_library(
         # Genuinely unweighted, as in the other cases. Passing a field of ones
         # here would still apply the weak-SINDy whitening, which made the HF, LF
         # and MF rungs weighted and identical to PMF.
-        return DedupedWeakPDELibrary(deduplicate=cfg.deduplicate, **common_kwargs)
-    return WeightedWeakPDELibrary(
+        return ConservativeWeakPDELibrary(deduplicate=cfg.deduplicate, **common_kwargs)
+    return WeightedConservativeWeakPDELibrary(
         spatiotemporal_weights=variance_field,
         whitener_mode=whitener_mode,
         deduplicate=cfg.deduplicate,
@@ -506,6 +524,10 @@ def _ns_fit_multi_trajectory_weak_gls_models(
     grid = batch.metadata["grid"]
     weak_seed = int(batch.metadata["weak_seed"])
     grid_shape = tuple(grid.shape[:-1])
+    # One variance per fidelity group, as in the ODE cases. The noise on rho u is
+    # sigma^2 (rho^2 + u^2 + sigma^2), not constant, but the group weighting
+    # only needs the ratio between groups, and that is sigma_hf^2 / sigma_lf^2
+    # up to the sigma^2 term.
     hf_variance = np.full(grid_shape, noise_hf_abs**2, dtype=float)
     lf_variance = np.full(grid_shape, noise_lf_abs**2, dtype=float)
     # One library per group, not per trajectory. Its domain placement,
@@ -693,41 +715,22 @@ def run_ns_isothermal_multi_trajectory_gls_experiment(
     )
 
 
-#: The isothermal compressible system as ``compressible`` integrates it, written
-#: against the weak library's feature names. With ``p = rho * RT``:
-#:
-#:     u_t   = -u u_x - v u_y - RT rho^-1 rho_x + mu rho^-1 (u_xx + u_yy)
-#:     v_t   = -u v_x - v v_y - RT rho^-1 rho_y + mu rho^-1 (v_xx + v_yy)
-#:     rho_t = -u rho_x - v rho_y - rho u_x - rho v_y
-#:
-#: Fourteen terms, every coefficient +-1 scaled by RT or mu. Axis 1 is x and
-#: axis 2 is y in pysindy's derivative naming, and a leading library name is the
-#: function factor: ``rhou_1`` is ``rho * u_x`` while ``urho_1`` is ``u * rho_x``.
+#: The isothermal compressible system in conservative form (see the library
+#: section), against the weak library's feature names: a monomial name with
+#: pysindy's derivative suffix, axis 1 being x and axis 2 y, so ``rho*u*u_1`` is
+#: ``(rho u u)_x``. Twelve terms, every coefficient +-1 scaled by RT or mu.
 _NS_TRUE_TERMS: Dict[int, Dict[str, str]] = {
-    0: {"uu_1": "-1", "vu_2": "-1", "rho^-1rho_1": "-RT",
-        "rho^-1u_11": "mu", "rho^-1u_22": "mu"},
-    1: {"uv_1": "-1", "vv_2": "-1", "rho^-1rho_2": "-RT",
-        "rho^-1v_11": "mu", "rho^-1v_22": "mu"},
-    2: {"urho_1": "-1", "vrho_2": "-1", "rhou_1": "-1", "rhov_2": "-1"},
+    0: {"rho*u*u_1": "-1", "rho*u*v_2": "-1", "rho_1": "-RT", "u_11": "mu", "u_22": "mu"},
+    1: {"rho*u*v_1": "-1", "rho*v*v_2": "-1", "rho_2": "-RT", "v_11": "mu", "v_22": "mu"},
+    2: {"rho*u_1": "-1", "rho*v_2": "-1"},
 }
 
 
 def build_true_ns_isothermal_coefficients(
     feature_names: Sequence[str], *, RT: float, mu: float
 ) -> np.ndarray:
-    """Analytic coefficients of the isothermal compressible system.
-
-    The alternative was to call the reference a weak-SINDy fit of the clean
-    flow, which is what this case used to do. That made the benchmark circular
-    -- every rung was scored against another fit rather than against the
-    equations -- and the fit was not a good one: at ``K_std=100`` rows against
-    111 library features it was underdetermined, and it came back missing
-    ``v u_y`` from the u equation and carrying a spurious ``-5.7 v u_xy`` in the
-    v equation, explaining 89.6% of the clean dynamics where plain least squares
-    on the same library reaches 99.9999%.
-
-    ``rho^-1`` is the library's ``1 / (1e-6 + |rho|)``, which differs from
-    ``1 / rho`` by about a part in a million for a density near one.
+    """Analytic coefficients of the isothermal compressible system, in
+    conservative form, one row per target (rho u, rho v, rho).
 
     Raises if a term is missing from ``feature_names``: a library that can no
     longer express the physics must fail loudly rather than score every rung
@@ -760,40 +763,20 @@ def get_ns_isothermal_feature_names(
     grid: np.ndarray,
     reference_trajectory: np.ndarray,
 ) -> tuple[str, ...]:
-    """Return readable weak-library feature names for isothermal-flow models."""
+    """The weak library's feature names; they depend on neither support nor K."""
 
-    if isinstance(cfg, NSIsothermalMultiTrajectoryGLSConfig):
-        multi_cfg = cfg
-        library = _ns_make_weak_library(
-            multi_cfg,
-            np.asarray(grid, dtype=float),
-            variance_field=None,
-            weak_seed=multi_cfg.seed_base,
-        )
-    else:
-        h_xt = _ns_intra_h_xt(cfg)
-        grid_array = np.asarray(grid, dtype=float)
-        # Only the feature names are wanted, but K still has to be a number, and
-        # it follows the support here like everywhere else.
-        library = WeakPDELibrary(
-            function_library=_build_custom_library(),
-            derivative_order=cfg.derivative_order,
-            spatiotemporal_grid=grid_array,
-            is_uniform=True,
-            K=(
-                int(cfg.K)
-                if cfg.K is not None
-                else pde_coverage_test_function_count(grid_array, h_xt, cfg.coverage)
-            ),
-            p=cfg.p,
-            H_xt=h_xt,
-            include_bias=cfg.include_bias,
-        )
-
+    library = ConservativeWeakPDELibrary(
+        function_library=_build_custom_library(),
+        derivative_order=cfg.derivative_order,
+        spatiotemporal_grid=np.asarray(grid, dtype=float),
+        is_uniform=True,
+        include_bias=cfg.include_bias,
+        include_interaction=False,
+        K=2,
+        p=cfg.p,
+    )
     return get_library_feature_names(
-        library,
-        reference_trajectory,
-        input_features=("u", "v", "rho"),
+        library, reference_trajectory, input_features=_NS_MONOMIAL_NAMES
     )
 
 
@@ -809,18 +792,20 @@ class NSIsothermalIntraTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin
     """
 
     # grid / time
-    N: int = 32
-    Nt: int = 2501          # linspace(0, T, Nt): dt = T / (Nt - 1) = 1e-3
+    N: int = 64
+    Nt: int = 1001          # linspace(0, T, Nt): dt = T / (Nt - 1) = 1e-3
     L: float = 5.0
-    T: float = 2.5
+    T: float = 1.0
+    n_traj: int = 10        # flows per run, each from its own initial condition
 
     # physical parameters
     mu: float = 1.0
     RT: float = 1.0
 
-    # heteroscedastic noise parameters
-    sigma0: float = 1e-3
-    alpha: float = 0.025
+    # per-component noise, as in every Part II case (see ns_noise_variance):
+    # sigma_i(x, y, t) = noise_floor * s_i + noise_level * |u_i(x, y, t)|
+    noise_level: float = 0.15
+    noise_floor: float = 1e-4
 
     # weak-library settings
     derivative_order: int = 2
@@ -834,54 +819,159 @@ class NSIsothermalIntraTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin
     H_xt: list[float] | None = None
 
     # SINDy / optimizer settings
-    n_ensemble_models: int = 100
-    n_jobs: int = 2   # memory-heavy: more parallel runs exhausted 16 GB
+    n_ensemble_models: int = 20   # 100 bags cost ~85% of a run on the 114-term library
+    # A run holds 10 flows x 4 libraries, each with its own test-function
+    # weights: about 7 GB at N = 32, and well beyond that at N = 64.
+    n_jobs: int = 1
 
     results_filename: str = "ns_isothermal_weighted_errors.csv"
 
 
-def _build_ns_gls_artifacts(
+def ns_noise_variance(U_clean: np.ndarray, cfg) -> np.ndarray:
+    """Pointwise noise variance per state component, shape of ``U_clean``.
+
+    sigma_i = noise_floor * s_i + noise_level * |u_i|: the two-component
+    measurement-error model of the ODE cases (lorenz_noise_variance), applied to
+    u, v and rho as if each had its own sensor. s_i is the spread of component i
+    over the flow, so the floor is in that component's units.
+    """
+
+    U_clean = np.asarray(U_clean, dtype=float)
+    scale = np.std(U_clean, axis=(0, 1, 2))
+    sigma = cfg.noise_floor * scale + cfg.noise_level * np.abs(U_clean)
+    return np.maximum(sigma ** 2, 1e-12)
+
+
+def ns_run_trajectories(cfg: NSIsothermalIntraTrajectoryGLSConfig, rng: np.random.Generator):
+    """The cfg.n_traj flows of one Part II run, as ``(t, grid, clean, noisy, variance)``.
+
+    Flows are ``(N, N, Nt, 3)`` and so are their variances. Each flow starts
+    from its own randomised Taylor-Green condition and gets its own noise, drawn
+    from ns_noise_variance. The Monte Carlo builder, main2.py and the notebook
+    all draw through this function, so they show the same data.
+    """
+
+    clean, noisy, variances = [], [], []
+    for _ in range(cfg.n_traj):
+        U_clean, t, grid = generate_isothermal_ns_dataset(
+            N=cfg.N, Nt=cfg.Nt, L=cfg.L, T=cfg.T, mu=cfg.mu, RT=cfg.RT,
+            seed=int(rng.integers(2**31)),
+        )
+        variance = ns_noise_variance(U_clean, cfg)
+        clean.append(U_clean)
+        noisy.append(U_clean + np.sqrt(variance) * rng.standard_normal(size=U_clean.shape))
+        variances.append(variance)
+    return t, np.asarray(grid, dtype=float), clean, noisy, variances
+
+
+#: What pysindy builds per test function at construction: the supports and the
+#: weight tensors on them, 1.7 GB per library at N = 64.
+_TEST_FUNCTION_ATTRS = ("inds_k", "fulltweights", "fullweights0", "fullweights1")
+
+
+def _share_test_functions(libraries, template) -> None:
+    """Point every library at ``template``'s test functions.
+
+    Libraries built on one seed, grid and support have identical test functions
+    but each keeps its own copy, forty of them in a Part II run. Their whiteners
+    are already built, so sharing changes nothing but the memory; the supports
+    are checked first so that it cannot replace different test functions.
+    """
+
+    for library in libraries:
+        if library is template:
+            continue
+        same = len(library.inds_k) == len(template.inds_k) and all(
+            np.array_equal(a, b)
+            for ka, kb in zip(library.inds_k, template.inds_k)
+            for a, b in zip(ka, kb)
+        )
+        if not same:
+            raise ValueError("libraries to share test functions must be built on the same ones.")
+        for name in _TEST_FUNCTION_ATTRS:
+            setattr(library, name, getattr(template, name))
+
+
+def build_ns_artifacts(
+    data: np.ndarray,
+    grid: np.ndarray,
+    t: np.ndarray,
+    target_variance: np.ndarray,
+    cfg: NSIsothermalIntraTrajectoryGLSConfig,
+    *,
+    weak_seed: int,
+    true_coefficients: np.ndarray,
+    H_xt=None,
+    template=None,
+) -> IntraTrajectoryGLSData:
+    """The four Part II weightings for one flow, on the conservative library.
+
+    As :func:`mfsindy.experiments.build_pde_intra_trajectory_artifacts`, with
+    the conservative libraries in place of the plain ones: every rung on the
+    same test functions (one seed), K following the support at coverage 2
+    unless pinned. ``target_variance`` is per target, ``(..., 3)`` for
+    (rho u, rho v, rho), so each equation is whitened by its own noise.
+
+    The rungs share one copy of the test-function weights, and so do the flows
+    of a run when ``template`` (a library built on the same seed) is given.
+    """
+
+    H = _ns_intra_h_xt(cfg) if H_xt is None else list(H_xt)
+    common = dict(
+        function_library=_build_custom_library(),
+        derivative_order=cfg.derivative_order,
+        spatiotemporal_grid=grid,
+        is_uniform=True,
+        include_bias=cfg.include_bias,
+        include_interaction=False,
+        H_xt=H,
+        K=int(cfg.K) if cfg.K is not None else pde_coverage_test_function_count(grid, H, cfg.coverage),
+        p=cfg.p,
+    )
+
+    def seeded(cls, **kwargs):
+        np.random.seed(int(weak_seed))
+        return cls(**common, **kwargs)
+
+    libraries = {
+        "No weighting": seeded(ConservativeWeakPDELibrary),
+        "Variance GLS": seeded(WeightedConservativeWeakPDELibrary, spatiotemporal_weights=target_variance),
+        "Ones GLS": seeded(WeightedConservativeWeakPDELibrary, spatiotemporal_weights=np.ones(grid.shape[:-1])),
+        "Variance diag": seeded(
+            WeightedConservativeWeakPDELibrary, spatiotemporal_weights=target_variance, whitener_mode="diag"
+        ),
+    }
+    _share_test_functions(libraries.values(), template or libraries["No weighting"])
+    return IntraTrajectoryGLSData(
+        data=data, t_argument=t, libraries=libraries, true_coefficients=np.asarray(true_coefficients)
+    )
+
+
+def _make_ns_gls_artifacts(
     run_idx: int,
     cfg: NSIsothermalIntraTrajectoryGLSConfig,
     rng: np.random.Generator,
     *,
-    grid: np.ndarray,
-    base_library: ps.CustomLibrary,
     true_coefficients: np.ndarray,
-) -> IntraTrajectoryGLSData:
-    """Construct noisy NS data + weak libraries for one GLS run."""
+) -> list[IntraTrajectoryGLSData]:
+    """The four weightings for each flow of one NS GLS run.
 
-    U_clean, t, _ = generate_isothermal_ns_dataset(
-        N=cfg.N,
-        Nt=cfg.Nt,
-        L=cfg.L,
-        T=cfg.T,
-        mu=cfg.mu,
-        RT=cfg.RT,
-        seed=cfg.seed_base + run_idx + 1,
-    )
+    Every flow and every rung is placed on the same test functions (one seed),
+    so the rungs differ by covariance model alone. The variances are passed as
+    they are, not rescaled per flow: the flows' weak systems are stacked, and a
+    per-flow rescaling would change their relative weights.
+    """
 
-    U_noisy, variance = add_heteroscedastic_noise_temporal_derivative(
-        U_clean, t, sigma0=cfg.sigma0, alpha=cfg.alpha, rng=rng
-    )
-
-    # The four weightings, all on the same test functions. K follows the support
-    # at coverage 2 unless the config pins it.
-    return build_pde_intra_trajectory_artifacts(
-        U_noisy,
-        np.asarray(grid, dtype=float),
-        t_grid=t,
-        variance=variance / np.mean(variance),
-        function_library=base_library,
-        derivative_order=cfg.derivative_order,
-        include_bias=cfg.include_bias,
-        K=cfg.K,
-        H_xt=_ns_intra_h_xt(cfg),
-        coverage=cfg.coverage,
-        p=cfg.p,
-        weak_seed=cfg.seed_base + 1000 + run_idx,
-        true_coefficients=true_coefficients,
-    )
+    t, grid, clean, noisy, variances = ns_run_trajectories(cfg, rng)
+    out, template = [], None
+    for data, U_clean, variance in zip(noisy, clean, variances):
+        out.append(build_ns_artifacts(
+            data, grid, t, ns_target_variance(U_clean, variance), cfg,
+            weak_seed=cfg.seed_base + 1000 + run_idx,
+            true_coefficients=true_coefficients, template=template,
+        ))
+        template = out[0].libraries["No weighting"]
+    return out
 
 
 def run_ns_isothermal_intra_trajectory_gls_experiment(
@@ -894,7 +984,6 @@ def run_ns_isothermal_intra_trajectory_gls_experiment(
         N=cfg.N, Nt=cfg.Nt, L=cfg.L, T=cfg.T, mu=cfg.mu, RT=cfg.RT,
         seed=cfg.seed_base,
     )
-    base_library = _build_custom_library()
     # Truth is the equations compressible integrates, not a weak-SINDy fit of
     # the clean flow. Part 2 had the same circular reference Part 1 did: scored
     # against another fit, underdetermined, unseeded, and wrong in the u and v
@@ -907,14 +996,13 @@ def run_ns_isothermal_intra_trajectory_gls_experiment(
         mu=cfg.mu,
     )
 
-    def builder(run_idx: int, cfg: NSIsothermalIntraTrajectoryGLSConfig) -> IntraTrajectoryGLSData:
-        rng = np.random.default_rng(cfg.seed_base + 100 * run_idx)
-        return _build_ns_gls_artifacts(
+    def builder(run_idx: int, cfg: NSIsothermalIntraTrajectoryGLSConfig) -> list[IntraTrajectoryGLSData]:
+        # Seeded by run, not drawn from one stream: the runner builds a run once
+        # per candidate support, and every support must see the same data.
+        return _make_ns_gls_artifacts(
             run_idx,
             cfg,
-            rng,
-            grid=grid_ref,
-            base_library=base_library,
+            np.random.default_rng(cfg.seed_base + 100 * run_idx),
             true_coefficients=C_true,
         )
 
@@ -922,51 +1010,6 @@ def run_ns_isothermal_intra_trajectory_gls_experiment(
         cfg,
         run_builder=builder,
         progress_desc="MC isothermal NS GLS",
-    )
-
-
-def build_ns_isothermal_intra_trajectory_artifacts(
-    data: np.ndarray,
-    t_grid: np.ndarray,
-    grid: np.ndarray,
-    *,
-    variance: np.ndarray,
-    cfg: NSIsothermalIntraTrajectoryGLSConfig,
-    base_library: ps.CustomLibrary | None = None,
-    true_coefficients: np.ndarray | None = None,
-    weak_seed: int | None = None,
-) -> IntraTrajectoryGLSData:
-    """Construct isothermal-flow weak-form artifacts for a provided trajectory."""
-
-    data = np.asarray(data, dtype=float)
-    t_grid = np.asarray(t_grid, dtype=float)
-    grid = np.asarray(grid, dtype=float)
-    variance = np.asarray(variance, dtype=float)
-    if data.ndim != 4 or data.shape[-1] != 3:
-        raise ValueError("data must have shape (N, N, Nt, 3).")
-    if variance.shape != data.shape[:-1]:
-        raise ValueError(f"variance must have shape {data.shape[:-1]}, got {variance.shape}.")
-
-    return build_pde_intra_trajectory_artifacts(
-        data,
-        grid,
-        t_grid=t_grid,
-        variance=variance / np.mean(variance),
-        function_library=(
-            _build_custom_library() if base_library is None else base_library
-        ),
-        derivative_order=cfg.derivative_order,
-        include_bias=cfg.include_bias,
-        K=cfg.K,
-        H_xt=_ns_intra_h_xt(cfg),
-        coverage=cfg.coverage,
-        p=cfg.p,
-        weak_seed=cfg.seed_base if weak_seed is None else int(weak_seed),
-        true_coefficients=(
-            np.empty((data.shape[-1], 0))
-            if true_coefficients is None
-            else np.asarray(true_coefficients)
-        ),
     )
 
 
@@ -1011,9 +1054,13 @@ def ns_isothermal_kappa_by_support(
                 variance_field=None, weak_seed=seed,
             )
             library.fit_transform([U_ref])
+            # The library's inputs are the monomial fields, so the sensitivity is
+            # taken with respect to them: each monomial is treated as a state of
+            # its own, which makes kappa a rougher diagnostic here than for the
+            # cases whose library sees the state directly.
             ratios = pde_weak_validity_ratio(
                 library,
-                pde_sensitivity_fields(library, U_ref, coefficients),
+                pde_sensitivity_fields(library, ns_monomial_fields(U_ref), coefficients),
             )
             medians.append(float(np.median(ratios)))
             maxima.append(float(np.max(ratios)))

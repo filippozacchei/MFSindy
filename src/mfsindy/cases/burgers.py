@@ -4,7 +4,7 @@ Utilities for 1D viscous Burgers experiments:
 
 - Finite-difference Burgers solver (periodic BC)
 - Random Gaussian-bump initial conditions
-- Heteroscedastic noise based on |u_x|
+- Heteroscedastic noise sigma = a s + b |u| (Part II, as in the ODE cases)
 - Weak / weighted-weak libraries (WeakPDELibrary, WeightedWeakPDELibrary)
 - Monte Carlo GLS experiment (heteroscedastic noise)
 - Multi-fidelity data generation and PDE-SINDy models (HF / LF / MF / MF_w)
@@ -52,15 +52,18 @@ class BurgersConfig(MonteCarloConfig, EnsembleConfigMixin):
 
     # Domain and discretisation
     L: float = 8.0          # half-domain, domain [-L, L]
-    NX: int = 64            # number of spatial points
+    NX: int = 128           # number of spatial points
     t0: float = 0.0
-    t1: float = 10.0
+    t1: float = 1.0
+    n_traj: int = 10        # fields per run, each from its own initial condition
     dt: float = 1e-3        # the Part II step shared with the ODE cases; also the
                             # explicit-Euler step of burgers_solver
-    nu: float = 1.0         # viscosity, as in Part I
+    nu: float = 0.1         # viscosity, as in Part I
 
-    # Heteroscedastic noise (variance ∝ (alpha * |u_x|)^2)
-    noise_level: float = 0.25
+    # pointwise noise, as in every Part II case (see burgers_noise_variance):
+    # sigma(x, t) = noise_floor * s + noise_level * |u(x, t)|
+    noise_level: float = 0.15
+    noise_floor: float = 1e-4
 
     # Weak-library settings
     poly_degree: int = 1
@@ -87,10 +90,10 @@ class BurgersMultiTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
 
     # spatial / temporal discretization
     L: float = 8.0
-    NX: int = 64
+    NX: int = 128
     dt: float = 1e-3
     T_train: float = 1.0
-    nu: float = 1.0
+    nu: float = 0.1
 
     # multi-fidelity settings (numbers of trajectories)
     n_lf: int = 10
@@ -235,57 +238,77 @@ def _canonicalize_burgers_trajectory(
 # Single Monte Carlo run (heteroscedastic GLS experiment)
 # ---------------------------------------------------------------------------
 
-def _build_burgers_gls_artifacts(
+def burgers_noise_variance(U_clean: np.ndarray, cfg) -> np.ndarray:
+    """Pointwise noise variance of one field, shape of ``U_clean``.
+
+    sigma(x, t) = noise_floor * s + noise_level * |u(x, t)|: the two-component
+    measurement-error model of the ODE cases (lorenz_noise_variance), with s the
+    spread of the field over space and time, so the floor is in its units.
+    """
+
+    U_clean = np.asarray(U_clean, dtype=float)
+    sigma = cfg.noise_floor * np.std(U_clean) + cfg.noise_level * np.abs(U_clean)
+    return np.maximum(sigma ** 2, 1e-12)
+
+
+def burgers_run_trajectories(cfg: BurgersConfig, rng: np.random.Generator):
+    """The cfg.n_traj fields of one Part II run, as ``(x, t, clean, noisy, variance)``.
+
+    Fields are ``(NX, NT, 1)`` and variances ``(NX, NT)``. Each field starts from
+    its own random bump and gets its own noise, drawn from burgers_noise_variance.
+    The Monte Carlo builder, main2.py and the notebook all draw through this
+    function, so they show the same data.
+    """
+
+    x, t = make_space_time_grid(cfg)
+    clean, noisy, variances = [], [], []
+    for _ in range(cfg.n_traj):
+        U_clean = burgers_solver(random_initial_condition(rng, cfg), cfg).T[:, :, None]
+        variance = burgers_noise_variance(U_clean[:, :, 0], cfg)
+        clean.append(U_clean)
+        noisy.append(U_clean + np.sqrt(variance)[:, :, None] * rng.standard_normal(size=U_clean.shape))
+        variances.append(variance)
+    return x, t, clean, noisy, variances
+
+
+def _make_burgers_gls_artifacts(
     run_idx: int,
     cfg: BurgersConfig,
     rng: np.random.Generator,
-) -> IntraTrajectoryGLSData:
-    """Construct data + weak libraries for a single Burgers GLS run."""
-    x, t = make_space_time_grid(cfg)
-    dx = x[1] - x[0]
+) -> list[IntraTrajectoryGLSData]:
+    """The four weightings for each field of one Burgers GLS run.
 
-    # 1) Random initial condition and clean trajectory
-    u0 = random_initial_condition(rng, cfg)
-    U_clean = burgers_solver(u0, cfg).T      # (NX, NT)
-    U = U_clean[:, :, None]                  # (NX, NT, 1) for PySINDy
+    Every field and every rung is placed on the same test functions (one seed),
+    so the rungs differ by covariance model alone. K follows the support at
+    coverage 2 unless the config pins it. The variances are passed as they are,
+    not rescaled per field: the fields' weak systems are stacked, and a
+    per-field rescaling would change their relative weights. The inner
+    polynomial library carries no bias because the weak library supplies the
+    constant, and two of them would be the same column twice.
+    """
 
-    # 2) Heteroscedastic noise based on |u_x|
-    Ux = (np.roll(U, -1, axis=0) - np.roll(U, 1, axis=0)) / (2.0 * dx)
-    grad_mag = np.abs(Ux[:, :, 0])           # (NX, NT)
-
-    alpha = cfg.noise_level
-    variance = (alpha * grad_mag) ** 2
-    variance = np.maximum(variance, 1e-8)
-    std = np.sqrt(variance)
-
-    noise = std[:, :, None] * rng.standard_normal(size=U.shape)
-    U_noisy = U + noise
-
-    # 3) Spatiotemporal grid (t, x) → shape (NT, NX, 2)
+    x, t, _, noisy, variances = burgers_run_trajectories(cfg, rng)
     X, T = np.meshgrid(x, t)
-    XT = np.asarray([X, T]).T                # (NT, NX, 2)
-
-    # 4) The four weightings, all on the same test functions. K follows the
-    # support at coverage 2 unless the config pins it; the inner polynomial
-    # library carries no bias because the weak library supplies the constant,
-    # and two of them would be the same column twice.
-    artifacts = build_pde_intra_trajectory_artifacts(
-        U_noisy,
-        XT,
-        t_grid=t,
-        variance=variance / np.mean(variance),
-        poly_degree=cfg.poly_degree,
-        derivative_order=cfg.derivative_order,
-        include_bias=cfg.include_bias,
-        function_include_bias=False,
-        K=cfg.K,
-        H_xt=cfg.H_xt,
-        coverage=cfg.coverage,
-        p=cfg.p,
-        weak_seed=cfg.seed_base + 1000 + run_idx,
-        true_coefficients=build_true_burgers_coefficients(cfg.nu),
-    )
-    return artifacts
+    XT = np.asarray([X, T]).T                # (NX, NT, 2)
+    return [
+        build_pde_intra_trajectory_artifacts(
+            data,
+            XT,
+            t_grid=t,
+            variance=variance,
+            poly_degree=cfg.poly_degree,
+            derivative_order=cfg.derivative_order,
+            include_bias=cfg.include_bias,
+            function_include_bias=False,
+            K=cfg.K,
+            H_xt=cfg.H_xt,
+            coverage=cfg.coverage,
+            p=cfg.p,
+            weak_seed=cfg.seed_base + 1000 + run_idx,
+            true_coefficients=build_true_burgers_coefficients(cfg.nu),
+        )
+        for data, variance in zip(noisy, variances)
+    ]
 
 
 def run_burgers_experiment(
@@ -294,10 +317,10 @@ def run_burgers_experiment(
     """
     Full heteroscedastic GLS experiment.
     """
-    def builder(run_idx: int, cfg: BurgersConfig) -> IntraTrajectoryGLSData:
+    def builder(run_idx: int, cfg: BurgersConfig) -> list[IntraTrajectoryGLSData]:
         # Seeded by run, not drawn from one stream: the runner builds a run once
         # per candidate support, and every support must see the same data.
-        return _build_burgers_gls_artifacts(run_idx, cfg, np.random.default_rng(cfg.seed_base + 100 * run_idx))
+        return _make_burgers_gls_artifacts(run_idx, cfg, np.random.default_rng(cfg.seed_base + 100 * run_idx))
 
     return run_intra_trajectory_gls_experiment(
         cfg,

@@ -18,24 +18,24 @@ import pandas as pd
 from mfsindy.experiments import cli_overrides
 from mfsindy.cases.isothermal_flow import (
     NSIsothermalIntraTrajectoryGLSConfig,
-    _build_custom_library,
-    _build_ns_gls_artifacts,
-    add_heteroscedastic_noise_temporal_derivative,
+    _make_ns_gls_artifacts,
+    build_ns_artifacts,
     build_true_ns_isothermal_coefficients,
     generate_isothermal_ns_dataset,
     get_ns_isothermal_feature_names,
+    ns_monomial_fields,
+    ns_run_trajectories,
+    ns_target_variance,
     run_ns_isothermal_intra_trajectory_gls_experiment,
 )
 
 from mfsindy.weighted_weak_pde_library import (
     pde_sensitivity_fields,
     pde_weak_validity_ratio,
+    weak_system,
 )
 
-from mfsindy.experiments import (
-    REFERENCE_SEED_OFFSET,
-    build_pde_intra_trajectory_artifacts,
-)
+from mfsindy.experiments import REFERENCE_SEED_OFFSET
 
 warnings.filterwarnings("ignore")
 
@@ -78,11 +78,11 @@ def make_config(**overrides) -> NSIsothermalIntraTrajectoryGLSConfig:
 
 
 def _truth(cfg):
-    """The grid, feature library and true coefficients the runner builds.
+    """The true coefficients the runner builds.
 
     Reproduced here rather than imported because the runner assembles them
-    inside itself; weak_design and kappa_by_support need the same three, and they are fixed by
-    cfg alone, so both get the identical reference.
+    inside itself; weak_design and kappa_by_support need them, and they are
+    fixed by cfg alone, so both get the identical reference.
     """
 
     U_clean_ref, _, grid_ref = generate_isothermal_ns_dataset(
@@ -96,26 +96,22 @@ def _truth(cfg):
         RT=cfg.RT,
         mu=cfg.mu,
     )
-    return grid_ref, _build_custom_library(), coefficients
+    return coefficients
 
 
 def _design_artifacts(cfg, run_idx: int):
-    """Run run_idx's data and the four libraries at cfg's support, seeded as
-    the Monte Carlo seeds that run."""
+    """The first flow of run run_idx and its four libraries at cfg's support,
+    seeded as the Monte Carlo seeds that run (every flow of a run shares the
+    test functions)."""
 
-    # The builder needs the grid, the feature library and the true coefficients,
-    # which the runner assembles inside itself; _truth rebuilds the same three
-    # from cfg alone. Without them this function could not be called at all.
-    grid, base_library, coefficients = _truth(cfg)
-    artifacts = _build_ns_gls_artifacts(
+    coefficients = _truth(cfg)
+    artifacts = _make_ns_gls_artifacts(
         run_idx,
         cfg,
         np.random.default_rng(cfg.seed_base + 100 * run_idx),
-        grid=grid,
-        base_library=base_library,
         true_coefficients=coefficients,
     )
-    return artifacts
+    return artifacts[0]
 
 
 def weak_design(cfg, *, run_idx: int = 0) -> pd.DataFrame:
@@ -132,16 +128,18 @@ def weak_design(cfg, *, run_idx: int = 0) -> pd.DataFrame:
         artifacts = _design_artifacts(replace(cfg, H_xt=H, K=None), run_idx)
         for method in METHODS:
             library = artifacts.libraries[method]
-            library.fit_transform([artifacts.data])
+            library.fit([artifacts.data])
+            weak_system(library, artifacts.data)
             row = {
                 "K": int(library.K),
                 "duplicates_dropped": int(getattr(library, "n_duplicate_domains_", 0)),
             }
-            chol = getattr(library, "_L_chol", None)
-            if chol is not None:
-                diagonal = np.diag(chol @ chol.T)
+            # One factor per equation when the noise is given per component.
+            chols = getattr(library, "_L_chols", None) or [getattr(library, "_L_chol", None)]
+            if chols[0] is not None:
+                diagonals = [np.diag(L @ L.T) for L in chols]
                 row.update(
-                    diag_spread=float(diagonal.max() / diagonal.min()),
+                    diag_spread=float(max(d.max() / d.min() for d in diagonals)),
                     cov_cond=float(library.cov_cond_),
                     cov_rank_deficit=int(library.cov_rank_deficit_),
                 )
@@ -149,54 +147,40 @@ def weak_design(cfg, *, run_idx: int = 0) -> pd.DataFrame:
     return pd.DataFrame(rows).set_index(["H", "method"])
 
 
-#: Every rung picks its support from supports(cfg) by the spread of its own
-#: ensemble, with the threshold set by BIC inside the ensemble
-#: (mfsindy.experiments.selection): the same procedure for every rung, and no
-#: true coefficients involved. The kappa table covers the same supports.
+#: Candidate supports, as divisors of the side L (space, both axes) and the
+#: horizon T (time), the same as Part I. Every rung picks its support from
+#: supports(cfg) by the spread of its own ensemble, with the threshold set by BIC
+#: inside the ensemble (mfsindy.experiments.selection): the same procedure for
+#: every rung, and no true coefficients involved. The kappa table covers the
+#: same supports.
+SPACE_DIVISORS = (10.0, 5.0)
+TIME_DIVISORS = (20.0, 10.0, 5.0)
+
+
 def supports(cfg) -> list:
-    h_s = [cfg.L / d for d in (20.0, 10.0, 5.0)]
-    h_t = [cfg.T / d for d in (80.0, 40.0, 20.0)]
-    return [[hs, hs, ht] for hs in h_s for ht in h_t]
+    return [[cfg.L / ds, cfg.L / ds, cfg.T / dt] for ds in SPACE_DIVISORS for dt in TIME_DIVISORS]
 
 
-def reference_trajectory(cfg):
-    """One noisy flow for the kappa table, at the Monte Carlo's settings
-    and a seed disjoint from its runs."""
+def run_trajectories(cfg, run_idx: int = 0):
+    """Run run_idx's flows as the Monte Carlo draws them:
+    ``(t, grid, clean, noisy, variance)``, the last three one entry per flow."""
 
-    U_clean, t, grid = generate_isothermal_ns_dataset(
-        N=cfg.N, Nt=cfg.Nt, L=cfg.L, T=cfg.T, mu=cfg.mu, RT=cfg.RT,
-        seed=cfg.seed_base + REFERENCE_SEED_OFFSET,
-    )
-    noisy, variance = add_heteroscedastic_noise_temporal_derivative(
-        U_clean, t, sigma0=cfg.sigma0, alpha=cfg.alpha,
-        rng=np.random.default_rng(cfg.seed_base + REFERENCE_SEED_OFFSET),
-    )
-    return noisy, np.asarray(grid, dtype=float), t, variance
+    return ns_run_trajectories(cfg, np.random.default_rng(cfg.seed_base + 100 * run_idx))
 
 
 def reference_window(cfg) -> dict:
-    """The reference flow in the window layout the artifact builder takes."""
+    """One noisy flow for the kappa table, at the Monte Carlo's settings and a
+    seed disjoint from its runs, with its targets' noise variance."""
 
-    noisy, grid, t_grid, variance = reference_trajectory(cfg)
-    return {"data": noisy, "grid": grid, "t_grid": t_grid, "variance": variance}
-
-
-def _artifacts(cfg, window, H_xt, weak_seed, *, base_library, coefficients):
-    """The four weightings on one window of the flow, K following the support."""
-
-    return build_pde_intra_trajectory_artifacts(
-        window["data"],
-        window["grid"],
-        t_grid=window["t_grid"],
-        variance=window["variance"] / np.mean(window["variance"]),
-        function_library=base_library,
-        derivative_order=cfg.derivative_order,
-        include_bias=cfg.include_bias,
-        H_xt=H_xt,
-        p=cfg.p,
-        weak_seed=weak_seed,
-        true_coefficients=coefficients,
+    t, grid, clean, noisy, variance = ns_run_trajectories(
+        cfg, np.random.default_rng(cfg.seed_base + REFERENCE_SEED_OFFSET)
     )
+    return {
+        "data": noisy[0],
+        "grid": grid,
+        "t_grid": t,
+        "variance": ns_target_variance(clean[0], variance[0]),
+    }
 
 
 def kappa_by_support(cfg, *, verbose: bool = True) -> pd.DataFrame:
@@ -205,20 +189,24 @@ def kappa_by_support(cfg, *, verbose: bool = True) -> pd.DataFrame:
     Dimensionless and sigma-weighted, as for Burgers.
     """
 
-    _, base_library, coefficients = _truth(cfg)
+    coefficients = _truth(cfg)
     train = reference_window(cfg)
-    sigma = np.sqrt(train["variance"])
+    # kappa takes one noise level per point: the components' RMS.
+    sigma = np.sqrt(np.mean(train["variance"], axis=-1))
     seed = cfg.seed_base + REFERENCE_SEED_OFFSET + 2
 
     rows = []
     for H in supports(cfg):
-        library = _artifacts(
-            cfg, train, H, seed, base_library=base_library, coefficients=coefficients
+        library = build_ns_artifacts(
+            train["data"], train["grid"], train["t_grid"], train["variance"], cfg,
+            weak_seed=seed, true_coefficients=coefficients, H_xt=H,
         ).libraries["No weighting"]
-        library.fit_transform([train["data"]])
+        library.fit([train["data"]])
+        # The library's inputs are the monomial fields, so the sensitivity is
+        # taken with respect to them (see ns_isothermal_kappa_by_support).
         ratios = pde_weak_validity_ratio(
             library,
-            pde_sensitivity_fields(library, train["data"], coefficients),
+            pde_sensitivity_fields(library, ns_monomial_fields(train["data"]), coefficients),
             sigma=sigma,
         )
         rows.append(

@@ -18,11 +18,9 @@ import pandas as pd
 from mfsindy.experiments import cli_overrides
 from mfsindy.cases.burgers import (
     BurgersConfig,
-    _build_burgers_gls_artifacts,
+    _make_burgers_gls_artifacts,
     build_true_burgers_coefficients,
-    burgers_solver,
-    make_space_time_grid,
-    random_initial_condition,
+    burgers_run_trajectories,
     run_burgers_experiment,
 )
 
@@ -77,11 +75,12 @@ def make_config(**overrides) -> BurgersConfig:
 
 
 def _design_artifacts(cfg, run_idx: int):
-    """Run run_idx's data and the four libraries at cfg's support, seeded as
-    the Monte Carlo seeds that run."""
+    """The first field of run run_idx and its four libraries at cfg's support,
+    seeded as the Monte Carlo seeds that run (every field of a run shares the
+    test functions)."""
 
-    artifacts = _build_burgers_gls_artifacts(run_idx, cfg, np.random.default_rng(cfg.seed_base + 100 * run_idx))
-    return artifacts
+    artifacts = _make_burgers_gls_artifacts(run_idx, cfg, np.random.default_rng(cfg.seed_base + 100 * run_idx))
+    return artifacts[0]
 
 
 def weak_design(cfg, *, run_idx: int = 0) -> pd.DataFrame:
@@ -115,20 +114,28 @@ def weak_design(cfg, *, run_idx: int = 0) -> pd.DataFrame:
     return pd.DataFrame(rows).set_index(["H", "method"])
 
 
-#: Candidate supports, as divisors of the half-domain (space) and the horizon
-#: (time).
-#: Every rung picks its support from supports(cfg) by the spread of its own
-#: ensemble, with the threshold set by BIC inside the ensemble
-#: (mfsindy.experiments.selection): the same procedure for every rung, and no
-#: true coefficients involved. The kappa table covers the same supports.
+#: Candidate supports [h_x, h_t]. In time, the ODE divisors of the horizon
+#: without T/200; in space, divisors of the domain 2L. The narrowest of each
+#: are left out for cost: they set K, and the covariance grows as K^2. Every rung picks
+#: among them by the spread of its own ensemble, with the threshold set by BIC
+#: inside the ensemble (mfsindy.experiments.selection): the same procedure for
+#: every rung, and no true coefficients involved. A support is admissible for a
+#: rung only if its weak system has at least twice as many rows as library terms
+#: (selection.MIN_ROWS_PER_TERM); with ten fields per run every support passes.
 SPACE_DIVISORS = (16.0, 8.0, 4.0)
-TIME_DIVISORS = (40.0, 20.0, 10.0)
+SUPPORT_DIVISORS = (100.0, 50.0, 20.0, 10.0, 5.0)
 
 
 def supports(cfg) -> list:
-    h_x = [cfg.L / d for d in SPACE_DIVISORS]
-    h_t = [(cfg.t1 - cfg.t0) / d for d in TIME_DIVISORS]
-    return [[hx, ht] for hx in h_x for ht in h_t]
+    horizon = cfg.t1 - cfg.t0
+    return [[2.0 * cfg.L / ds, horizon / d] for ds in SPACE_DIVISORS for d in SUPPORT_DIVISORS]
+
+
+def run_trajectories(cfg, run_idx: int = 0):
+    """Run run_idx's fields as the Monte Carlo draws them:
+    ``(x, t, clean, noisy, variance)``, the last three one entry per field."""
+
+    return burgers_run_trajectories(cfg, np.random.default_rng(cfg.seed_base + 100 * run_idx))
 
 
 def reference_trajectory(cfg):
@@ -136,16 +143,9 @@ def reference_trajectory(cfg):
     and a seed disjoint from its runs."""
 
     rng = np.random.default_rng(cfg.seed_base + REFERENCE_SEED_OFFSET)
-    x, t = make_space_time_grid(cfg)
-    dx = x[1] - x[0]
-
-    clean = burgers_solver(random_initial_condition(rng, cfg), cfg).T[:, :, None]
-    u_x = (np.roll(clean, -1, axis=0) - np.roll(clean, 1, axis=0)) / (2.0 * dx)
-    variance = np.maximum((cfg.noise_level * np.abs(u_x[:, :, 0])) ** 2, 1e-8)
-    noisy = clean + np.sqrt(variance)[:, :, None] * rng.standard_normal(size=clean.shape)
-
+    x, t, _, noisy, variance = burgers_run_trajectories(cfg, rng)
     X, T = np.meshgrid(x, t)
-    return noisy, np.asarray([X, T]).T, t, variance
+    return noisy[0], np.asarray([X, T]).T, t, variance[0]
 
 
 def reference_window(cfg) -> dict:
@@ -162,7 +162,7 @@ def _artifacts(cfg, window, H_xt, weak_seed):
         window["data"],
         window["grid"],
         t_grid=window["t_grid"],
-        variance=window["variance"] / np.mean(window["variance"]),
+        variance=window["variance"],
         poly_degree=cfg.poly_degree,
         derivative_order=cfg.derivative_order,
         include_bias=cfg.include_bias,

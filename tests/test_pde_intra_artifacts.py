@@ -12,7 +12,7 @@ import warnings
 import numpy as np
 import pytest
 
-from mfsindy.cases.burgers import BurgersConfig, _build_burgers_gls_artifacts
+from mfsindy.cases.burgers import BurgersConfig, _make_burgers_gls_artifacts
 from mfsindy.experiments.artifacts import (
     build_pde_intra_trajectory_artifacts,
     pde_coverage_test_function_count,
@@ -24,16 +24,16 @@ METHODS = ["No weighting", "Ones GLS", "Variance diag", "Variance GLS"]
 
 #: The grid and viscosity these properties are stated for, pinned so the tests
 #: do not follow the experiment's defaults while those are being tuned.
-TEST_SETTINGS = dict(NX=256, nu=0.1)
+TEST_SETTINGS = dict(NX=256, nu=0.1, t1=10.0, n_traj=1)
 
 
 def burgers_artifacts(**overrides):
     cfg = BurgersConfig(n_runs=1, **{**TEST_SETTINGS, **overrides})
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", WeakCovarianceWarning)
-        return cfg, _build_burgers_gls_artifacts(
+        return cfg, _make_burgers_gls_artifacts(
             0, cfg, np.random.default_rng(cfg.seed_base)
-        )
+        )[0]
 
 
 def test_coverage_count_is_the_volume_ratio():
