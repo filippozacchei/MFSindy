@@ -41,7 +41,8 @@ workers() {
 # Peak GB of one worker, measured on one run of each case.
 ODE_GB=0.5
 BURGERS_GB=2.5   # Part II 2.0, Part I 0.4
-NS_GB=32         # 128 x 128, scaled from 64 x 64 (Part I 7.1, Part II 7.6) by the 4x points
+NS1_GB=35        # 128 x 128, measured 31.7 (scripts/cluster/check_ns.pbs)
+NS2_GB=46        # 128 x 128, measured 41.9
 
 {
     echo "=========================================="
@@ -49,14 +50,15 @@ NS_GB=32         # 128 x 128, scaled from 64 x 64 (Part I 7.1, Part II 7.6) by t
     echo "PBS_JOBID = ${PBS_JOBID}"
     echo "Node: $(cat "${PBS_NODEFILE:-/dev/null}" 2>/dev/null | sort -u | tr '\n' ' ')"
     echo "Cores: $CORES, free memory: ${MEM_GB} GB"
-    echo "Workers: ODEs $(workers $ODE_GB), burgers $(workers $BURGERS_GB), isothermal_flow $(workers $NS_GB)"
+    echo "Workers: ODEs $(workers $ODE_GB), burgers $(workers $BURGERS_GB), isothermal_flow $(workers $NS1_GB) (Part I), $(workers $NS2_GB) (Part II)"
     echo "=========================================="
 } > "$LOG"
 
 status=0
 scripts/run_all.sh --odes --jobs "$(workers $ODE_GB)" >> "$LOG" 2>&1 || status=1
 scripts/run_all.sh --cases burgers --jobs "$(workers $BURGERS_GB)" >> "$LOG" 2>&1 || status=1
-scripts/run_all.sh --cases isothermal_flow --jobs "$(workers $NS_GB)" >> "$LOG" 2>&1 || status=1
+scripts/run_all.sh --cases isothermal_flow --parts 1 --jobs "$(workers $NS1_GB)" >> "$LOG" 2>&1 || status=1
+scripts/run_all.sh --cases isothermal_flow --parts 2 --jobs "$(workers $NS2_GB)" >> "$LOG" 2>&1 || status=1
 
 echo "End time: $(date)" >> "$LOG"
 exit $status
