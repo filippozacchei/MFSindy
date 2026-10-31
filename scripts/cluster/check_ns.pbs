@@ -1,0 +1,31 @@
+#!/bin/bash
+#PBS -S /bin/bash
+#PBS -l walltime=12:00:00
+#PBS -l nodes=1:ppn=96
+#PBS -N MFSindy_check_ns
+#PBS -j oe
+
+# Isothermal flow at N x N before the full job: qsub -v N=128 scripts/cluster/check_ns.pbs
+# The residual comes first (minutes); then one run of each part, in parallel,
+# for the peak memory per worker that run_all.pbs uses as NS_GB.
+
+N=${N:-128}
+ROOT=/u/zacchei/WLS-Sindy
+LOG="$ROOT/scripts/cluster/check_ns_${N}_${PBS_JOBID:-local}.log"
+OUT="$ROOT/scripts/cluster/check_ns_${N}_out"
+cd "$ROOT" || exit 1
+
+source /u/zacchei/miniconda3/etc/profile.d/conda.sh
+conda activate sindy
+export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
+export PYTHONUNBUFFERED=1
+mkdir -p "$OUT"
+
+{
+    echo "Start time: $(date), N = $N, free memory: $(awk '/MemAvailable/ {printf "%d", $2 / 1048576}' /proc/meminfo) GB"
+    python scripts/cluster/check_ns.py residual "$N"
+    python scripts/cluster/check_ns.py memory "$N" 1 "$OUT" &
+    python scripts/cluster/check_ns.py memory "$N" 2 "$OUT" &
+    wait
+    echo "End time: $(date)"
+} > "$LOG" 2>&1

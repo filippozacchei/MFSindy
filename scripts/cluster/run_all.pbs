@@ -41,7 +41,7 @@ workers() {
 # Peak GB of one worker, measured on one run of each case.
 ODE_GB=0.5
 BURGERS_GB=2.5   # Part II 2.0, Part I 0.4
-NS_GB=8          # 64 x 64: Part I 7.1, Part II 7.6
+NS_GB=32         # 128 x 128, scaled from 64 x 64 (Part I 7.1, Part II 7.6) by the 4x points
 
 {
     echo "=========================================="
