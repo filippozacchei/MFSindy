@@ -56,6 +56,7 @@ NS_GB=8          # 64 x 64: Part I 7.1, Part II 7.6
 status=0
 scripts/run_all.sh --odes --jobs "$(workers $ODE_GB)" >> "$LOG" 2>&1 || status=1
 scripts/run_all.sh --cases burgers --jobs "$(workers $BURGERS_GB)" >> "$LOG" 2>&1 || status=1
+scripts/run_all.sh --cases isothermal_flow --runs 10 --jobs "$(workers $NS_GB)" >> "$LOG" 2>&1 || status=1
 scripts/run_all.sh --cases isothermal_flow --jobs "$(workers $NS_GB)" >> "$LOG" 2>&1 || status=1
 
 echo "End time: $(date)" >> "$LOG"
