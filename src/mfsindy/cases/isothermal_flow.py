@@ -53,20 +53,29 @@ from mfsindy.weighted_weak_pde_library import (
 # Core PDE: isothermal compressible Navier–Stokes
 # ---------------------------------------------------------------------------
 
-def _periodic_centered_diff(f: np.ndarray, dx: float, axis: int) -> np.ndarray:
-    """Periodic centered finite difference (first derivative) along one axis."""
-    return (np.roll(f, -1, axis=axis) - np.roll(f, 1, axis=axis)) / (2.0 * dx)
+def _fourier_diff(f: np.ndarray, dx: float, axis: int, order: int) -> np.ndarray:
+    """Derivative of a periodic field along one axis, by FFT (spectral accuracy).
 
-
-def _periodic_second_diff(f: np.ndarray, dx: float, axis: int) -> np.ndarray:
-    """Periodic centered finite difference (second derivative) along one axis."""
-    return (np.roll(f, -1, axis=axis) - 2.0 * f + np.roll(f, 1, axis=axis)) / (dx * dx)
+    The Nyquist mode is dropped from the first derivative, as usual for an even
+    number of points, where its derivative is not representable.
+    """
+    n = f.shape[axis]
+    k = 2.0 * np.pi * np.fft.fftfreq(n, d=dx)
+    if order == 1 and n % 2 == 0:
+        k[n // 2] = 0.0
+    shape = [1] * f.ndim
+    shape[axis] = n
+    return np.real(np.fft.ifft((1j * k.reshape(shape)) ** order * np.fft.fft(f, axis=axis), axis=axis))
 
 
 def compressible(t, U, dx, N, mu, RT):
     """2D isothermal compressible flow (periodic) for solve_ivp.
 
-    This uses explicit numpy roll-based finite differences for speed.
+    Fourier pseudo-spectral in space. With second-order finite differences on
+    the 32 x 32 grid the data was a solution of the scheme rather than of the
+    PDE: the analytic coefficients left a residual on clean data of 0.5-15%,
+    up to 30 times what the 1% HF noise adds to the weak rows, against 0-0.1%
+    (at most 0.65 times the noise) spectrally.
 
     Parameters
     ----------
@@ -83,21 +92,21 @@ def compressible(t, U, dx, N, mu, RT):
     rho = uvr[:, :, 2]
 
     # First derivatives
-    ux = _periodic_centered_diff(u, dx, axis=0)
-    uy = _periodic_centered_diff(u, dx, axis=1)
-    vx = _periodic_centered_diff(v, dx, axis=0)
-    vy = _periodic_centered_diff(v, dx, axis=1)
+    ux = _fourier_diff(u, dx, 0, 1)
+    uy = _fourier_diff(u, dx, 1, 1)
+    vx = _fourier_diff(v, dx, 0, 1)
+    vy = _fourier_diff(v, dx, 1, 1)
 
     # Second derivatives
-    uxx = _periodic_second_diff(u, dx, axis=0)
-    uyy = _periodic_second_diff(u, dx, axis=1)
-    vxx = _periodic_second_diff(v, dx, axis=0)
-    vyy = _periodic_second_diff(v, dx, axis=1)
+    uxx = _fourier_diff(u, dx, 0, 2)
+    uyy = _fourier_diff(u, dx, 1, 2)
+    vxx = _fourier_diff(v, dx, 0, 2)
+    vyy = _fourier_diff(v, dx, 1, 2)
 
     # Pressure and its derivatives
     p = rho * RT
-    px = _periodic_centered_diff(p, dx, axis=0)
-    py = _periodic_centered_diff(p, dx, axis=1)
+    px = _fourier_diff(p, dx, 0, 1)
+    py = _fourier_diff(p, dx, 1, 1)
 
     inv_rho = 1.0 / rho
 
@@ -145,20 +154,21 @@ def make_initial_condition(
     # invariant, so a shifted field visits the same local states and the weak
     # regression cannot tell it apart.
     #
-    # The finest structure in the field is the 2*k_y mode, so k_y is what
-    # limits resolution: k_y=2 puts 8 points per wavelength on a 32-point
-    # axis, which is already the floor. k_x costs nothing by comparison and
-    # is given a third value, so there are six structural combinations rather
-    # than four and fewer trajectories are structural duplicates.
-    k_x = int(rng.integers(1, 4))
+    # Both wavenumbers are 1 or 2 periods per box side. The box is the
+    # flow's own period: an earlier family on twice the box used only even
+    # wavenumbers in y, so every flow was two or four exact copies of itself
+    # in y, repeated measurements of one field rather than more data. k = 3
+    # is left out: its viscous decay rate mu (2 pi k / L)^2, 14 on the box of
+    # side 5, would empty the mode within a fraction of the horizon.
+    k_x = int(rng.integers(1, 3))
     k_y = int(rng.integers(1, 3))
 
     U0 = (amp_u_sin * np.sin(k_x * 2 * np.pi / L * X) +
-            amp_u_cos * np.cos(2 * k_y * 2 * np.pi / L * Y))
+            amp_u_cos * np.cos(k_y * 2 * np.pi / L * Y))
     V0 = (amp_v_cos * np.cos(k_x * 2 * np.pi / L * X) +
-            amp_v_sin * np.sin(2 * k_y * 2 * np.pi / L * Y))
+            amp_v_sin * np.sin(k_y * 2 * np.pi / L * Y))
     RHO0 = 1.0 + amp_rho_cos * np.cos(k_x * 2 * np.pi / L * X) * np.cos(
-        2 * k_y * 2 * np.pi / L * Y
+        k_y * 2 * np.pi / L * Y
     )
 
     return U0, V0, RHO0
@@ -172,17 +182,12 @@ def generate_isothermal_ns_dataset(
     mu: float = 1.0,
     RT: float = 1.0,
     seed: int = 1,
-    n_solve: int = 128,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Single trajectory of isothermal compressible flow, on an N x N grid.
 
-    The flow is solved on an n_solve x n_solve grid and sampled onto the N x N
-    one (N must divide n_solve; at N = n_solve there is no sampling). The solver
-    resolution is what sets how far the data is from a solution of the PDE: the
-    analytic coefficients leave a residual on clean data of 2-8% solved at 32 and
-    0.6-1.9% at 64, at or above the 1% HF noise, which the HF-trusting models fit
-    with spurious terms; solved at 128 it is 0.2-0.7% (measured at N = 32).
+    The flow is solved on the N x N observation grid itself, pseudo-spectrally
+    (see compressible).
 
     Returns
     -------
@@ -194,9 +199,7 @@ def generate_isothermal_ns_dataset(
         Spatiotemporal grid (x, y, t).
     """
 
-    if n_solve % N:
-        raise ValueError(f"N = {N} must divide the solver grid n_solve = {n_solve}.")
-    U = _solve_isothermal_ns(int(N), int(Nt), float(L), float(T), float(mu), float(RT), int(seed), int(n_solve // N))
+    U = _solve_isothermal_ns(int(N), int(Nt), float(L), float(T), float(mu), float(RT), int(seed))
     t = np.linspace(0.0, T, Nt)
     x = np.linspace(0.0, L, N, endpoint=False)
     X, Y = np.meshgrid(x, x, indexing="ij")
@@ -208,13 +211,12 @@ def generate_isothermal_ns_dataset(
 
 
 @functools.lru_cache(maxsize=16)
-def _solve_isothermal_ns(N, Nt, L, T, mu, RT, seed, refine) -> np.ndarray:
+def _solve_isothermal_ns(N, Nt, L, T, mu, RT, seed) -> np.ndarray:
     """The flow of ``generate_isothermal_ns_dataset``, cached: a Part II run is
-    rebuilt once per candidate support, and the fine solve is the slow part."""
+    rebuilt once per candidate support, and the solve is the slow part."""
 
     rng = np.random.default_rng(seed)
-    n_fine = N * refine
-    x = np.linspace(0.0, L, n_fine, endpoint=False)
+    x = np.linspace(0.0, L, N, endpoint=False)
     X, Y = np.meshgrid(x, x, indexing="ij")
     U0, V0, RHO0 = make_initial_condition(X, Y, L, rng=rng)
     y0 = np.stack([U0, V0, RHO0], axis=-1)
@@ -224,12 +226,12 @@ def _solve_isothermal_ns(N, Nt, L, T, mu, RT, seed, refine) -> np.ndarray:
         (0.0, T),
         y0.reshape(-1),
         t_eval=np.linspace(0.0, T, Nt),
-        args=(x[1] - x[0], n_fine, mu, RT),
+        args=(x[1] - x[0], N, mu, RT),
         method="RK45",
         rtol=1e-8,
         atol=1e-8,
     )
-    U = sol.y.reshape(n_fine, n_fine, 3, -1).transpose(0, 1, 3, 2)[::refine, ::refine]
+    U = sol.y.reshape(N, N, 3, -1).transpose(0, 1, 3, 2)
     U = np.ascontiguousarray(U)
     U.flags.writeable = False
     return U
@@ -371,10 +373,10 @@ class NSIsothermalMultiTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin
     noise_hf_rel: float = 0.01
 
     # grid / time
-    N: int = 128
+    N: int = 32             # solved on this grid (compressible)
     Nt: int = 1001
     Nt_std: int = 1001
-    L: float = 5.0
+    L: float = 5.0          # the flows' own period (make_initial_condition)
     T: float = 1.0
     T_std : float = 1.0
 
@@ -393,9 +395,8 @@ class NSIsothermalMultiTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin
 
     # SINDy / optimizer settings
     n_ensemble_models: int = 100  # as every case; the bags are most of a run's time here
-    # About 3 GB per worker at N = 32 and some 30 GB at N = 128: one worker,
-    # and N = 128 only on the cluster (scripts/cluster/run_all.pbs sets --jobs).
-    n_jobs: int = 1
+    # About 3 GB per worker at N = 32, so three in 16 GB.
+    n_jobs: int = 3
 
     # randomness
     seed_base: int = 0
@@ -803,9 +804,9 @@ class NSIsothermalIntraTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin
     """
 
     # grid / time
-    N: int = 128
+    N: int = 32             # solved on this grid (compressible)
     Nt: int = 1001          # linspace(0, T, Nt): dt = T / (Nt - 1) = 1e-3
-    L: float = 5.0
+    L: float = 5.0          # the flows' own period (make_initial_condition)
     T: float = 1.0
     n_traj: int = 10        # flows per run, each from its own initial condition
 
@@ -832,9 +833,8 @@ class NSIsothermalIntraTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin
     # SINDy / optimizer settings
     n_ensemble_models: int = 100  # as every case; the bags are most of a run's time here
     # A run holds 10 flows x 4 libraries on one shared set of test functions
-    # (_share_test_functions): under 2 GB at N = 32, 7.6 GB at N = 64 and some
-    # 30 GB at N = 128, which runs on the cluster only.
-    n_jobs: int = 1
+    # (_share_test_functions): under 2 GB at N = 32, so four in 16 GB.
+    n_jobs: int = 4
 
     results_filename: str = "ns_isothermal_weighted_errors.csv"
 

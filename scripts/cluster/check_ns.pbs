@@ -5,11 +5,11 @@
 #PBS -N MFSindy_check_ns
 #PBS -j oe
 
-# Isothermal flow at N x N before the full job: qsub -v N=128 scripts/cluster/check_ns.pbs
+# Isothermal flow at N x N before the full job: qsub -v N=32 scripts/cluster/check_ns.pbs
 # The residual comes first (minutes); then one run of each part, in parallel,
 # for the peak memory per worker that run_all.pbs uses as NS_GB.
 
-N=${N:-128}
+N=${N:-32}
 ROOT=/u/zacchei/WLS-Sindy
 LOG="$ROOT/scripts/cluster/check_ns_${N}_${PBS_JOBID:-local}.log"
 OUT="$ROOT/scripts/cluster/check_ns_${N}_out"

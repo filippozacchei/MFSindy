@@ -41,8 +41,8 @@ workers() {
 # Peak GB of one worker, measured on one run of each case.
 ODE_GB=0.5
 BURGERS_GB=2.5   # Part II 2.0, Part I 0.4
-NS1_GB=35        # 128 x 128, measured 31.7 (scripts/cluster/check_ns.pbs)
-NS2_GB=46        # 128 x 128, measured 41.9
+NS1_GB=4         # 32 x 32, about 3 (earlier 32 x 32 runs)
+NS2_GB=3         # 32 x 32, under 2
 
 {
     echo "=========================================="

@@ -6,7 +6,10 @@
 ``residual`` solves two flows and reports, per support, how far the analytic
 coefficients are from fitting the clean weak system (the misfit the HF noise has
 to dominate for the true model to be recoverable) and the smallest true
-coefficient plain least squares on the true support returns (1 when exact).
+coefficient plain least squares on the true support returns (1 when exact), and
+the residual divided by what the HF noise alone adds to it: well below 1 the
+error is noise-dominated (the regime weighting is for), near or above 1 it is
+dominated by the misfit, which the HF-trusting models then fit with extra terms.
 ``memory`` runs one Monte Carlo run of Part PART in one process, with 5 bags
 (the bags barely change memory), and reports its peak: what the job script
 needs as the GB per worker.
@@ -51,15 +54,20 @@ def residual(N: int) -> None:
             lib = F._ns_make_weak_library(replace(cfg, H_xt=H, K=None), grid, variance_field=None, weak_seed=0)
             lib.fit([U])
             Theta, b = weak_system(lib, U)
-            res, worst = [], 1.0
+            noisy = U + cfg.noise_hf_rel * U.std(axis=(0, 1, 2)) * np.random.default_rng(seed).standard_normal(U.shape)
+            Theta_n, b_n = weak_system(lib, noisy)
+            res, ratio, worst = [], [], 1.0
             for e in range(3):
                 support = np.flatnonzero(C[e])
                 x, *_ = np.linalg.lstsq(Theta[:, support], b[:, e], rcond=None)
-                res.append(np.linalg.norm(Theta @ C[e] - b[:, e]) / np.linalg.norm(b[:, e]))
+                misfit = Theta @ C[e] - b[:, e]
+                noise = (Theta_n @ C[e] - b_n[:, e]) - misfit
+                res.append(np.linalg.norm(misfit) / np.linalg.norm(b[:, e]))
+                ratio.append(np.linalg.norm(misfit) / np.linalg.norm(noise))
                 worst = min(worst, float(np.min(np.abs(x))))
             print(f"  support {np.round(H, 3)}, K {lib.K}: residual at truth "
-                  f"{np.round(100 * np.array(res), 2)} %, worst true coefficient {worst:.3f}, "
-                  f"peak {peak_gb():.1f} GB", flush=True)
+                  f"{np.round(100 * np.array(res), 2)} %, residual / HF noise {np.round(ratio, 2)}, "
+                  f"worst true coefficient {worst:.3f}, peak {peak_gb():.1f} GB", flush=True)
 
 
 def memory(N: int, part: int, out: str) -> None:
