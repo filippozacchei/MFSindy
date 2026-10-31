@@ -57,6 +57,9 @@ NS2_GB=46        # 128 x 128, measured 41.9
 status=0
 scripts/run_all.sh --odes --jobs "$(workers $ODE_GB)" >> "$LOG" 2>&1 || status=1
 scripts/run_all.sh --cases burgers --jobs "$(workers $BURGERS_GB)" >> "$LOG" 2>&1 || status=1
+# A first pass of 10 runs, for early results; the full pass then overwrites it.
+scripts/run_all.sh --cases isothermal_flow --parts 1 --runs 10 --jobs "$(workers $NS1_GB)" >> "$LOG" 2>&1 || status=1
+scripts/run_all.sh --cases isothermal_flow --parts 2 --runs 10 --jobs "$(workers $NS2_GB)" >> "$LOG" 2>&1 || status=1
 scripts/run_all.sh --cases isothermal_flow --parts 1 --jobs "$(workers $NS1_GB)" >> "$LOG" 2>&1 || status=1
 scripts/run_all.sh --cases isothermal_flow --parts 2 --jobs "$(workers $NS2_GB)" >> "$LOG" 2>&1 || status=1
 
