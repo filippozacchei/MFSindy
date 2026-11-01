@@ -36,7 +36,7 @@ MODELS = ["HF", "LF", "MF", "VHF", "VLF", "PMF", "VMF", "MF_w"]
 
 #: Candidate supports, the same divisors as for Burgers: in time, the ODE divisors
 #: of the horizon without T/200; in space, W/8 and W/4 of the observed side W, the
-#: window (a quarter of L, ns_observation_windows) or L for whole flows. Every model
+#: window (half of L, a quarter of the domain, ns_observation_windows) or L for whole flows. Every model
 #: picks among them by the spread of its own ensemble, with the threshold set by BIC
 #: inside the ensemble (mfsindy.experiments.selection): the same procedure for
 #: every model, and no true coefficients involved. A support is
