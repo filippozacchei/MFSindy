@@ -107,9 +107,9 @@ def run_monte_carlo(cfg, *, verbose: bool = True) -> pd.DataFrame:
 
 
 def main() -> None:
-    cfg = make_config(**cli_overrides())
-    print(design_report(cfg).to_string(index=False))
-    run_monte_carlo(cfg)
+    # The design report (kappa per support) is left to the notebook: it is only
+    # reported, and on 64 x 64 windows it took longer than a run, on one core.
+    run_monte_carlo(make_config(**cli_overrides()))
 
 
 if __name__ == "__main__":
