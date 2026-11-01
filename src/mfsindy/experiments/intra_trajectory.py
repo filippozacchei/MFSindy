@@ -114,11 +114,13 @@ def run_intra_trajectory_gls_experiment(
             for method in methods
         }
         last = run_idx == cfg.n_runs - 1
-        return errors, {"coefs": coef_map, "true": true, "trace": trace if last else None}
+        return errors, {"coefs": coef_map, "supports": {m: trace[m]["support"] for m in methods},
+                        "true": true, "trace": trace if last else None}
 
     def collect(extras):
         estimates = {m: [e["coefs"][m] for e in extras] for m in methods}
-        save_selection(cfg, cfg.n_runs - 1, extras[-1]["true"], extras[-1]["trace"], estimates)
+        supports = {m: [e["supports"][m] for e in extras] for m in methods}
+        save_selection(cfg, cfg.n_runs - 1, extras[-1]["true"], extras[-1]["trace"], estimates, supports)
 
     return run_monte_carlo_experiment(
         n_runs=cfg.n_runs,

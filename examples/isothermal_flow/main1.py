@@ -34,7 +34,8 @@ ERRORS_PATH = RESULTS_DIR / "navierstokes_part1_errors.csv"
 
 MODELS = ["HF", "LF", "MF", "VHF", "VLF", "PMF", "VMF", "MF_w"]
 
-#: Candidate supports, as divisors of the training horizon and domain. Every model picks
+#: Candidate supports, as divisors of the training horizon and of the observed
+#: side: the window (a quarter of L, ns_observation_windows), or L for whole flows. Every model picks
 #: among them by the spread of its own ensemble, with the threshold set by BIC
 #: inside the ensemble (mfsindy.experiments.selection): the same procedure for
 #: every model, and no true coefficients involved. In space the grid starts at
@@ -57,7 +58,8 @@ def make_config(**overrides) -> NSIsothermalMultiTrajectoryGLSConfig:
     settings.update(overrides)
     cfg = NSIsothermalMultiTrajectoryGLSConfig(**settings)
     if cfg.H_grid is None:
-        cfg.H_grid = [[cfg.L / dx, cfg.L / dx, cfg.T / dt] for dx in SPACE_DIVISORS for dt in TIME_DIVISORS]
+        extent = cfg.window if cfg.window is not None else cfg.L
+        cfg.H_grid = [[extent / dx, extent / dx, cfg.T / dt] for dx in SPACE_DIVISORS for dt in TIME_DIVISORS]
     return cfg
 
 

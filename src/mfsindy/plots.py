@@ -19,6 +19,7 @@ __all__ = [
     "plot_run_trajectories",
     "plot_selection",
     "plot_state_noise",
+    "plot_support_choices",
     "plot_threshold_path",
 ]
 
@@ -607,3 +608,42 @@ def plot_coefficient_runs(
     _coefficient_panels(record["coefficients"], record["true"], rungs=rungs, colors=colors,
                         row_names=row_names, col_names=col_names, ncols=ncols,
                         save_path=save_path, show=show)
+
+
+def plot_support_choices(
+    record: Mapping,
+    *,
+    rungs: list[str] | tuple[str, ...],
+    colors: Mapping[str, str] | None = None,
+    labels: Mapping[str, str] | None = None,
+    save_path: str | None = None,
+    show: bool = True,
+) -> None:
+    """How often each rung chose each candidate support, over the Monte Carlo.
+
+    One row per rung, one column per support in grid order; the area of a dot is
+    the number of runs that chose it. Needs a record that stores every run's
+    support (``record["supports"]``).
+    """
+
+    colors, labels = dict(colors or {}), dict(labels or {})
+    supports = list(record["rungs"][rungs[0]]["by_support"])
+    fig, ax = plt.subplots(figsize=(0.45 * len(supports) + 1.5, 0.4 * len(rungs) + 1.0))
+    n_runs = len(record["supports"][rungs[0]])
+    for row, rung in enumerate(rungs):
+        chosen = [tuple(np.ravel(H)) for H in record["supports"][rung]]
+        counts = np.array([sum(c == tuple(np.ravel(H)) for c in chosen) for H in supports])
+        keep = counts > 0
+        ax.scatter(np.flatnonzero(keep), np.full(keep.sum(), row), s=600 * counts[keep] / n_runs,
+                   color=colors.get(rung, "0.4"), alpha=0.85, linewidths=0)
+        for col in np.flatnonzero(keep):
+            ax.annotate(str(counts[col]), (col, row), xytext=(0, -11), textcoords="offset points",
+                        ha="center", va="top", fontsize=6, color="0.3")
+    ax.set_yticks(range(len(rungs)), [labels.get(r, r) for r in rungs])
+    ax.set_xticks(range(len(supports)), ["[" + ", ".join(f"{h:g}" for h in np.ravel(H)) + "]" for H in supports],
+                  rotation=60, ha="right", fontsize=7)
+    ax.set_xlim(-0.6, len(supports) - 0.4)
+    ax.set_ylim(len(rungs) - 0.4, -0.7)
+    ax.set_xlabel("support chosen")
+    sns.despine(ax=ax, left=True)
+    _finish(fig, save_path, show)

@@ -40,10 +40,10 @@ import numpy as np
 from pysindy.optimizers import BaseOptimizer
 
 
-def _stlsq(G: np.ndarray, b: np.ndarray, threshold: float, max_iter: int) -> np.ndarray:
-    """Sequential thresholding least squares for one equation, no ridge."""
+def _stlsq(G: np.ndarray, b: np.ndarray, w: np.ndarray, threshold: float, max_iter: int) -> np.ndarray:
+    """Sequential thresholding least squares for one equation, no ridge, started
+    from ``w``, the least-squares fit of ``b`` on all of ``G``."""
 
-    w = np.linalg.lstsq(G, b, rcond=None)[0]
     keep = np.ones(G.shape[1], dtype=bool)
     for it in range(max_iter):
         new = np.abs(w) >= threshold
@@ -107,13 +107,14 @@ class BICEnsembleSTLSQ(BaseOptimizer):
 
         coefs = np.zeros((self.n_thresholds, self.n_models, t, p))
         ls = np.zeros((self.n_models, t, p))
+        # A bag's rows and its least-squares fit are the same at every threshold,
+        # so both are made once per bag (the fit was most of a run's time).
         for j in range(t):
-            G = designs[j]
             for k, rows in enumerate(bags):
-                ls[k, j] = np.linalg.lstsq(G[rows], y[rows, j], rcond=None)[0]
-            for i in range(self.n_thresholds):
-                for k, rows in enumerate(bags):
-                    coefs[i, k, j] = _stlsq(G[rows], y[rows, j], thresholds[i, j], self.max_iter)
+                G, b = designs[j][rows], y[rows, j]
+                ls[k, j] = np.linalg.lstsq(G, b, rcond=None)[0]
+                for i in range(self.n_thresholds):
+                    coefs[i, k, j] = _stlsq(G, b, ls[k, j], thresholds[i, j], self.max_iter)
 
         median = np.median(coefs, axis=1)                                  # (n_thr, t, p)
         rss = np.stack([np.sum((designs[j] @ median[:, j].T - y[:, [j]]) ** 2, axis=0)
@@ -217,14 +218,18 @@ def selection_path(cfg) -> Path:
 
 
 def save_selection(cfg, run_idx: int, true_coefficients: np.ndarray, trace,
-                   coefficients: Mapping[str, list] | None = None) -> None:
-    """Write the last run's selection, and every run's reported coefficients."""
+                   coefficients: Mapping[str, list] | None = None,
+                   supports: Mapping[str, list] | None = None) -> None:
+    """Write the last run's selection, and every run's reported coefficients and
+    chosen support."""
 
     path = selection_path(cfg)
     path.parent.mkdir(parents=True, exist_ok=True)
     record = {"run": run_idx, "true": np.asarray(true_coefficients), "rungs": trace}
     if coefficients is not None:
         record["coefficients"] = {rung: np.stack(c) for rung, c in coefficients.items()}
+    if supports is not None:
+        record["supports"] = {rung: list(s) for rung, s in supports.items()}
     with open(path, "wb") as fh:
         pickle.dump(record, fh)
 

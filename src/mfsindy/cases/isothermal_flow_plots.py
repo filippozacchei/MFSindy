@@ -172,3 +172,46 @@ def plot_residuals(grid, x_true, x_noisy, time_indices=None, component=2):
     ax.grid(False)
     plt.tight_layout()
     plt.show()
+
+
+def plot_observation_windows(flow, L, windows, *, n_hf: int = 0, component: int = 2,
+                             save_path=None):
+    """The flow a run solves, at t = 0, and the windows that observe it.
+
+    ``flow`` is (N, N, Nt, 3) on the box [0, L]^2; ``windows`` the index of each
+    window, as ns_observation_windows returns them. Each window spans the whole
+    time interval. The first ``n_hf`` are drawn as HF (red), the rest as LF
+    (white); a window that wraps round the period is drawn in pieces.
+    """
+    import os
+    from matplotlib.patches import Rectangle
+
+    U = np.asarray(flow)
+    N = U.shape[0]
+    dx = L / N
+    fig, ax = plt.subplots(figsize=(3.6, 3.2), dpi=150)
+    image = ax.imshow(U[:, :, 0, component].T, origin="lower", extent=[0, L, 0, L],
+                      cmap="Purples" if component == 2 else "RdBu_r", interpolation="nearest")
+    fig.colorbar(image, ax=ax, fraction=0.046, pad=0.03,
+                 label=[r"$u_0$", r"$v_0$", r"$\rho_0$"][component])
+
+    def pieces(index):
+        index = np.ravel(index)
+        return np.split(index, np.flatnonzero(np.diff(index) != 1) + 1)
+
+    for k, (ix, iy) in enumerate(windows):
+        hf = k < n_hf
+        for px in pieces(ix):
+            for py in pieces(iy):
+                ax.add_patch(Rectangle((px[0] * dx, py[0] * dx), px.size * dx, py.size * dx, fill=False,
+                                       edgecolor="#c0392b" if hf else "white",
+                                       linewidth=2.0 if hf else 1.0, zorder=3 if hf else 2))
+    ax.set_xlim(0, L)
+    ax.set_ylim(0, L)
+    ax.set_xlabel("$x$")
+    ax.set_ylabel("$y$")
+    plt.tight_layout()
+    if save_path is not None:
+        os.makedirs(os.path.dirname(save_path) or ".", exist_ok=True)
+        fig.savefig(save_path, bbox_inches="tight", dpi=300)
+    plt.show()

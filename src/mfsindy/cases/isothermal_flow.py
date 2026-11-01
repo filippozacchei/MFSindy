@@ -210,10 +210,27 @@ def generate_isothermal_ns_dataset(
     return U, t, grid
 
 
-@functools.lru_cache(maxsize=16)
+def ns_observation_windows(N: int, L: float, n: int, window: float, rng: np.random.Generator):
+    """Where n square windows of edge ``window`` observe a periodic N x N flow.
+
+    Returns the index of each window, for ``U[idx]``, starting at uniformly
+    random positions and wrapping around the period, and the number of grid
+    points along its edge. The equations are translation-invariant, so every
+    window is fitted on the same local grid, ``grid[:width, :width]``. The
+    positions are random so that what a window sees is left to chance, as
+    which region a short ODE trajectory visits is.
+    """
+
+    width = int(round(window / (L / N)))
+    starts = rng.integers(0, N, size=(n, 2))
+    return [np.ix_(np.arange(sx, sx + width) % N, np.arange(sy, sy + width) % N) for sx, sy in starts], width
+
+
+@functools.lru_cache(maxsize=2)
 def _solve_isothermal_ns(N, Nt, L, T, mu, RT, seed) -> np.ndarray:
     """The flow of ``generate_isothermal_ns_dataset``, cached: a Part II run is
-    rebuilt once per candidate support, and the solve is the slow part."""
+    rebuilt once per candidate support, and the solve is the slow part. Two
+    entries: a 128 x 128 flow is 0.4 GB."""
 
     rng = np.random.default_rng(seed)
     x = np.linspace(0.0, L, N, endpoint=False)
@@ -373,11 +390,16 @@ class NSIsothermalMultiTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin
     noise_hf_rel: float = 0.01
 
     # grid / time
-    N: int = 32             # solved on this grid (compressible)
+    N: int = 128            # solved on this grid (compressible)
     Nt: int = 1001
     Nt_std: int = 1001
     L: float = 5.0          # the flows' own period (make_initial_condition)
     T: float = 1.0
+    # Edge of the observation window, a quarter of the side (32 x 32 points).
+    # Each run solves one flow and observes it on n_hf + n_lf windows at random
+    # positions (ns_observation_windows), as an ODE run observes short
+    # trajectories; None observes whole flows, each from its own initial condition.
+    window: float | None = 1.25
     T_std : float = 1.0
 
     # physical parameters
@@ -395,7 +417,7 @@ class NSIsothermalMultiTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin
 
     # SINDy / optimizer settings
     n_ensemble_models: int = 100  # as every case; the bags are most of a run's time here
-    # About 3 GB per worker at N = 32, so three in 16 GB.
+    # 3.3 GB per worker with windows on N = 128 (measured), so three in 16 GB.
     n_jobs: int = 3
 
     # randomness
@@ -415,6 +437,21 @@ def _ns_dataset_batch(
     t: np.ndarray,
 ) -> MultiTrajectoryGLSData:
     rng = np.random.default_rng(cfg.seed_base + 100 * run_idx)
+
+    if cfg.window is not None:
+        U, _, _ = generate_isothermal_ns_dataset(
+            N=cfg.N, Nt=cfg.Nt, L=cfg.L, T=cfg.T, mu=cfg.mu, RT=cfg.RT,
+            seed=cfg.seed_base + run_idx * 1000,
+        )
+        windows, width = ns_observation_windows(cfg.N, cfg.L, cfg.n_hf + cfg.n_lf, cfg.window, rng)
+        clean = [U[idx] for idx in windows]
+        return MultiTrajectoryGLSData(
+            hf=[w + noise_hf_abs * rng.standard_normal(w.shape) for w in clean[:cfg.n_hf]],
+            lf=[w + noise_lf_abs * rng.standard_normal(w.shape) for w in clean[cfg.n_hf:]],
+            t_argument=t,
+            metadata={"grid": np.ascontiguousarray(grid[:width, :width]),
+                      "weak_seed": cfg.seed_base + 100_000 + run_idx, "windows": windows},
+        )
 
     def _sample(n_traj: int, noise_abs: float, offset: int) -> list[np.ndarray]:
         data: list[np.ndarray] = []
@@ -626,7 +663,10 @@ def ns_isothermal_weak_design(
     grid[:, :, :, 1] = Y[:, :, None]
     grid[:, :, :, 2] = t[None, None, :]
 
-    field_shape = (cfg.N, cfg.N, cfg.Nt)
+    if cfg.window is not None:     # the fits see one window's grid
+        width = int(round(cfg.window / (cfg.L / cfg.N)))
+        grid = np.ascontiguousarray(grid[:width, :width])
+    field_shape = grid.shape[:-1]
     H = _ns_multi_h_xt(cfg)
     extents = tuple(float(np.ptp(grid[..., axis])) for axis in range(grid.shape[-1]))
     if cfg.K is not None:
@@ -804,11 +844,13 @@ class NSIsothermalIntraTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin
     """
 
     # grid / time
-    N: int = 32             # solved on this grid (compressible)
+    N: int = 128            # solved on this grid (compressible)
     Nt: int = 1001          # linspace(0, T, Nt): dt = T / (Nt - 1) = 1e-3
     L: float = 5.0          # the flows' own period (make_initial_condition)
     T: float = 1.0
-    n_traj: int = 10        # flows per run, each from its own initial condition
+    n_traj: int = 10        # windows per run, all on one flow (ns_observation_windows)
+    window: float | None = 1.25  # window edge, a quarter of the side; None observes
+                                 # n_traj whole flows, each from its own initial condition
 
     # physical parameters
     mu: float = 1.0
@@ -832,9 +874,10 @@ class NSIsothermalIntraTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin
 
     # SINDy / optimizer settings
     n_ensemble_models: int = 100  # as every case; the bags are most of a run's time here
-    # A run holds 10 flows x 4 libraries on one shared set of test functions
-    # (_share_test_functions): under 2 GB at N = 32, so four in 16 GB.
-    n_jobs: int = 4
+    # A run holds 10 windows x 4 libraries on one shared set of test functions
+    # (_share_test_functions) and the 128 x 128 flow: 4.3 GB per worker
+    # (measured), so two in 16 GB.
+    n_jobs: int = 2
 
     results_filename: str = "ns_isothermal_weighted_errors.csv"
 
@@ -854,16 +897,35 @@ def ns_noise_variance(U_clean: np.ndarray, cfg) -> np.ndarray:
     return np.maximum(sigma ** 2, 1e-12)
 
 
-def ns_run_trajectories(cfg: NSIsothermalIntraTrajectoryGLSConfig, rng: np.random.Generator):
-    """The cfg.n_traj flows of one Part II run, as ``(t, grid, clean, noisy, variance)``.
+def ns_run_trajectories(cfg: NSIsothermalIntraTrajectoryGLSConfig, rng: np.random.Generator,
+                        *, observed: dict | None = None):
+    """The cfg.n_traj fields of one Part II run, as ``(t, grid, clean, noisy, variance)``.
 
-    Flows are ``(N, N, Nt, 3)`` and so are their variances. Each flow starts
-    from its own randomised Taylor-Green condition and gets its own noise, drawn
-    from ns_noise_variance. The Monte Carlo builder, main2.py and the notebook
-    all draw through this function, so they show the same data.
+    Fields are ``(n, n, Nt, 3)`` and so are their variances. With ``cfg.window``
+    they are windows of one flow (ns_observation_windows), whose noise is drawn
+    from ns_noise_variance of the whole flow, as one sensor measures every
+    window; without, each is a whole flow from its own randomised Taylor-Green
+    condition. ``observed``, if given, receives the whole flow and the windows,
+    for plotting. The Monte Carlo builder, main2.py and the notebook all draw
+    through this function, so they show the same data.
     """
 
     clean, noisy, variances = [], [], []
+    if cfg.window is not None:
+        U, t, grid = generate_isothermal_ns_dataset(
+            N=cfg.N, Nt=cfg.Nt, L=cfg.L, T=cfg.T, mu=cfg.mu, RT=cfg.RT,
+            seed=int(rng.integers(2**31)),
+        )
+        variance = ns_noise_variance(U, cfg)
+        windows, width = ns_observation_windows(cfg.N, cfg.L, cfg.n_traj, cfg.window, rng)
+        if observed is not None:
+            observed.update(flow=U, windows=windows)
+        for idx in windows:
+            clean.append(U[idx])
+            variances.append(variance[idx])
+            noisy.append(clean[-1] + np.sqrt(variances[-1]) * rng.standard_normal(size=clean[-1].shape))
+        return t, np.ascontiguousarray(np.asarray(grid, dtype=float)[:width, :width]), clean, noisy, variances
+
     for _ in range(cfg.n_traj):
         U_clean, t, grid = generate_isothermal_ns_dataset(
             N=cfg.N, Nt=cfg.Nt, L=cfg.L, T=cfg.T, mu=cfg.mu, RT=cfg.RT,
@@ -1053,7 +1115,11 @@ def ns_isothermal_kappa_by_support(
             N=cfg.N, Nt=cfg.Nt, L=cfg.L, T=cfg.T, mu=cfg.mu, RT=cfg.RT,
             seed=cfg.seed_base + j,
         )
-        references.append((np.asarray(U_ref), np.asarray(grid_ref, dtype=float)))
+        U_ref, grid_ref = np.asarray(U_ref), np.asarray(grid_ref, dtype=float)
+        if cfg.window is not None:     # on one window, as the fits see the flow
+            width = int(round(cfg.window / (cfg.L / cfg.N)))
+            U_ref, grid_ref = U_ref[:width, :width], grid_ref[:width, :width]
+        references.append((np.ascontiguousarray(U_ref), np.ascontiguousarray(grid_ref)))
 
     rows: list[dict] = []
     for H in candidates:

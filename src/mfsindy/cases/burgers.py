@@ -52,10 +52,12 @@ class BurgersConfig(MonteCarloConfig, EnsembleConfigMixin):
 
     # Domain and discretisation
     L: float = 8.0          # half-domain, domain [-L, L]
-    NX: int = 128           # number of spatial points
+    NX: int = 256           # number of spatial points
     t0: float = 0.0
     t1: float = 1.0
-    n_traj: int = 10        # fields per run, each from its own initial condition
+    n_traj: int = 10        # windows per run, all on one flow (observation_windows)
+    window: float | None = 4.0  # window edge, a quarter of the domain; None observes
+                                # n_traj whole flows, each from its own initial condition
     dt: float = 1e-3        # the Part II step shared with the ODE cases; also the
                             # explicit-Euler step of burgers_solver
     nu: float = 0.1         # viscosity, as in Part I
@@ -90,7 +92,7 @@ class BurgersMultiTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
 
     # spatial / temporal discretization
     L: float = 8.0
-    NX: int = 128
+    NX: int = 256
     dt: float = 1e-3
     T_train: float = 1.0
     nu: float = 0.1
@@ -98,6 +100,11 @@ class BurgersMultiTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
     # multi-fidelity settings (numbers of trajectories)
     n_lf: int = 10
     n_hf: int = 1
+    # Edge of the observation window, a quarter of the domain. Each run solves
+    # one flow and observes it on n_hf + n_lf windows at random positions
+    # (observation_windows), as an ODE run observes short trajectories; None
+    # observes whole flows, each from its own initial condition.
+    window: float | None = 4.0
     H_xt: list[float] | None = None
     K: int | None = None       # derived from H_xt when None
     deduplicate: bool = True   # drop test functions whose support duplicates another's
@@ -251,20 +258,50 @@ def burgers_noise_variance(U_clean: np.ndarray, cfg) -> np.ndarray:
     return np.maximum(sigma ** 2, 1e-12)
 
 
-def burgers_run_trajectories(cfg: BurgersConfig, rng: np.random.Generator):
+def observation_windows(x: np.ndarray, n: int, window: float, rng: np.random.Generator):
+    """Where n windows of edge ``window`` observe a periodic field on grid x.
+
+    Returns the grid points of each window, starting at uniformly random
+    positions and wrapping around the period, and the window's own grid. The
+    equation is translation-invariant, so every window is fitted on the same
+    local grid. The positions are random so that whether a window sees the
+    front is left to chance, as whether a short ODE trajectory visits an
+    informative region is.
+    """
+
+    width = int(round(window / (x[1] - x[0])))
+    starts = rng.integers(0, x.size, n)
+    return [np.arange(s, s + width) % x.size for s in starts], x[:width]
+
+
+def burgers_run_trajectories(cfg: BurgersConfig, rng: np.random.Generator, *, observed: dict | None = None):
     """The cfg.n_traj fields of one Part II run, as ``(x, t, clean, noisy, variance)``.
 
-    Fields are ``(NX, NT, 1)`` and variances ``(NX, NT)``. Each field starts from
-    its own random bump and gets its own noise, drawn from burgers_noise_variance.
-    The Monte Carlo builder, main2.py and the notebook all draw through this
-    function, so they show the same data.
+    Fields are ``(NX, NT, 1)`` and variances ``(NX, NT)``. With ``cfg.window``
+    the fields are windows of one flow (observation_windows), whose noise is
+    drawn from burgers_noise_variance of the whole flow, as one sensor measures
+    every window; without, each field is a whole flow from its own random bump.
+    ``observed``, if given, receives the whole flow, its grid and the windows,
+    for plotting. The Monte Carlo builder, main2.py and the notebook all draw
+    through this function, so they show the same data.
     """
 
     x, t = make_space_time_grid(cfg)
+    if cfg.window is not None:
+        U = burgers_solver(random_initial_condition(rng, cfg), cfg).T[:, :, None]
+        variance = burgers_noise_variance(U[:, :, 0], cfg)
+        indices, x_window = observation_windows(x, cfg.n_traj, cfg.window, rng)
+        if observed is not None:
+            observed.update(flow=U[:, :, 0], x_flow=x, windows=indices)
+        x = x_window
+        flows = [(U[i], variance[i]) for i in indices]
+    else:
+        flows = []
+        for _ in range(cfg.n_traj):
+            U = burgers_solver(random_initial_condition(rng, cfg), cfg).T[:, :, None]
+            flows.append((U, burgers_noise_variance(U[:, :, 0], cfg)))
     clean, noisy, variances = [], [], []
-    for _ in range(cfg.n_traj):
-        U_clean = burgers_solver(random_initial_condition(rng, cfg), cfg).T[:, :, None]
-        variance = burgers_noise_variance(U_clean[:, :, 0], cfg)
+    for U_clean, variance in flows:
         clean.append(U_clean)
         noisy.append(U_clean + np.sqrt(variance)[:, :, None] * rng.standard_normal(size=U_clean.shape))
         variances.append(variance)
@@ -398,6 +435,22 @@ def _burgers_batch(
 ) -> MultiTrajectoryGLSData:
     """Return HF/LF training trajectories for a single Monte Carlo run."""
 
+    if cfg.window is not None:
+        (U,), t_train, x_grid, _ = generate_burgers_dataset(
+            n_traj=1, T=cfg.T_train, dt=cfg.dt, L=cfg.L, NX=cfg.NX, nu=cfg.nu,
+            noise_level=0.0, seed=cfg.seed_base + run_idx,
+        )
+        rng = np.random.default_rng(cfg.seed_base + 20_000 + run_idx)
+        indices, x_window = observation_windows(x_grid, cfg.n_hf + cfg.n_lf, cfg.window, rng)
+        clean = [U[i] for i in indices]
+        return MultiTrajectoryGLSData(
+            hf=[w + noise_hf_abs * rng.standard_normal(w.shape) for w in clean[:cfg.n_hf]],
+            lf=[w + noise_lf_abs * rng.standard_normal(w.shape) for w in clean[cfg.n_hf:]],
+            t_argument=cfg.dt,
+            metadata={"t": t_train, "x": x_window, "weak_seed": cfg.seed_base + 10_000 + run_idx,
+                      "flow": U[:, :, 0], "x_flow": x_grid, "windows": indices},
+        )
+
     X_hf, t_train, x_grid, _ = generate_burgers_dataset(
         n_traj=cfg.n_hf,
         T=cfg.T_train,
@@ -523,6 +576,8 @@ def burgers_weak_design(
 
     grid_cfg = BurgersConfig(L=cfg.L, NX=cfg.NX, t0=0.0, t1=cfg.T_train, dt=cfg.dt, nu=cfg.nu)
     x, t = make_space_time_grid(grid_cfg)
+    if cfg.window is not None:     # the fits see one window's grid
+        x = x[: int(round(cfg.window / (x[1] - x[0])))]
     field_shape = (x.size, t.size)
 
     batch = MultiTrajectoryGLSData(

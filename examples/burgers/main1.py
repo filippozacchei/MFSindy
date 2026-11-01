@@ -31,7 +31,8 @@ ERRORS_PATH = RESULTS_DIR / "burgers_part1_errors.csv"
 MODELS = ["HF", "LF", "MF", "VHF", "VLF", "PMF", "VMF", "MF_w"]
 
 #: Candidate supports [h_x, h_t]. In time, the ODE divisors of the horizon
-#: without T/200; in space, divisors of the domain 2L. The narrowest of each
+#: without T/200; in space, divisors of the observed extent: the window (a
+#: quarter of the domain, observation_windows), or 2L for whole flows. The narrowest of each
 #: are left out for cost: they set K, and the covariance grows as K^2. Every model picks
 #: among them by the spread of its own ensemble, with the threshold set by BIC
 #: inside the ensemble (mfsindy.experiments.selection): the same procedure for
@@ -54,7 +55,8 @@ def make_config(**overrides) -> BurgersMultiTrajectoryGLSConfig:
     settings.update(overrides)
     cfg = BurgersMultiTrajectoryGLSConfig(**settings)
     if cfg.H_grid is None:
-        cfg.H_grid = [[2.0 * cfg.L / ds, cfg.T_train / d] for ds in SPACE_DIVISORS for d in SUPPORT_DIVISORS]
+        extent = cfg.window if cfg.window is not None else 2.0 * cfg.L
+        cfg.H_grid = [[extent / ds, cfg.T_train / d] for ds in SPACE_DIVISORS for d in SUPPORT_DIVISORS]
     return cfg
 
 
@@ -68,7 +70,9 @@ def design_report(cfg) -> pd.DataFrame:
 
     kappa = burgers_kappa_by_support(cfg, cfg.H_grid)
     design = pd.DataFrame([burgers_weak_design(replace(cfg, H_xt=H, K=None)) for H in cfg.H_grid])
-    return pd.concat([kappa.reset_index(drop=True), design.drop(columns="K", errors="ignore")], axis=1)
+    # K from the design (K_requested, K_used): it is the window's, while kappa
+    # is computed on whole flows.
+    return pd.concat([kappa.drop(columns="K").reset_index(drop=True), design], axis=1)
 
 
 def run_monte_carlo(cfg, *, verbose: bool = True) -> pd.DataFrame:

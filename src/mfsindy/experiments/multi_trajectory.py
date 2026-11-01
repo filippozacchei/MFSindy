@@ -268,13 +268,15 @@ def run_multi_trajectory_gls_experiment(
         C_true = true_coefficients(batch, cfg)
         errors = {method: coefficient_errors(coef_map[method], C_true) for method in methods}
         # The selection record is kept for the last run only; every run's
-        # coefficients are kept for the across-runs plot.
+        # coefficients and chosen supports are kept for the across-runs plots.
         last = run_idx == cfg.n_runs - 1
-        return errors, {"coefs": coef_map, "true": C_true, "trace": trace if last else None}
+        return errors, {"coefs": coef_map, "supports": {m: trace[m]["support"] for m in methods},
+                        "true": C_true, "trace": trace if last else None}
 
     def collect(extras):
         estimates = {m: [e["coefs"][m] for e in extras] for m in methods}
-        save_selection(cfg, cfg.n_runs - 1, extras[-1]["true"], extras[-1]["trace"], estimates)
+        supports = {m: [e["supports"][m] for e in extras] for m in methods}
+        save_selection(cfg, cfg.n_runs - 1, extras[-1]["true"], extras[-1]["trace"], estimates, supports)
 
     df_errors, metric1, metric2 = run_monte_carlo_experiment(
         n_runs=cfg.n_runs,

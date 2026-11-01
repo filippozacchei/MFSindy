@@ -115,27 +115,30 @@ def weak_design(cfg, *, run_idx: int = 0) -> pd.DataFrame:
 
 
 #: Candidate supports [h_x, h_t]. In time, the ODE divisors of the horizon
-#: without T/200; in space, divisors of the domain 2L. The narrowest of each
+#: without T/200; in space, divisors of the observed extent: the window (a
+#: quarter of the domain, observation_windows), or 2L for whole flows. The narrowest of each
 #: are left out for cost: they set K, and the covariance grows as K^2. Every rung picks
 #: among them by the spread of its own ensemble, with the threshold set by BIC
 #: inside the ensemble (mfsindy.experiments.selection): the same procedure for
 #: every rung, and no true coefficients involved. A support is admissible for a
 #: rung only if its weak system has at least twice as many rows as library terms
-#: (selection.MIN_ROWS_PER_TERM); with ten fields per run every support passes.
+#: (selection.MIN_ROWS_PER_TERM); with ten windows per run every support passes.
 SPACE_DIVISORS = (16.0, 8.0, 4.0)
 SUPPORT_DIVISORS = (100.0, 50.0, 20.0, 10.0, 5.0)
 
 
 def supports(cfg) -> list:
     horizon = cfg.t1 - cfg.t0
-    return [[2.0 * cfg.L / ds, horizon / d] for ds in SPACE_DIVISORS for d in SUPPORT_DIVISORS]
+    extent = cfg.window if cfg.window is not None else 2.0 * cfg.L
+    return [[extent / ds, horizon / d] for ds in SPACE_DIVISORS for d in SUPPORT_DIVISORS]
 
 
-def run_trajectories(cfg, run_idx: int = 0):
+def run_trajectories(cfg, run_idx: int = 0, *, observed: dict | None = None):
     """Run run_idx's fields as the Monte Carlo draws them:
-    ``(x, t, clean, noisy, variance)``, the last three one entry per field."""
+    ``(x, t, clean, noisy, variance)``, the last three one entry per field;
+    ``observed`` receives the whole flow and the windows on it."""
 
-    return burgers_run_trajectories(cfg, np.random.default_rng(cfg.seed_base + 100 * run_idx))
+    return burgers_run_trajectories(cfg, np.random.default_rng(cfg.seed_base + 100 * run_idx), observed=observed)
 
 
 def reference_trajectory(cfg):

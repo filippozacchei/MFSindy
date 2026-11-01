@@ -192,3 +192,37 @@ def plot_residuals(x_true, x_noisy, x_grid, time_indices=None):
     ax.grid(False)
     plt.tight_layout(pad=0.05)
     plt.show()
+
+
+def plot_observation_windows(flow, x, t, windows, *, n_hf: int = 0, save_path: str | None = None):
+    """The flow a run solves and the windows that observe it.
+
+    Top: the clean flow over space and time. Bottom: one row per window, its
+    extent in space (each window spans the whole time interval); the first
+    ``n_hf`` rows are HF, the rest LF. ``windows`` are the grid points of each
+    window, as observation_windows returns them; a window that wraps round the
+    period is drawn in two pieces.
+    """
+
+    x, t = np.asarray(x), np.asarray(t)
+    dx = x[1] - x[0]
+    n = len(windows)
+    fig, (top, bottom) = plt.subplots(2, 1, figsize=(5.5, 3.2 + 0.12 * n), dpi=150, sharex=True,
+                                      gridspec_kw={"height_ratios": [3, 0.25 * n + 0.5]})
+    top.pcolormesh(x, t, np.asarray(flow).T, cmap="viridis", shading="auto", rasterized=True)
+    top.set_ylabel("$t$")
+    for k, idx in enumerate(windows):
+        hf = k < n_hf
+        for piece in np.split(np.asarray(idx), np.flatnonzero(np.diff(idx) != 1) + 1):
+            lo, hi = x[piece[0]] - dx / 2, x[piece[-1]] + dx / 2
+            bottom.plot([lo, hi], [k, k], color="#c0392b" if hf else "#2f6fae", lw=4, solid_capstyle="butt")
+    labels = ["HF" if k < n_hf else (f"LF {k - n_hf + 1}" if n_hf else f"{k + 1}") for k in range(n)]
+    bottom.set_yticks(range(n), labels, fontsize=6)
+    bottom.set_ylim(n - 0.5, -0.5)
+    bottom.set_xlim(x[0] - dx / 2, x[-1] + dx / 2)
+    bottom.set_xlabel("$x$")
+    sns.despine(ax=bottom, left=True)
+    plt.tight_layout()
+    if save_path is not None:
+        fig.savefig(save_path, bbox_inches="tight", dpi=300)
+    plt.show()

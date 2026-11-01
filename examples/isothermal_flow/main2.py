@@ -147,7 +147,8 @@ def weak_design(cfg, *, run_idx: int = 0) -> pd.DataFrame:
     return pd.DataFrame(rows).set_index(["H", "method"])
 
 
-#: Candidate supports, as divisors of the side L (space, both axes) and the
+#: Candidate supports, as divisors of the observed side -- the window, or L for
+#: whole flows -- (space, both axes) and the
 #: horizon T (time), the same as Part I. Every rung picks its support from
 #: supports(cfg) by the spread of its own ensemble, with the threshold set by BIC
 #: inside the ensemble (mfsindy.experiments.selection): the same procedure for
@@ -158,14 +159,16 @@ TIME_DIVISORS = (20.0, 10.0, 5.0)
 
 
 def supports(cfg) -> list:
-    return [[cfg.L / ds, cfg.L / ds, cfg.T / dt] for ds in SPACE_DIVISORS for dt in TIME_DIVISORS]
+    extent = cfg.window if cfg.window is not None else cfg.L
+    return [[extent / ds, extent / ds, cfg.T / dt] for ds in SPACE_DIVISORS for dt in TIME_DIVISORS]
 
 
-def run_trajectories(cfg, run_idx: int = 0):
-    """Run run_idx's flows as the Monte Carlo draws them:
-    ``(t, grid, clean, noisy, variance)``, the last three one entry per flow."""
+def run_trajectories(cfg, run_idx: int = 0, *, observed: dict | None = None):
+    """Run run_idx's fields as the Monte Carlo draws them:
+    ``(t, grid, clean, noisy, variance)``, the last three one entry per field;
+    ``observed`` receives the whole flow and the windows on it."""
 
-    return ns_run_trajectories(cfg, np.random.default_rng(cfg.seed_base + 100 * run_idx))
+    return ns_run_trajectories(cfg, np.random.default_rng(cfg.seed_base + 100 * run_idx), observed=observed)
 
 
 def reference_window(cfg) -> dict:

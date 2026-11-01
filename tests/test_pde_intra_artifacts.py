@@ -24,7 +24,7 @@ METHODS = ["No weighting", "Ones GLS", "Variance diag", "Variance GLS"]
 
 #: The grid and viscosity these properties are stated for, pinned so the tests
 #: do not follow the experiment's defaults while those are being tuned.
-TEST_SETTINGS = dict(NX=256, nu=0.1, t1=10.0, n_traj=1)
+TEST_SETTINGS = dict(NX=256, nu=0.1, t1=10.0, n_traj=1, window=None)  # one whole flow
 
 
 def burgers_artifacts(**overrides):
