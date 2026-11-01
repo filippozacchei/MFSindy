@@ -403,7 +403,7 @@ class NSIsothermalMultiTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin
     T_std : float = 1.0
 
     # physical parameters
-    mu: float = 1.0
+    mu: float = 0.1         # as Burgers' nu; at 1 the viscous terms made kappa > 1 everywhere
     RT: float = 1.0
 
     # weak-library settings
@@ -417,7 +417,7 @@ class NSIsothermalMultiTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin
 
     # SINDy / optimizer settings
     n_ensemble_models: int = 100  # as every case; the bags are most of a run's time here
-    # 3.3 GB per worker with windows on N = 128 (measured), so three in 16 GB.
+    # 2.9 GB per worker with windows on N = 128 (measured), so three in 16 GB.
     n_jobs: int = 3
 
     # randomness
@@ -853,7 +853,7 @@ class NSIsothermalIntraTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin
                                  # n_traj whole flows, each from its own initial condition
 
     # physical parameters
-    mu: float = 1.0
+    mu: float = 0.1         # as Burgers' nu; at 1 the viscous terms made kappa > 1 everywhere
     RT: float = 1.0
 
     # per-component noise, as in every Part II case (see ns_noise_variance):
@@ -875,7 +875,7 @@ class NSIsothermalIntraTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin
     # SINDy / optimizer settings
     n_ensemble_models: int = 100  # as every case; the bags are most of a run's time here
     # A run holds 10 windows x 4 libraries on one shared set of test functions
-    # (_share_test_functions) and the 128 x 128 flow: 4.3 GB per worker
+    # (_share_test_functions) and the 128 x 128 flow: 4.6 GB per worker
     # (measured), so two in 16 GB.
     n_jobs: int = 2
 

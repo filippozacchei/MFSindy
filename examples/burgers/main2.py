@@ -116,14 +116,15 @@ def weak_design(cfg, *, run_idx: int = 0) -> pd.DataFrame:
 
 #: Candidate supports [h_x, h_t]. In time, the ODE divisors of the horizon
 #: without T/200; in space, divisors of the observed extent: the window (a
-#: quarter of the domain, observation_windows), or 2L for whole flows. The narrowest of each
-#: are left out for cost: they set K, and the covariance grows as K^2. Every rung picks
+#: quarter of the domain, observation_windows), or 2L for whole flows: W/8 and W/4,
+#: as for the flow, where W/16 would be two grid points. T/200 is left out for
+#: cost: it sets K, and the covariance grows as K^2. Every rung picks
 #: among them by the spread of its own ensemble, with the threshold set by BIC
 #: inside the ensemble (mfsindy.experiments.selection): the same procedure for
 #: every rung, and no true coefficients involved. A support is admissible for a
 #: rung only if its weak system has at least twice as many rows as library terms
 #: (selection.MIN_ROWS_PER_TERM); with ten windows per run every support passes.
-SPACE_DIVISORS = (16.0, 8.0, 4.0)
+SPACE_DIVISORS = (8.0, 4.0)
 SUPPORT_DIVISORS = (100.0, 50.0, 20.0, 10.0, 5.0)
 
 

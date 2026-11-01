@@ -149,13 +149,13 @@ def weak_design(cfg, *, run_idx: int = 0) -> pd.DataFrame:
 
 #: Candidate supports, as divisors of the observed side -- the window, or L for
 #: whole flows -- (space, both axes) and the
-#: horizon T (time), the same as Part I. Every rung picks its support from
+#: horizon T (time), the same as Part I and as Burgers. Every rung picks its support from
 #: supports(cfg) by the spread of its own ensemble, with the threshold set by BIC
 #: inside the ensemble (mfsindy.experiments.selection): the same procedure for
 #: every rung, and no true coefficients involved. The kappa table covers the
 #: same supports.
-SPACE_DIVISORS = (10.0, 5.0)
-TIME_DIVISORS = (20.0, 10.0, 5.0)
+SPACE_DIVISORS = (8.0, 4.0)
+TIME_DIVISORS = (100.0, 50.0, 20.0, 10.0, 5.0)
 
 
 def supports(cfg) -> list:

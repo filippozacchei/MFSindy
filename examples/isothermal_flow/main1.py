@@ -34,16 +34,16 @@ ERRORS_PATH = RESULTS_DIR / "navierstokes_part1_errors.csv"
 
 MODELS = ["HF", "LF", "MF", "VHF", "VLF", "PMF", "VMF", "MF_w"]
 
-#: Candidate supports, as divisors of the training horizon and of the observed
-#: side: the window (a quarter of L, ns_observation_windows), or L for whole flows. Every model picks
-#: among them by the spread of its own ensemble, with the threshold set by BIC
+#: Candidate supports, the same divisors as for Burgers: in time, the ODE divisors
+#: of the horizon without T/200; in space, W/8 and W/4 of the observed side W, the
+#: window (a quarter of L, ns_observation_windows) or L for whole flows. Every model
+#: picks among them by the spread of its own ensemble, with the threshold set by BIC
 #: inside the ensemble (mfsindy.experiments.selection): the same procedure for
-#: every model, and no true coefficients involved. In space the grid starts at
-#: L/10: L/20 would need eight times the test functions at the same coverage. A support is
+#: every model, and no true coefficients involved. A support is
 #: admissible for a model only if its weak system has at least twice as many rows
 #: as library terms (selection.MIN_ROWS_PER_TERM), 228 for the 114-term library.
-SPACE_DIVISORS = (10.0, 5.0)
-TIME_DIVISORS = (20.0, 10.0, 5.0)
+SPACE_DIVISORS = (8.0, 4.0)
+TIME_DIVISORS = (100.0, 50.0, 20.0, 10.0, 5.0)
 
 
 def make_config(**overrides) -> NSIsothermalMultiTrajectoryGLSConfig:

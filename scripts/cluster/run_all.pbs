@@ -41,8 +41,8 @@ workers() {
 # Peak GB of one worker, measured on one run of each case.
 ODE_GB=0.5
 BURGERS_GB=2.5   # Part II 2.0, Part I 0.4
-NS1_GB=4         # windows on 128 x 128, measured 3.3 (scripts/cluster/check_ns.py memory)
-NS2_GB=5.5       # windows on 128 x 128, measured 4.3
+NS1_GB=4         # windows on 128 x 128, mu 0.1, measured 2.9 (scripts/cluster/check_ns.py memory)
+NS2_GB=5.5       # windows on 128 x 128, mu 0.1, measured 4.6
 
 {
     echo "=========================================="
