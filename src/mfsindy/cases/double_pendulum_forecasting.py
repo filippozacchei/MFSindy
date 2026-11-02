@@ -1205,7 +1205,8 @@ def summarize_fidelity_benchmark(
 # ladder, the support chosen by the bagged spread and, per equation, the
 # threshold and the polynomial degree chosen together by BIC. The library is
 # polynomial and so does not contain the true (rational, trigonometric) right
-# side; the surrogate is judged by forecasting held-out initial conditions.
+# side; the surrogate is judged, as before, by forecasting the HF trajectory
+# past the end of its training window.
 
 
 def polynomial_library_sizes(n_states: int, max_degree: int) -> tuple[int, ...]:
@@ -1231,8 +1232,8 @@ class DoublePendulumForecastConfig(MonteCarloConfig, EnsembleConfigMixin):
     # time discretisation; T_true is the reference trajectory the noise is scaled by.
     # The trajectories are longer than Part I's: the surrogate must cover the
     # region it forecasts in. On clean data, least squares on 11 trajectories of
-    # 1 s forecasts held-out starts no better than their spread at any degree;
-    # at 10 s degree 5 is within 14% (scratch check before any noisy run).
+    # 1 s forecasts new starts no better than their spread at any degree; at
+    # 10 s degree 5 is within 14% (scratch check before any noisy run).
     dt: float = 1e-3
     T_train: float = 10.0
     T_true: float = 10.0
@@ -1255,9 +1256,9 @@ class DoublePendulumForecastConfig(MonteCarloConfig, EnsembleConfigMixin):
     deduplicate: bool = True
     p: int | None = 2
 
-    # forecasting: held-out initial conditions, over one period of the slow
-    # normal mode of the linearised pendulum (2 pi / sqrt(g (2 - sqrt 2)) = 2.6 s)
-    n_test: int = 5
+    # forecasting: the HF trajectory from the end of training, over one period of
+    # the slow normal mode of the linearised pendulum (2 pi / sqrt(g (2 - sqrt 2))
+    # = 2.6 s)
     forecast_horizon: float = 2.6
     forecast_dt: float = 1e-2
     band: tuple[float, float] = (0.05, 0.95)
@@ -1315,23 +1316,24 @@ def double_pendulum_forecast_batch(
     )
 
 
-def double_pendulum_test_cases(cfg: DoublePendulumForecastConfig, run_idx: int):
-    """The run's held-out starts and the true states from them, on the forecast grid."""
+def double_pendulum_forecast_case(cfg: DoublePendulumForecastConfig, run_idx: int):
+    """Where the run's forecast starts, and the true states from there.
 
-    rng = np.random.default_rng(cfg.seed_base + 200_000 + run_idx)
-    stride = int(round(cfg.forecast_dt / cfg.dt))
-    starts, truths = [], []
-    for _ in range(cfg.n_test):
-        y0 = sample_double_pendulum_initial_condition(
-            rng, theta_range=cfg.theta_range, omega_range=cfg.omega_range
-        )
-        _, X = simulate_double_pendulum_trajectory(
-            y0=y0, t_final=cfg.forecast_horizon, dt=cfg.dt,
-            m1=cfg.m1, m2=cfg.m2, l1=cfg.l1, l2=cfg.l2, g=cfg.g,
-        )
-        starts.append(y0)
-        truths.append(X[::stride])
-    return np.array(starts), np.array(truths)
+    The forecast continues the (first) HF trajectory: it starts from its clean
+    state at the end of the training window and runs ``forecast_horizon`` on,
+    on the forecast grid. The training data never reach this stretch.
+    """
+
+    rng = np.random.default_rng(cfg.seed_base + run_idx)          # the HF draw
+    y0 = sample_double_pendulum_initial_condition(
+        rng, theta_range=cfg.theta_range, omega_range=cfg.omega_range
+    )
+    _, X = simulate_double_pendulum_trajectory(
+        y0=y0, t_final=cfg.T_train + cfg.forecast_horizon, dt=cfg.dt,
+        m1=cfg.m1, m2=cfg.m2, l1=cfg.l1, l2=cfg.l2, g=cfg.g,
+    )
+    truth = X[int(round(cfg.T_train / cfg.dt)):][:: int(round(cfg.forecast_dt / cfg.dt))]
+    return truth[0], truth
 
 
 def polynomial_rollout(coefficients: np.ndarray, y0: np.ndarray, powers: np.ndarray,
@@ -1370,26 +1372,56 @@ def polynomial_rollout(coefficients: np.ndarray, y0: np.ndarray, powers: np.ndar
     return out
 
 
-def forecast_metrics(model: np.ndarray, bags: np.ndarray, truth: np.ndarray,
-                     band: tuple[float, float]) -> dict[str, float]:
-    """Forecast scores for one held-out start.
+def interval_scores(estimate: np.ndarray, members: np.ndarray, truth: np.ndarray,
+                    band: tuple[float, float]) -> dict[str, float]:
+    """Error of ``estimate`` against ``truth`` (n_times, n_states), and the band of
+    ``members`` (n_members, n_times, n_states).
 
-    ``rmse`` is the error of the reported (median-coefficient) model, infinite if
-    it diverges; ``width`` and ``coverage`` come from the bags that stay bounded,
-    the band being their ``band`` quantiles; ``bounded`` is the share of bags
-    that stay bounded over the horizon.
+    ``rmse`` pools every time and state; ``r2`` is 1 - SS_res / SS_tot per state,
+    about that state's mean over the window, averaged over the states, so it does
+    not depend on their units. Both are infinite (r2 minus infinite) for a
+    non-finite estimate. The band is the ``band`` quantiles of the members:
+    ``width`` its mean width, ``coverage`` the share of times and states the truth
+    lies in it.
     """
 
-    rmse = float(np.sqrt(np.mean((model - truth) ** 2))) if np.all(np.isfinite(model)) else np.inf
-    bounded = np.all(np.isfinite(bags), axis=(1, 2))
-    if not bounded.any():
-        return {"rmse": rmse, "width": np.nan, "coverage": 0.0, "bounded": 0.0}
-    lower, upper = np.quantile(bags[bounded], band, axis=0)
+    if np.all(np.isfinite(estimate)):
+        residual = np.sum((estimate - truth) ** 2, axis=0)
+        total = np.sum((truth - truth.mean(axis=0)) ** 2, axis=0)
+        rmse = float(np.sqrt(np.mean((estimate - truth) ** 2)))
+        r2 = float(np.mean(1.0 - residual / total))
+    else:
+        rmse, r2 = np.inf, -np.inf
+    if len(members) == 0:
+        return {"rmse": rmse, "r2": r2, "width": np.nan, "coverage": 0.0}
+    lower, upper = np.quantile(members, band, axis=0)
     return {
         "rmse": rmse,
+        "r2": r2,
         "width": float(np.mean(upper - lower)),
         "coverage": float(np.mean((truth >= lower) & (truth <= upper))),
+    }
+
+
+def forecast_metrics(model: np.ndarray, bags: np.ndarray, truth: np.ndarray,
+                     model_rhs: np.ndarray, bag_rhs: np.ndarray, true_rhs: np.ndarray,
+                     band: tuple[float, float]) -> dict[str, float]:
+    """Scores over the forecast window, on the states and on their derivatives.
+
+    States (``state_*``): the reported (median-coefficient) model's rollout, and
+    the band of the bag rollouts that stay bounded; ``bounded`` is their share.
+    Derivatives (``deriv_*``): each model's right side evaluated on the true
+    states, against the true derivatives, so they score the identified vector
+    field without the compounding of a rollout.
+    """
+
+    bounded = np.all(np.isfinite(bags), axis=(1, 2))
+    states = interval_scores(model, bags[bounded], truth, band)
+    derivatives = interval_scores(model_rhs, bag_rhs, true_rhs, band)
+    return {
+        **{f"state_{k}": v for k, v in states.items()},
         "bounded": float(np.mean(bounded)),
+        **{f"deriv_{k}": v for k, v in derivatives.items()},
     }
 
 
@@ -1400,11 +1432,11 @@ def _polynomial_powers(cfg: DoublePendulumForecastConfig) -> np.ndarray:
 
 def run_double_pendulum_forecast(cfg: DoublePendulumForecastConfig, run_idx: int, *,
                                  keep_forecasts: bool = False):
-    """One Part III run: identify every rung, then forecast the held-out starts.
+    """One Part III run: identify every rung, then forecast the HF trajectory on.
 
-    Returns the long-format metric rows (averaged over the starts) and a record
-    of what each rung chose; with ``keep_forecasts`` the record also holds the
-    truth, the model forecast and the bag rollouts, for the figures.
+    Returns the long-format metric rows and a record of what each rung chose;
+    with ``keep_forecasts`` the record also holds the truth, the model forecast
+    and the bag rollouts, for the figures.
     """
 
     from mfsindy.cases.pendulum import _pendulum_fit_multi_trajectory_weak_gls_models
@@ -1424,31 +1456,33 @@ def run_double_pendulum_forecast(cfg: DoublePendulumForecastConfig, run_idx: int
 
     sizes = polynomial_library_sizes(4, cfg.poly_degree)
     powers = _polynomial_powers(cfg)
-    starts, truths = double_pendulum_test_cases(cfg, run_idx)
-    n_steps = truths.shape[1]
+    y0, truth = double_pendulum_forecast_case(cfg, run_idx)
+    n_steps = truth.shape[0]
+    true_rhs = compute_double_pendulum_derivatives(
+        truth, m1=cfg.m1, m2=cfg.m2, l1=cfg.l1, l2=cfg.l2, g=cfg.g
+    )
+    theta = np.prod(truth[:, None, :] ** powers[None], axis=2)              # (n_times, p)
 
     rows, record = [], {"run": run_idx, "rungs": {}}
     for rung in methods:
         support = trace[rung]["support"]
         chosen = fits[support][rung].selection_["size"]
-        scores, kept = [], []
-        for y0, truth in zip(starts, truths):
-            model = polynomial_rollout(coefs[rung][None], y0, powers, n_steps,
-                                       cfg.forecast_dt, cfg.max_abs_state)[0]
-            bags = polynomial_rollout(trace[rung]["bags"], y0, powers, n_steps,
-                                      cfg.forecast_dt, cfg.max_abs_state)
-            scores.append(forecast_metrics(model, bags, truth, cfg.band))
-            if keep_forecasts:
-                kept.append({"truth": truth, "model": model, "bags": bags})
-        for metric in scores[0]:
-            values = np.array([s[metric] for s in scores])
-            value = float(np.mean(values)) if metric != "rmse" else float(np.median(values))
-            rows.append({"run": run_idx, "model": rung, "metric": metric, "value": value})
-        degrees = [sizes.index(int(s)) + 1 for s in chosen]
-        rows.append({"run": run_idx, "model": rung, "metric": "terms",
-                     "value": float(np.count_nonzero(coefs[rung]))})
-        record["rungs"][rung] = {"support": support, "degree": degrees,
-                                 "coefficients": coefs[rung], "forecasts": kept or None}
+        model = polynomial_rollout(coefs[rung][None], y0, powers, n_steps,
+                                   cfg.forecast_dt, cfg.max_abs_state)[0]
+        bags = polynomial_rollout(trace[rung]["bags"], y0, powers, n_steps,
+                                  cfg.forecast_dt, cfg.max_abs_state)
+        model_rhs = theta @ coefs[rung].T
+        bag_rhs = np.einsum("tp,bnp->btn", theta, trace[rung]["bags"])
+        scores = forecast_metrics(model, bags, truth, model_rhs, bag_rhs, true_rhs, cfg.band)
+        scores["terms"] = float(np.count_nonzero(coefs[rung]))
+        rows += [{"run": run_idx, "model": rung, "metric": k, "value": v} for k, v in scores.items()]
+        record["rungs"][rung] = {
+            "support": support,
+            "degree": [sizes.index(int(s)) + 1 for s in chosen],
+            "coefficients": coefs[rung],
+            "forecast": {"truth": truth, "model": model, "bags": bags, "true_rhs": true_rhs,
+                         "model_rhs": model_rhs, "bag_rhs": bag_rhs} if keep_forecasts else None,
+        }
     return rows, record
 
 
@@ -1515,8 +1549,9 @@ __all__ = [
     "double_pendulum_forecast_batch",
     "double_pendulum_record_path",
     "double_pendulum_reference_state_std",
-    "double_pendulum_test_cases",
+    "double_pendulum_forecast_case",
     "forecast_metrics",
+    "interval_scores",
     "polynomial_library_sizes",
     "polynomial_rollout",
     "run_double_pendulum_forecast",

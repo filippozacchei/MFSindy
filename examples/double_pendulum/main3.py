@@ -1,12 +1,13 @@
 """Part III pipeline for the double-pendulum forecasting benchmark, as a script.
 
 ``python main3.py`` identifies a polynomial surrogate for every Part I model and
-forecasts held-out initial conditions with it. The protocol is Part I's: one HF
-and ten LF trajectories, the support chosen by the bagged spread, and per
-equation the threshold and the polynomial degree (1 to 5) chosen together by
-BIC, with no true coefficients (the library does not contain them) and no
-validation data. It writes the metric table and, beside it, every run's
-choices with the last run's forecasts.
+forecasts the HF trajectory past the end of training with it, scoring the
+states and their derivatives (RMSE, R^2, band width and coverage). The protocol
+is Part I's: one HF and ten LF trajectories, the support chosen by the bagged
+spread, and per equation the threshold and the polynomial degree (1 to 5)
+chosen together by BIC, with no true coefficients (the library does not
+contain them) and no validation data. It writes the metric table and, beside
+it, every run's choices with the last run's forecasts.
 """
 
 from __future__ import annotations
