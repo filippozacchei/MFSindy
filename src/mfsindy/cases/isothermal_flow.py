@@ -395,12 +395,12 @@ class NSIsothermalMultiTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin
     Nt_std: int = 1001
     L: float = 5.0          # the flows' own period (make_initial_condition)
     T: float = 1.0
-    # Edge of the observation window: half the side, so a window sees a quarter
-    # of the domain, as in Burgers (64 x 64 points).
+    # Edge of the observation window: a quarter of the side (32 x 32 points), so
+    # that one HF window is in the low-data regime.
     # Each run solves one flow and observes it on n_hf + n_lf windows at random
     # positions (ns_observation_windows), as an ODE run observes short
     # trajectories; None observes whole flows, each from its own initial condition.
-    window: float | None = 2.5
+    window: float | None = 1.25
     T_std : float = 1.0
 
     # physical parameters
@@ -850,7 +850,7 @@ class NSIsothermalIntraTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin
     L: float = 5.0          # the flows' own period (make_initial_condition)
     T: float = 1.0
     n_traj: int = 10        # windows per run, all on one flow (ns_observation_windows)
-    window: float | None = 2.5   # window edge, a quarter of the domain; None observes
+    window: float | None = 1.25  # window edge, a quarter of the side; None observes
                                  # n_traj whole flows, each from its own initial condition
 
     # physical parameters

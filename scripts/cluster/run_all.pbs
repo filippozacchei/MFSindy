@@ -51,10 +51,10 @@ QUICK_RUNS=10
 # Peak GB of one worker, measured on one run of each case.
 ODE_GB=0.5
 BURGERS_GB=2.5   # Part II 2.0, Part I 0.4
-NS1_GB=8         # windows 2.5 on 128 x 128: not yet measured, 2.9 at window 1.25 (scripts/cluster/check_ns.py memory)
-NS2_GB=12        # windows 2.5 on 128 x 128: not yet measured, 4.6 at window 1.25
-VORT1_GB=6       # vorticity flow, windows 2.5 on 128 x 128: not yet measured, 9 monomials against 19
-VORT2_GB=8
+NS1_GB=4         # windows 1.25 on 128 x 128: 2.9 measured (scripts/cluster/check_ns.py memory)
+NS2_GB=6         # windows 1.25 on 128 x 128: 4.6 measured
+VORT1_GB=4       # vorticity flow, windows 1.25 on 128 x 128: not yet measured, fewer terms than NS
+VORT2_GB=6
 
 {
     echo "=========================================="
