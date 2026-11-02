@@ -86,7 +86,7 @@ def _truth(cfg):
     """
 
     U_clean_ref, _, grid_ref = generate_isothermal_ns_dataset(
-        N=cfg.N, Nt=cfg.Nt, L=cfg.L, T=cfg.T, mu=cfg.mu, RT=cfg.RT,
+        N=cfg.N, Nt=cfg.Nt, L=cfg.L, T=cfg.T, mu=cfg.mu, RT=cfg.RT, ic=cfg.ic,
         seed=cfg.seed_base,
     )
     coefficients = build_true_ns_isothermal_coefficients(

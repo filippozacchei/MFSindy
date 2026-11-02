@@ -2,13 +2,26 @@
 
 from __future__ import annotations
 
+import os
+import pickle
 import warnings
 from contextlib import contextmanager
 from dataclasses import dataclass
+from math import comb
+from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import pysindy as ps
 
+from mfsindy.experiments import (
+    PART1_METHODS,
+    BICEnsembleSTLSQ,
+    EnsembleConfigMixin,
+    MonteCarloConfig,
+    MultiTrajectoryGLSData,
+)
+from mfsindy.experiments.selection import select_rungs, support_key, support_variants
 from mfsindy.weighted_weak_pde_library import WeightedWeakPDELibrary
 
 DEFAULT_THETA_RANGE = (-np.pi/3, np.pi/3)
@@ -1183,6 +1196,303 @@ def summarize_fidelity_benchmark(
     return summaries
 
 
+# ---------------------------------------------------------------------------
+# Part III under the shared protocol
+# ---------------------------------------------------------------------------
+#
+# The surrogate is identified as in Part I: one HF and ten LF trajectories from
+# their own initial conditions, every rung fitted at every support of the ODE
+# ladder, the support chosen by the bagged spread and, per equation, the
+# threshold and the polynomial degree chosen together by BIC. The library is
+# polynomial and so does not contain the true (rational, trigonometric) right
+# side; the surrogate is judged by forecasting held-out initial conditions.
+
+
+def polynomial_library_sizes(n_states: int, max_degree: int) -> tuple[int, ...]:
+    """Columns of the polynomial libraries of degree 1..max_degree, without bias.
+
+    pysindy orders a polynomial library by degree, so the degree-d library is
+    the first of these many columns of the degree-max_degree one.
+    """
+
+    return tuple(comb(n_states + d, d) - 1 for d in range(1, max_degree + 1))
+
+
+@dataclass
+class DoublePendulumForecastConfig(MonteCarloConfig, EnsembleConfigMixin):
+    """Part III: surrogate forecasting of the double pendulum."""
+
+    # multi-fidelity data, as in Part I
+    n_hf: int = 1
+    n_lf: int = 10
+    noise_hf_rel: float = 0.01
+    noise_lf_rel: float = 0.25
+
+    # time discretisation; T_true is the reference trajectory the noise is scaled by.
+    # The trajectories are longer than Part I's: the surrogate must cover the
+    # region it forecasts in. On clean data, least squares on 11 trajectories of
+    # 1 s forecasts held-out starts no better than their spread at any degree;
+    # at 10 s degree 5 is within 14% (scratch check before any noisy run).
+    dt: float = 1e-3
+    T_train: float = 10.0
+    T_true: float = 10.0
+
+    # physical parameters (point masses on massless rods)
+    m1: float = 1.0
+    m2: float = 1.0
+    l1: float = 1.0
+    l2: float = 1.0
+    g: float = 9.81
+    theta_range: tuple[float, float] = (-np.pi / 3, np.pi / 3)
+    omega_range: tuple[float, float] = (-1.0, 1.0)
+
+    # weak SINDy; BIC chooses each equation's degree in 1..poly_degree, and the
+    # spread chooses the support on the degree-spread_degree library throughout
+    poly_degree: int = 5
+    spread_degree: int = 3
+    H_xt: float | None = None
+    K: int | None = None
+    deduplicate: bool = True
+    p: int | None = 2
+
+    # forecasting: held-out initial conditions, over one period of the slow
+    # normal mode of the linearised pendulum (2 pi / sqrt(g (2 - sqrt 2)) = 2.6 s)
+    n_test: int = 5
+    forecast_horizon: float = 2.6
+    forecast_dt: float = 1e-2
+    band: tuple[float, float] = (0.05, 0.95)
+    max_abs_state: float = 50.0
+
+    methods: tuple[str, ...] = PART1_METHODS
+    results_filename: str = "double_pendulum_part3_metrics.csv"
+
+    def make_optimizer(self) -> BICEnsembleSTLSQ:
+        return BICEnsembleSTLSQ(
+            n_models=self.n_ensemble_models,
+            n_thresholds=self.n_thresholds,
+            nested_sizes=polynomial_library_sizes(4, self.poly_degree),
+            spread_size=polynomial_library_sizes(4, self.spread_degree)[-1],
+        )
+
+
+def _forecast_trajectories(cfg: DoublePendulumForecastConfig, n: int, seed: int, noise_abs: float):
+    """``n`` trajectories over the training horizon from their own starts, with noise."""
+
+    rng = np.random.default_rng(seed)
+    noisy = []
+    for _ in range(n):
+        y0 = sample_double_pendulum_initial_condition(
+            rng, theta_range=cfg.theta_range, omega_range=cfg.omega_range
+        )
+        t, X = simulate_double_pendulum_trajectory(
+            y0=y0, t_final=cfg.T_train, dt=cfg.dt,
+            m1=cfg.m1, m2=cfg.m2, l1=cfg.l1, l2=cfg.l2, g=cfg.g,
+        )
+        noisy.append(X + noise_abs * rng.standard_normal(X.shape))
+    return noisy, t
+
+
+def double_pendulum_reference_state_std(cfg: DoublePendulumForecastConfig) -> float:
+    rng = np.random.default_rng(cfg.seed_base)
+    y0 = sample_double_pendulum_initial_condition(
+        rng, theta_range=cfg.theta_range, omega_range=cfg.omega_range
+    )
+    _, X = simulate_double_pendulum_trajectory(
+        y0=y0, t_final=cfg.T_true, dt=cfg.dt,
+        m1=cfg.m1, m2=cfg.m2, l1=cfg.l1, l2=cfg.l2, g=cfg.g,
+    )
+    return float(np.std(X))
+
+
+def double_pendulum_forecast_batch(
+    run_idx: int, cfg: DoublePendulumForecastConfig, noise_hf_abs: float, noise_lf_abs: float
+) -> MultiTrajectoryGLSData:
+    hf, t = _forecast_trajectories(cfg, cfg.n_hf, cfg.seed_base + run_idx, noise_hf_abs)
+    lf, _ = _forecast_trajectories(cfg, cfg.n_lf, cfg.seed_base + 100 + run_idx, noise_lf_abs)
+    return MultiTrajectoryGLSData(
+        hf=hf, lf=lf, t_argument=cfg.dt,
+        metadata={"t_grid": t, "weak_seed": cfg.seed_base + 10_000 + run_idx},
+    )
+
+
+def double_pendulum_test_cases(cfg: DoublePendulumForecastConfig, run_idx: int):
+    """The run's held-out starts and the true states from them, on the forecast grid."""
+
+    rng = np.random.default_rng(cfg.seed_base + 200_000 + run_idx)
+    stride = int(round(cfg.forecast_dt / cfg.dt))
+    starts, truths = [], []
+    for _ in range(cfg.n_test):
+        y0 = sample_double_pendulum_initial_condition(
+            rng, theta_range=cfg.theta_range, omega_range=cfg.omega_range
+        )
+        _, X = simulate_double_pendulum_trajectory(
+            y0=y0, t_final=cfg.forecast_horizon, dt=cfg.dt,
+            m1=cfg.m1, m2=cfg.m2, l1=cfg.l1, l2=cfg.l2, g=cfg.g,
+        )
+        starts.append(y0)
+        truths.append(X[::stride])
+    return np.array(starts), np.array(truths)
+
+
+def polynomial_rollout(coefficients: np.ndarray, y0: np.ndarray, powers: np.ndarray,
+                       n_steps: int, dt: float, max_abs_state: float) -> np.ndarray:
+    """RK4 rollouts of polynomial models, one per coefficient matrix (B, n_states, p).
+
+    A rollout that leaves |x| <= max_abs_state, or stops being finite, is NaN from
+    there on.
+    """
+
+    coefficients = np.asarray(coefficients, dtype=float)
+    if coefficients.ndim == 2:
+        coefficients = coefficients[None]
+    B = coefficients.shape[0]
+
+    def rhs(X):
+        theta = np.prod(X[:, None, :] ** powers[None], axis=2)              # (B, p)
+        return np.einsum("bp,bnp->bn", theta, coefficients)
+
+    out = np.full((B, n_steps, y0.size), np.nan)
+    X = np.tile(np.asarray(y0, dtype=float), (B, 1))
+    out[:, 0] = X
+    alive = np.ones(B, dtype=bool)
+    with np.errstate(over="ignore", invalid="ignore"):
+        for k in range(1, n_steps):
+            k1 = rhs(X)
+            k2 = rhs(X + 0.5 * dt * k1)
+            k3 = rhs(X + 0.5 * dt * k2)
+            k4 = rhs(X + dt * k3)
+            X = X + (dt / 6.0) * (k1 + 2 * k2 + 2 * k3 + k4)
+            alive &= np.all(np.isfinite(X), axis=1) & (np.max(np.abs(X), axis=1) <= max_abs_state)
+            X = np.where(alive[:, None], X, 0.0)
+            out[alive, k] = X[alive]
+            if not alive.any():
+                break
+    return out
+
+
+def forecast_metrics(model: np.ndarray, bags: np.ndarray, truth: np.ndarray,
+                     band: tuple[float, float]) -> dict[str, float]:
+    """Forecast scores for one held-out start.
+
+    ``rmse`` is the error of the reported (median-coefficient) model, infinite if
+    it diverges; ``width`` and ``coverage`` come from the bags that stay bounded,
+    the band being their ``band`` quantiles; ``bounded`` is the share of bags
+    that stay bounded over the horizon.
+    """
+
+    rmse = float(np.sqrt(np.mean((model - truth) ** 2))) if np.all(np.isfinite(model)) else np.inf
+    bounded = np.all(np.isfinite(bags), axis=(1, 2))
+    if not bounded.any():
+        return {"rmse": rmse, "width": np.nan, "coverage": 0.0, "bounded": 0.0}
+    lower, upper = np.quantile(bags[bounded], band, axis=0)
+    return {
+        "rmse": rmse,
+        "width": float(np.mean(upper - lower)),
+        "coverage": float(np.mean((truth >= lower) & (truth <= upper))),
+        "bounded": float(np.mean(bounded)),
+    }
+
+
+def _polynomial_powers(cfg: DoublePendulumForecastConfig) -> np.ndarray:
+    library = ps.PolynomialLibrary(degree=cfg.poly_degree, include_bias=False)
+    return library.fit(np.zeros((1, 4))).powers_
+
+
+def run_double_pendulum_forecast(cfg: DoublePendulumForecastConfig, run_idx: int, *,
+                                 keep_forecasts: bool = False):
+    """One Part III run: identify every rung, then forecast the held-out starts.
+
+    Returns the long-format metric rows (averaged over the starts) and a record
+    of what each rung chose; with ``keep_forecasts`` the record also holds the
+    truth, the model forecast and the bag rollouts, for the figures.
+    """
+
+    from mfsindy.cases.pendulum import _pendulum_fit_multi_trajectory_weak_gls_models
+
+    state_std = double_pendulum_reference_state_std(cfg)
+    noise_hf_abs, noise_lf_abs = cfg.noise_hf_rel * state_std, cfg.noise_lf_rel * state_std
+    batch = double_pendulum_forecast_batch(run_idx, cfg, noise_hf_abs, noise_lf_abs)
+    methods = list(cfg.methods)
+    fits = {
+        support_key(variant.H_xt): _pendulum_fit_multi_trajectory_weak_gls_models(
+            batch, variant, variant.make_optimizer, t_argument=batch.t_argument,
+            noise_hf_abs=noise_hf_abs, noise_lf_abs=noise_lf_abs, methods=methods,
+        )
+        for variant in support_variants(cfg)
+    }
+    coefs, trace = select_rungs(fits)
+
+    sizes = polynomial_library_sizes(4, cfg.poly_degree)
+    powers = _polynomial_powers(cfg)
+    starts, truths = double_pendulum_test_cases(cfg, run_idx)
+    n_steps = truths.shape[1]
+
+    rows, record = [], {"run": run_idx, "rungs": {}}
+    for rung in methods:
+        support = trace[rung]["support"]
+        chosen = fits[support][rung].selection_["size"]
+        scores, kept = [], []
+        for y0, truth in zip(starts, truths):
+            model = polynomial_rollout(coefs[rung][None], y0, powers, n_steps,
+                                       cfg.forecast_dt, cfg.max_abs_state)[0]
+            bags = polynomial_rollout(trace[rung]["bags"], y0, powers, n_steps,
+                                      cfg.forecast_dt, cfg.max_abs_state)
+            scores.append(forecast_metrics(model, bags, truth, cfg.band))
+            if keep_forecasts:
+                kept.append({"truth": truth, "model": model, "bags": bags})
+        for metric in scores[0]:
+            values = np.array([s[metric] for s in scores])
+            value = float(np.mean(values)) if metric != "rmse" else float(np.median(values))
+            rows.append({"run": run_idx, "model": rung, "metric": metric, "value": value})
+        degrees = [sizes.index(int(s)) + 1 for s in chosen]
+        rows.append({"run": run_idx, "model": rung, "metric": "terms",
+                     "value": float(np.count_nonzero(coefs[rung]))})
+        record["rungs"][rung] = {"support": support, "degree": degrees,
+                                 "coefficients": coefs[rung], "forecasts": kept or None}
+    return rows, record
+
+
+def _forecast_run(cfg: DoublePendulumForecastConfig, run_idx: int):
+    return run_double_pendulum_forecast(cfg, run_idx, keep_forecasts=run_idx == cfg.n_runs - 1)
+
+
+def run_double_pendulum_forecast_experiment(cfg: DoublePendulumForecastConfig) -> pd.DataFrame:
+    """The Part III Monte Carlo: metric table to ``cfg.results_filename``, and
+    beside it every run's choices (support, degree per equation, coefficients),
+    with the last run's forecasts."""
+
+    from functools import partial
+
+    from tqdm import tqdm
+
+    from mfsindy.experiments.base import _run_one
+
+    single_run = partial(_forecast_run, cfg)
+    if cfg.n_jobs == 1:
+        results = (single_run(k) for k in range(cfg.n_runs))
+    else:
+        from joblib import Parallel, delayed
+
+        results = Parallel(n_jobs=cfg.n_jobs, return_as="generator")(
+            delayed(_run_one)(single_run, k, list(warnings.filters)) for k in range(cfg.n_runs)
+        )
+    rows, records = [], []
+    for run_rows, record in tqdm(results, total=cfg.n_runs, desc="Monte Carlo double pendulum"):
+        rows.extend(run_rows)
+        records.append(record)
+
+    os.makedirs(cfg.results_dir, exist_ok=True)
+    metrics = pd.DataFrame(rows)
+    metrics.to_csv(os.path.join(cfg.results_dir, cfg.results_filename), index=False)
+    with open(double_pendulum_record_path(cfg), "wb") as fh:
+        pickle.dump(records, fh)
+    return metrics
+
+
+def double_pendulum_record_path(cfg: DoublePendulumForecastConfig) -> Path:
+    return Path(cfg.results_dir) / f"{Path(cfg.results_filename).stem}_record.pkl"
+
+
 __all__ = [
     "DEFAULT_HF_NOISE_SCALE",
     "DEFAULT_LF_NOISE_SCALE",
@@ -1191,6 +1501,7 @@ __all__ = [
     "DEFAULT_POLY_DEGREE",
     "DEFAULT_THETA_RANGE",
     "DoublePendulumEvaluation",
+    "DoublePendulumForecastConfig",
     "DoublePendulumForecastingDataset",
     "DoublePendulumModelMetrics",
     "DoublePendulumObservationSet",
@@ -1201,6 +1512,15 @@ __all__ = [
     "build_double_pendulum_dataset",
     "build_double_pendulum_feature_library",
     "compute_double_pendulum_derivatives",
+    "double_pendulum_forecast_batch",
+    "double_pendulum_record_path",
+    "double_pendulum_reference_state_std",
+    "double_pendulum_test_cases",
+    "forecast_metrics",
+    "polynomial_library_sizes",
+    "polynomial_rollout",
+    "run_double_pendulum_forecast",
+    "run_double_pendulum_forecast_experiment",
     "evaluate_double_pendulum_models",
     "evaluate_ensemble_sindy_derivatives",
     "fit_double_pendulum_hf_lf_models",

@@ -69,6 +69,11 @@ def _stlsq(G: np.ndarray, b: np.ndarray, w: np.ndarray, threshold: float, max_it
     return w
 
 
+#: A support is admissible when its weak system has at least this many rows per
+#: library term.
+MIN_ROWS_PER_TERM = 2
+
+
 class BICEnsembleSTLSQ(BaseOptimizer):
     """Bagged STRidge whose threshold is chosen per equation by BIC.
 
@@ -83,14 +88,27 @@ class BICEnsembleSTLSQ(BaseOptimizer):
     their median, ``selection_`` the threshold path (thresholds, RSS, number of
     terms and BIC per threshold and equation, and the chosen index), and
     ``spread_`` the support-selection criterion.
+
+    ``nested_sizes`` lets BIC choose the library as well, among nested ones made
+    of the first ``s`` columns (a polynomial library ordered by degree, for each
+    degree). Every size runs its own threshold path on the same rows, so the BIC
+    values are comparable, and each equation keeps the (size, threshold) pair
+    that minimises it. A size is a candidate only where it meets the row cap
+    (``MIN_ROWS_PER_TERM``). The spread, which chooses the support, is measured
+    on one reference library of ``spread_size`` columns at every support, and
+    the row cap that rules supports out is that library's: measured on the
+    chosen size instead, it favoured the long supports where the cap leaves only
+    the smallest library, whose few coefficients the bags agree on.
     """
 
     def __init__(self, n_models: int = 100, n_thresholds: int = 20, max_iter: int = 20,
-                 alpha: float = 1e-12):
+                 alpha: float = 1e-12, nested_sizes=None, spread_size=None):
         super().__init__(max_iter=max_iter, unbias=False)
         self.n_models = n_models
         self.n_thresholds = n_thresholds
         self.alpha = alpha
+        self.nested_sizes = nested_sizes
+        self.spread_size = spread_size
 
     def fit(self, x, y, **kwargs):
         """Fit on one shared design, or on one design per equation.
@@ -114,11 +132,12 @@ class BICEnsembleSTLSQ(BaseOptimizer):
     def _reduce(self, x, y):
         self._solve([x] * y.shape[1], y)
 
-    def _solve(self, designs, y):
+    def _path(self, designs, y, bags):
+        """The threshold path on ``designs``: bags at every threshold, their
+        unthresholded fits, and the median model's RSS, size and BIC."""
+
         n, p = designs[0].shape
-        self.n_rows_, self.n_terms_ = n, p
         t = y.shape[1]
-        bags = [np.random.randint(0, n, n) for _ in range(self.n_models)]
         scale = np.array([np.max(np.abs(_ridge(designs[j], y[:, j], self.alpha))) for j in range(t)])
         thresholds = np.geomspace(1e-3, 1.0, self.n_thresholds)[:, None] * scale[None, :]
 
@@ -138,27 +157,66 @@ class BICEnsembleSTLSQ(BaseOptimizer):
                         for j in range(t)], axis=1)                        # (n_thr, t)
         nnz = np.count_nonzero(median, axis=2)
         bic = n * np.log(np.maximum(rss, 1e-300) / n) + nnz * np.log(n)
-        choice = np.argmin(bic, axis=0)                                    # first minimiser
+        return thresholds, coefs, ls, median, rss, nnz, bic
 
-        self.ls_coef_list = ls
+    def _solve(self, designs, y):
+        n, p = designs[0].shape
+        t = y.shape[1]
+        bags = [np.random.randint(0, n, n) for _ in range(self.n_models)]
+        if self.nested_sizes is None:
+            thresholds, coefs, ls, median, rss, nnz, bic = self._path(designs, y, bags)
+            choice = np.argmin(bic, axis=0)                                # first minimiser
+            self.n_rows_, self.n_terms_ = n, p
+            self.ls_coef_list = ls
+            self._spread_terms = np.ones((t, p), dtype=bool)
+            self.coef_list = np.stack([coefs[choice[j], :, j] for j in range(t)], axis=1)
+            self.coef_ = np.stack([median[choice[j], j] for j in range(t)])
+            self.selection_ = {"thresholds": thresholds, "rss": rss, "nnz": nnz, "bic": bic,
+                               "choice": choice}
+            return
+
+        sizes = sorted(int(s) for s in self.nested_sizes)
+        # Below the cap no size is a candidate; the smallest is fitted so the
+        # support still has a record, and select_support then rules it out.
+        sizes = [s for s in sizes if n >= MIN_ROWS_PER_TERM * s] or sizes[:1]
+        paths = []
+        for s in sizes:
+            thresholds, coefs, ls, median, rss, nnz, bic = self._path([d[:, :s] for d in designs], y, bags)
+            pad = ((0, 0),) * (coefs.ndim - 1) + ((0, p - s),)
+            paths.append((thresholds, np.pad(coefs, pad), np.pad(ls, pad[1:]),
+                          np.pad(median, pad[1:]), rss, nnz, bic))
+        thresholds, coefs, ls, median, rss, nnz, bic = (np.concatenate(parts) for parts in zip(*paths))
+        size_of = np.repeat(sizes, self.n_thresholds)                      # per candidate
+        choice = np.argmin(bic, axis=0)                                    # first minimiser
+        chosen = size_of[choice]                                           # (t,)
+
+        # The unthresholded bags on the reference library, for the spread.
+        reference = int(self.spread_size or max(self.nested_sizes))
+        self.n_rows_, self.n_terms_ = n, reference
+        if reference in sizes:
+            self.ls_coef_list = paths[sizes.index(reference)][2]
+        else:
+            self.ls_coef_list = np.zeros((self.n_models, t, p))
+            for j in range(t):
+                for k, rows in enumerate(bags):
+                    self.ls_coef_list[k, j, :reference] = _ridge(designs[j][rows, :reference],
+                                                                 y[rows, j], self.alpha)
+        self._spread_terms = np.broadcast_to(np.arange(p) < reference, (t, p))
         self.coef_list = np.stack([coefs[choice[j], :, j] for j in range(t)], axis=1)
         self.coef_ = np.stack([median[choice[j], j] for j in range(t)])
         self.selection_ = {"thresholds": thresholds, "rss": rss, "nnz": nnz, "bic": bic,
-                           "choice": choice}
+                           "choice": choice, "sizes": size_of, "size": chosen}
 
     @property
     def spread_(self) -> float:
         """Median IQR of the bagged least-squares coefficients, before thresholding,
-        each relative to the largest coefficient magnitude of its equation."""
+        each relative to the largest coefficient magnitude of its equation, over
+        the terms of the reference library."""
 
         q75, q50, q25 = np.percentile(self.ls_coef_list, [75, 50, 25], axis=0)   # (t, p)
         scale = np.max(np.abs(q50), axis=1, keepdims=True)
-        return float(np.median((q75 - q25) / np.maximum(scale, 1e-300)))
-
-
-#: A support is admissible when its weak system has at least this many rows per
-#: library term.
-MIN_ROWS_PER_TERM = 2
+        relative = (q75 - q25) / np.maximum(scale, 1e-300)
+        return float(np.median(relative[self._spread_terms]))
 
 
 def select_support(fits_by_support: Mapping[Any, Mapping[str, Any]]) -> Dict[str, Any]:

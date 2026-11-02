@@ -24,6 +24,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from mpl_toolkits.mplot3d.art3d import Line3DCollection
 
 from mfsindy.cases import hopf as H
 from mfsindy.cases import isothermal_flow as N
@@ -138,22 +139,24 @@ def thumb_burgers(ax) -> None:
 
 
 def thumb_ns(ax) -> None:
-    """The density at the final time as a grey surface, the HF and two LF windows
+    """The density at the start as a grey surface, the HF and two LF windows
     tinted, and their noisy density samples on it."""
 
     cfg = load_main("isothermal_flow", 1).make_config()
     U, t, grid = N.generate_isothermal_ns_dataset(N=cfg.N, Nt=cfg.Nt, L=cfg.L, T=cfg.T, mu=cfg.mu,
-                                                  RT=cfg.RT, seed=cfg.seed_base)
+                                                  RT=cfg.RT, ic=cfg.ic, seed=cfg.seed_base)
     # As the Monte Carlo does: noise relative to the density's spread on the reference flow.
     std = float(np.std(U[:, :, :, 2]))
     batch = N._ns_dataset_batch(0, cfg, cfg.noise_hf_rel * std, cfg.noise_lf_rel * std, grid=grid, t=t)
     shown = [(k, HF if k < cfg.n_hf else LF) for k in range(cfg.n_hf + 2)]
-    flow_surface(ax, cfg, U, batch.metadata["windows"], batch.hf + batch.lf, shown)
+    U, windows = centred(cfg, U, batch.metadata["windows"])
+    flow_surface(ax, cfg, U, windows, batch.hf + batch.lf, shown, n=0)
 
 
 def thumb_vorticity(ax) -> None:
-    """The vorticity at the final time as a grey surface, the HF and two LF
-    windows tinted, and their noisy vorticity samples on it."""
+    """The vorticity at the start as a grey surface, where the two vortices are
+    sharpest, the HF and two LF windows tinted, and their noisy vorticity samples
+    on it."""
 
     cfg = load_main("vorticity", 1).make_config()
     U, t, grid = V.generate_vorticity_dataset(N=cfg.N, Nt=cfg.Nt, L=cfg.L, T=cfg.T, nu=cfg.nu,
@@ -164,12 +167,42 @@ def thumb_vorticity(ax) -> None:
     batch = V._dataset_batch(0, cfg, cfg.noise_hf_rel * std, cfg.noise_lf_rel * std, grid=grid, t=t,
                              component_scale=spreads / std)
     shown = [(k, HF if k < cfg.n_hf else LF) for k in range(cfg.n_hf + 2)]
-    flow_surface(ax, cfg, U, batch.metadata["windows"], batch.hf + batch.lf, shown)
+    U, windows = centred(cfg, U, batch.metadata["windows"])
+    flow_surface(ax, cfg, U, windows, batch.hf + batch.lf, shown, n=0)
 
 
-def flow_surface(ax, cfg, U, windows, data, shown) -> None:
-    """The density at the final time in grey, the shown windows tinted, and their
-    samples on it; ``shown`` pairs each window with a colour, or with an array of
+def centred(cfg, U, windows):
+    """The flow shifted so its kinetic energy at the start is centred, and the
+    windows with it. A vortex pair may sit across the periodic edges, where the
+    surface shows it as ridges along the border; the flow is periodic, so the
+    shifted one is the same flow."""
+
+    energy = U[:, :, 0, 0] ** 2 + U[:, :, 0, 1] ** 2
+    angle = 2.0 * np.pi * np.arange(cfg.N) / cfg.N
+    shift = [int(round(np.angle(np.sum(energy.sum(axis=1 - d) * np.exp(1j * angle))) / (2.0 * np.pi) * cfg.N))
+             - cfg.N // 2 for d in (0, 1)]
+    U = np.roll(U, [-s for s in shift], axis=(0, 1))
+    return U, [tuple((np.asarray(a) - s) % cfg.N for a, s in zip(idx, shift)) for idx in windows]
+
+
+def streamlines(ax, cfg, U, n: int, z: float) -> None:
+    """Streamlines of (u, v) at time step ``n``, drawn on the floor of the box at
+    height ``z``, under the surface."""
+
+    x = np.linspace(0.0, cfg.L, cfg.N, endpoint=False)
+    scratch = plt.figure()
+    lines = scratch.add_subplot().streamplot(x, x, U[:, :, n, 0].T, U[:, :, n, 1].T, density=0.9,
+                                             linewidth=0.3, arrowsize=0).lines
+    plt.close(scratch)
+    segments = [np.column_stack([seg, np.full(len(seg), z)]) for seg in lines.get_segments()]
+    ax.add_collection3d(Line3DCollection(segments, colors="0.45", linewidths=0.25, alpha=0.8), autolim=False)
+    ax.set_zlim(z, ax.get_zlim()[1])
+
+
+def flow_surface(ax, cfg, U, windows, data, shown, n: int = -1) -> None:
+    """The last field at time step ``n`` (the final time by default) in grey, the
+    shown windows tinted, and their samples on it, over the streamlines of
+    (u, v); ``shown`` pairs each window with a colour, or with an array of
     colours, one per sample."""
 
     x = np.linspace(0.0, cfg.L, cfg.N, endpoint=False)
@@ -180,16 +213,18 @@ def flow_surface(ax, cfg, U, windows, data, shown) -> None:
         # Index arrays in window order (a window may wrap around the period).
         ix, iy = (np.asarray(a).ravel() for a in windows[k])
         faces[np.ix_(ix, iy)] = tint(color)
-    ax.plot_surface(X_, Y_, U[:, :, -1, 2], facecolors=faces, linewidth=0, shade=False,
+    ax.plot_surface(X_, Y_, U[:, :, n, 2], facecolors=faces, linewidth=0, shade=False,
                     rstride=2, cstride=2, rasterized=True)
     for k, color in shown[::-1]:
         ix, iy = (np.asarray(a).ravel() for a in windows[k])
         Yw, Xw = np.meshgrid(x[iy][::4], x[ix][::4])
-        z = np.asarray(data[k])[::4, ::4, -1, 2].ravel()
+        z = np.asarray(data[k])[::4, ::4, n, 2].ravel()
         colors = color if isinstance(color, str) else color[::4, ::4].reshape(-1, 4)
         ax.scatter(Xw.ravel(), Yw.ravel(), z, s=0.8, c=colors if not isinstance(colors, str) else None,
                    color=colors if isinstance(colors, str) else None, alpha=0.8, linewidths=0,
                    depthshade=False, rasterized=True)
+    field = U[:, :, n, 2]
+    streamlines(ax, cfg, U, n, field.min() - 0.3 * np.ptp(field))
     ax.view_init(elev=35, azim=-60)
     strip_3d(ax)
 
@@ -248,7 +283,8 @@ def thumb2_ns(ax, case: str = "isothermal_flow") -> None:
     sigma = [np.sqrt(np.asarray(v)[:, :, -1, 2]) for v in variance[:3]]
     top = max(s.max() for s in sigma)
     shown = [(k, noise_colors(sigma[k], top)) for k in range(3)]
-    flow_surface(ax, cfg, observed["flow"], observed["windows"], noisy, shown)
+    U, windows = centred(cfg, observed["flow"], observed["windows"])
+    flow_surface(ax, cfg, U, windows, noisy, shown)
 
 
 # --- the table

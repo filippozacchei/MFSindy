@@ -74,7 +74,7 @@ def design_report(cfg) -> pd.DataFrame:
     # Kappa is computed at the true coefficients, which are indexed by the
     # library's feature names; those need one solved flow to be read off.
     reference, _, grid = generate_isothermal_ns_dataset(
-        N=cfg.N, Nt=cfg.Nt, L=cfg.L, T=cfg.T, mu=cfg.mu, RT=cfg.RT,
+        N=cfg.N, Nt=cfg.Nt, L=cfg.L, T=cfg.T, mu=cfg.mu, RT=cfg.RT, ic=cfg.ic,
         seed=cfg.seed_base,
     )
     coefficients = build_true_ns_isothermal_coefficients(

@@ -174,6 +174,33 @@ def make_initial_condition(
     return U0, V0, RHO0
 
 
+def make_vortex_pair_condition(X, Y, L, rng: np.random.Generator, RT: float):
+    """(U0, V0, RHO0) for the co-rotating Lamb-Oseen pair of the vorticity flow
+    (vorticity_flow.make_vortex_pair), peak speed 1.
+
+    The density starts in balance with the pressure the pair needs: for an
+    isothermal gas p = RT rho, so RT ln(rho) = p with div(grad p) =
+    2 (u_x v_y - u_y v_x), the pressure Poisson equation of the incompressible
+    flow, rho then normalised to mean 1. The cores are low-density, as low-
+    pressure. With uniform density instead, the pair at a peak Mach number of
+    about 1 would start with a violent acoustic adjustment.
+    """
+
+    from mfsindy.cases.vorticity_flow import make_vortex_pair, velocity_from_vorticity
+
+    U0, V0 = velocity_from_vorticity(make_vortex_pair(X, Y, L, rng), L)
+    k = 2.0 * np.pi * np.fft.fftfreq(X.shape[0], d=L / X.shape[0])
+    KX, KY = np.meshgrid(k, k, indexing="ij")
+    d = lambda f, K: np.real(np.fft.ifft2(1j * K * np.fft.fft2(f)))
+    source = 2.0 * (d(U0, KX) * d(V0, KY) - d(U0, KY) * d(V0, KX))
+    K2 = KX ** 2 + KY ** 2
+    K2[0, 0] = 1.0
+    p_hat = -np.fft.fft2(source) / K2
+    p_hat[0, 0] = 0.0
+    RHO0 = np.exp(np.real(np.fft.ifft2(p_hat)) / RT)
+    return U0, V0, RHO0 / RHO0.mean()
+
+
 def generate_isothermal_ns_dataset(
     N: int = 32,
     Nt: int = 500,
@@ -182,6 +209,7 @@ def generate_isothermal_ns_dataset(
     mu: float = 1.0,
     RT: float = 1.0,
     seed: int = 1,
+    ic: str = "fourier",
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Single trajectory of isothermal compressible flow, on an N x N grid.
@@ -199,7 +227,7 @@ def generate_isothermal_ns_dataset(
         Spatiotemporal grid (x, y, t).
     """
 
-    U = _solve_isothermal_ns(int(N), int(Nt), float(L), float(T), float(mu), float(RT), int(seed))
+    U = _solve_isothermal_ns(int(N), int(Nt), float(L), float(T), float(mu), float(RT), int(seed), str(ic))
     t = np.linspace(0.0, T, Nt)
     x = np.linspace(0.0, L, N, endpoint=False)
     X, Y = np.meshgrid(x, x, indexing="ij")
@@ -227,7 +255,7 @@ def ns_observation_windows(N: int, L: float, n: int, window: float, rng: np.rand
 
 
 @functools.lru_cache(maxsize=2)
-def _solve_isothermal_ns(N, Nt, L, T, mu, RT, seed) -> np.ndarray:
+def _solve_isothermal_ns(N, Nt, L, T, mu, RT, seed, ic="fourier") -> np.ndarray:
     """The flow of ``generate_isothermal_ns_dataset``, cached: a Part II run is
     rebuilt once per candidate support, and the solve is the slow part. Two
     entries: a 128 x 128 flow is 0.4 GB."""
@@ -235,7 +263,10 @@ def _solve_isothermal_ns(N, Nt, L, T, mu, RT, seed) -> np.ndarray:
     rng = np.random.default_rng(seed)
     x = np.linspace(0.0, L, N, endpoint=False)
     X, Y = np.meshgrid(x, x, indexing="ij")
-    U0, V0, RHO0 = make_initial_condition(X, Y, L, rng=rng)
+    if ic == "pair":
+        U0, V0, RHO0 = make_vortex_pair_condition(X, Y, L, rng, RT)
+    else:
+        U0, V0, RHO0 = make_initial_condition(X, Y, L, rng=rng)
     y0 = np.stack([U0, V0, RHO0], axis=-1)
 
     sol = solve_ivp(
@@ -406,6 +437,7 @@ class NSIsothermalMultiTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin
     # physical parameters
     mu: float = 0.1         # as Burgers' nu; at 1 the viscous terms made kappa > 1 everywhere
     RT: float = 1.0
+    ic: str = "fourier"     # initial condition: "fourier" or "pair" (make_vortex_pair_condition)
 
     # weak-library settings
     derivative_order: int = 2
@@ -441,7 +473,7 @@ def _ns_dataset_batch(
 
     if cfg.window is not None:
         U, _, _ = generate_isothermal_ns_dataset(
-            N=cfg.N, Nt=cfg.Nt, L=cfg.L, T=cfg.T, mu=cfg.mu, RT=cfg.RT,
+            N=cfg.N, Nt=cfg.Nt, L=cfg.L, T=cfg.T, mu=cfg.mu, RT=cfg.RT, ic=cfg.ic,
             seed=cfg.seed_base + run_idx * 1000,
         )
         windows, width = ns_observation_windows(cfg.N, cfg.L, cfg.n_hf + cfg.n_lf, cfg.window, rng)
@@ -722,7 +754,7 @@ def run_ns_isothermal_multi_trajectory_gls_experiment(
     # needed from it. It used to come from a weak-SINDy fit of this same flow,
     # which ran the whole fit only for the coefficients to be discarded.
     U_ref, t_ref, grid_ref = generate_isothermal_ns_dataset(
-        N=cfg.N, Nt=cfg.Nt, L=cfg.L, T=cfg.T, mu=cfg.mu, RT=cfg.RT,
+        N=cfg.N, Nt=cfg.Nt, L=cfg.L, T=cfg.T, mu=cfg.mu, RT=cfg.RT, ic=cfg.ic,
         seed=cfg.seed_base,
     )
 
@@ -856,6 +888,7 @@ class NSIsothermalIntraTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin
     # physical parameters
     mu: float = 0.1         # as Burgers' nu; at 1 the viscous terms made kappa > 1 everywhere
     RT: float = 1.0
+    ic: str = "fourier"     # initial condition: "fourier" or "pair" (make_vortex_pair_condition)
 
     # per-component noise, as in every Part II case (see ns_noise_variance):
     # sigma_i(x, y, t) = noise_floor * s_i + noise_level * |u_i(x, y, t)|
@@ -914,7 +947,7 @@ def ns_run_trajectories(cfg: NSIsothermalIntraTrajectoryGLSConfig, rng: np.rando
     clean, noisy, variances = [], [], []
     if cfg.window is not None:
         U, t, grid = generate_isothermal_ns_dataset(
-            N=cfg.N, Nt=cfg.Nt, L=cfg.L, T=cfg.T, mu=cfg.mu, RT=cfg.RT,
+            N=cfg.N, Nt=cfg.Nt, L=cfg.L, T=cfg.T, mu=cfg.mu, RT=cfg.RT, ic=cfg.ic,
             seed=int(rng.integers(2**31)),
         )
         variance = ns_noise_variance(U, cfg)
@@ -929,7 +962,7 @@ def ns_run_trajectories(cfg: NSIsothermalIntraTrajectoryGLSConfig, rng: np.rando
 
     for _ in range(cfg.n_traj):
         U_clean, t, grid = generate_isothermal_ns_dataset(
-            N=cfg.N, Nt=cfg.Nt, L=cfg.L, T=cfg.T, mu=cfg.mu, RT=cfg.RT,
+            N=cfg.N, Nt=cfg.Nt, L=cfg.L, T=cfg.T, mu=cfg.mu, RT=cfg.RT, ic=cfg.ic,
             seed=int(rng.integers(2**31)),
         )
         variance = ns_noise_variance(U_clean, cfg)
@@ -1056,7 +1089,7 @@ def run_ns_isothermal_intra_trajectory_gls_experiment(
     Full heteroscedastic NS GLS experiment (Part 2).
     """
     U_clean_ref, _, grid_ref = generate_isothermal_ns_dataset(
-        N=cfg.N, Nt=cfg.Nt, L=cfg.L, T=cfg.T, mu=cfg.mu, RT=cfg.RT,
+        N=cfg.N, Nt=cfg.Nt, L=cfg.L, T=cfg.T, mu=cfg.mu, RT=cfg.RT, ic=cfg.ic,
         seed=cfg.seed_base,
     )
     # Truth is the equations compressible integrates, not a weak-SINDy fit of
@@ -1113,7 +1146,7 @@ def ns_isothermal_kappa_by_support(
     references = []
     for j in range(int(n_reference)):
         U_ref, _t_ref, grid_ref = generate_isothermal_ns_dataset(
-            N=cfg.N, Nt=cfg.Nt, L=cfg.L, T=cfg.T, mu=cfg.mu, RT=cfg.RT,
+            N=cfg.N, Nt=cfg.Nt, L=cfg.L, T=cfg.T, mu=cfg.mu, RT=cfg.RT, ic=cfg.ic,
             seed=cfg.seed_base + j,
         )
         U_ref, grid_ref = np.asarray(U_ref), np.asarray(grid_ref, dtype=float)

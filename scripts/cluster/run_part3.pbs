@@ -1,0 +1,41 @@
+#!/bin/bash
+#PBS -S /bin/bash
+#PBS -l walltime=12:00:00
+#PBS -l nodes=1:ppn=96
+#PBS -N MFSindy_part3
+#PBS -j oe
+
+# Part III, double-pendulum forecasting: qsub scripts/cluster/run_part3.pbs
+# Fewer runs: qsub -v RUNS=10 scripts/cluster/run_part3.pbs
+#
+# Runs examples/double_pendulum/main3.py on one node. One run took 3 min at 10
+# bags on a laptop core, so about 30 min at 100; 100 runs on 48 workers are
+# three rounds, 2 h, well inside the walltime. A worker peaked at 0.3 GB at 10
+# bags, so memory does not limit the workers. The number of workers does not
+# change the results (runs are seeded by index). The log is written to
+# examples/double_pendulum/results/main3.log.
+
+ROOT=/u/zacchei/WLS-Sindy
+cd "$ROOT" || exit 1
+
+source /u/zacchei/miniconda3/etc/profile.d/conda.sh
+conda activate sindy
+
+# One BLAS thread per process: the parallelism is across runs.
+export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
+export PYTHONUNBUFFERED=1
+
+# The physical cores of the node, as in run_all.pbs.
+JOBS=48
+RUNS=${RUNS:-100}
+
+mkdir -p examples/double_pendulum/results
+LOG=examples/double_pendulum/results/main3.log
+{
+    echo "Start time: $(date)"
+    echo "PBS_JOBID = ${PBS_JOBID}, runs $RUNS, workers $JOBS"
+} > "$LOG"
+python examples/double_pendulum/main3.py --runs "$RUNS" --jobs "$JOBS" >> "$LOG" 2>&1
+status=$?
+echo "End time: $(date), exit $status" >> "$LOG"
+exit $status
