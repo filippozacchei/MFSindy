@@ -40,9 +40,21 @@ import numpy as np
 from pysindy.optimizers import BaseOptimizer
 
 
-def _stlsq(G: np.ndarray, b: np.ndarray, w: np.ndarray, threshold: float, max_iter: int) -> np.ndarray:
-    """Sequential thresholding least squares for one equation, no ridge, started
-    from ``w``, the least-squares fit of ``b`` on all of ``G``."""
+def _ridge(G: np.ndarray, b: np.ndarray, alpha: float) -> np.ndarray:
+    """argmin |b - G w|^2 + alpha |w|^2, as least squares on the design augmented
+    by sqrt(alpha) I, which keeps the conditioning of G rather than squaring it as
+    the normal equations would."""
+
+    p = G.shape[1]
+    G_aug = np.vstack([G, np.sqrt(alpha) * np.eye(p)])
+    b_aug = np.concatenate([b, np.zeros(p)])
+    return np.linalg.lstsq(G_aug, b_aug, rcond=None)[0]
+
+
+def _stlsq(G: np.ndarray, b: np.ndarray, w: np.ndarray, threshold: float, max_iter: int,
+           alpha: float) -> np.ndarray:
+    """Sequential thresholded ridge regression (STRidge) for one equation, started
+    from ``w``, the ridge fit of ``b`` on all of ``G``."""
 
     keep = np.ones(G.shape[1], dtype=bool)
     for it in range(max_iter):
@@ -53,12 +65,16 @@ def _stlsq(G: np.ndarray, b: np.ndarray, w: np.ndarray, threshold: float, max_it
             break
         keep = new
         w = np.zeros_like(w)
-        w[keep] = np.linalg.lstsq(G[:, keep], b, rcond=None)[0]
+        w[keep] = _ridge(G[:, keep], b, alpha)
     return w
 
 
 class BICEnsembleSTLSQ(BaseOptimizer):
-    """Bagged STLSQ whose threshold is chosen per equation by BIC.
+    """Bagged STRidge whose threshold is chosen per equation by BIC.
+
+    The ridge ``alpha`` is the paper's lambda_2, small enough (1e-12) only to keep
+    the refits well posed; pysindy's default of 0.05 biases the weak fits, and
+    falls unevenly on whitened and unwhitened systems (see the Lorenz config).
 
     The thresholds span 1e-3 to 1 times the largest least-squares coefficient of
     each equation, log-spaced. Rows are bagged with replacement from the global
@@ -69,10 +85,12 @@ class BICEnsembleSTLSQ(BaseOptimizer):
     ``spread_`` the support-selection criterion.
     """
 
-    def __init__(self, n_models: int = 100, n_thresholds: int = 20, max_iter: int = 20):
+    def __init__(self, n_models: int = 100, n_thresholds: int = 20, max_iter: int = 20,
+                 alpha: float = 1e-12):
         super().__init__(max_iter=max_iter, unbias=False)
         self.n_models = n_models
         self.n_thresholds = n_thresholds
+        self.alpha = alpha
 
     def fit(self, x, y, **kwargs):
         """Fit on one shared design, or on one design per equation.
@@ -101,20 +119,19 @@ class BICEnsembleSTLSQ(BaseOptimizer):
         self.n_rows_, self.n_terms_ = n, p
         t = y.shape[1]
         bags = [np.random.randint(0, n, n) for _ in range(self.n_models)]
-        scale = np.array([np.max(np.abs(np.linalg.lstsq(designs[j], y[:, j], rcond=None)[0]))
-                          for j in range(t)])
+        scale = np.array([np.max(np.abs(_ridge(designs[j], y[:, j], self.alpha))) for j in range(t)])
         thresholds = np.geomspace(1e-3, 1.0, self.n_thresholds)[:, None] * scale[None, :]
 
         coefs = np.zeros((self.n_thresholds, self.n_models, t, p))
         ls = np.zeros((self.n_models, t, p))
-        # A bag's rows and its least-squares fit are the same at every threshold,
+        # A bag's rows and its ridge fit are the same at every threshold,
         # so both are made once per bag (the fit was most of a run's time).
         for j in range(t):
             for k, rows in enumerate(bags):
                 G, b = designs[j][rows], y[rows, j]
-                ls[k, j] = np.linalg.lstsq(G, b, rcond=None)[0]
+                ls[k, j] = _ridge(G, b, self.alpha)
                 for i in range(self.n_thresholds):
-                    coefs[i, k, j] = _stlsq(G, b, ls[k, j], thresholds[i, j], self.max_iter)
+                    coefs[i, k, j] = _stlsq(G, b, ls[k, j], thresholds[i, j], self.max_iter, self.alpha)
 
         median = np.median(coefs, axis=1)                                  # (n_thr, t, p)
         rss = np.stack([np.sum((designs[j] @ median[:, j].T - y[:, [j]]) ** 2, axis=0)
