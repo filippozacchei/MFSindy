@@ -69,10 +69,12 @@ status=0
 run_pass() {
     scripts/run_all.sh --odes --jobs "$(workers $ODE_GB)" "$@" >> "$LOG" 2>&1 || status=1
     scripts/run_all.sh --cases burgers --jobs "$(workers $BURGERS_GB)" "$@" >> "$LOG" 2>&1 || status=1
-    scripts/run_all.sh --cases isothermal_flow --parts 1 --jobs "$(workers $NS1_GB)" "$@" >> "$LOG" 2>&1 || status=1
-    scripts/run_all.sh --cases isothermal_flow --parts 2 --jobs "$(workers $NS2_GB)" "$@" >> "$LOG" 2>&1 || status=1
+    # The vorticity flow before the isothermal flow: it may replace it, and the
+    # isothermal flow is the slowest case, so it goes last and can be stopped.
     scripts/run_all.sh --cases vorticity --parts 1 --jobs "$(workers $VORT1_GB)" "$@" >> "$LOG" 2>&1 || status=1
     scripts/run_all.sh --cases vorticity --parts 2 --jobs "$(workers $VORT2_GB)" "$@" >> "$LOG" 2>&1 || status=1
+    scripts/run_all.sh --cases isothermal_flow --parts 1 --jobs "$(workers $NS1_GB)" "$@" >> "$LOG" 2>&1 || status=1
+    scripts/run_all.sh --cases isothermal_flow --parts 2 --jobs "$(workers $NS2_GB)" "$@" >> "$LOG" 2>&1 || status=1
 }
 
 if (( QUICK_RUNS > 0 )); then
