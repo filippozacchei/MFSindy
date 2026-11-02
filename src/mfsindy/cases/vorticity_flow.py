@@ -2,7 +2,7 @@
 
 The sixth benchmark, an alternative to the isothermal compressible flow: the same
 observation design (one flow per run, observed through windows a quarter of the
-side), the same weak, conservative-form library, but an incompressible flow,
+domain), the same weak, conservative-form library, but an incompressible flow,
 so no density, no shocks and a single equation to identify.
 
 The flow is observed as three fields, the velocity (u, v) and the vorticity w,
@@ -290,7 +290,7 @@ class VorticityMultiTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
     Nt: int = 1001
     L: float = 5.0
     T: float = 1.0
-    window: float = 1.25    # edge of a window, a quarter of the side (32 x 32 points)
+    window: float = 2.5     # edge of a window, a quarter of the domain (64 x 64 points)
 
     nu: float = 0.05
 
@@ -443,7 +443,7 @@ class VorticityIntraTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
     L: float = 5.0
     T: float = 1.0
     n_traj: int = 10
-    window: float = 1.25
+    window: float = 2.5
 
     nu: float = 0.05
 
