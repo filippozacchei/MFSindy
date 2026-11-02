@@ -3,7 +3,7 @@
 #
 #   scripts/run_all.sh                       # the ODEs (lorenz hopf pendulum), Parts I and II
 #   scripts/run_all.sh --odes-burgers        # the ODEs and burgers
-#   scripts/run_all.sh --all                 # every case, isothermal_flow included
+#   scripts/run_all.sh --all                 # every case, isothermal_flow and vorticity included
 #   scripts/run_all.sh --cases hopf lorenz   # only these cases
 #   scripts/run_all.sh --parts 2             # only Part II (combine with any of the above)
 #   scripts/run_all.sh --runs 25             # 25 Monte Carlo runs each (default: each config's, 100)
@@ -29,7 +29,7 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --odes)         cases=("${ODES[@]}"); shift ;;
         --odes-burgers) cases=("${ODES[@]}" burgers); shift ;;
-        --all)          cases=("${ODES[@]}" burgers isothermal_flow); shift ;;
+        --all)          cases=("${ODES[@]}" burgers isothermal_flow vorticity); shift ;;
         --cases)        shift; cases=()
                         while [[ $# -gt 0 && "$1" != --* ]]; do cases+=("$1"); shift; done ;;
         --runs)         [[ $# -ge 2 && "$2" =~ ^[0-9]+$ ]] || { echo "--runs needs a number" >&2; exit 1; }

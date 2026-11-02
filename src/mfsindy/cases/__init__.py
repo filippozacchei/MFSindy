@@ -9,6 +9,7 @@ __all__ = [
     "isothermal_flow",
     "lorenz",
     "pendulum",
+    "vorticity_flow",
 ]
 
 for _name in list(__all__):

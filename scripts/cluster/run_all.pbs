@@ -50,6 +50,8 @@ ODE_GB=0.5
 BURGERS_GB=2.5   # Part II 2.0, Part I 0.4
 NS1_GB=8         # windows 2.5 on 128 x 128: not yet measured, 2.9 at window 1.25 (scripts/cluster/check_ns.py memory)
 NS2_GB=12        # windows 2.5 on 128 x 128: not yet measured, 4.6 at window 1.25
+VORT1_GB=6       # vorticity flow, windows 2.5 on 128 x 128: not yet measured, 9 monomials against 19
+VORT2_GB=8
 
 {
     echo "=========================================="
@@ -57,7 +59,7 @@ NS2_GB=12        # windows 2.5 on 128 x 128: not yet measured, 4.6 at window 1.2
     echo "PBS_JOBID = ${PBS_JOBID}"
     echo "Node: $(cat "${PBS_NODEFILE:-/dev/null}" 2>/dev/null | sort -u | tr '\n' ' ')"
     echo "Cores: $CORES, free memory: ${MEM_GB} GB"
-    echo "Workers: ODEs $(workers $ODE_GB), burgers $(workers $BURGERS_GB), isothermal_flow $(workers $NS1_GB) (Part I), $(workers $NS2_GB) (Part II)"
+    echo "Workers: ODEs $(workers $ODE_GB), burgers $(workers $BURGERS_GB), isothermal_flow $(workers $NS1_GB) (Part I), $(workers $NS2_GB) (Part II), vorticity $(workers $VORT1_GB) / $(workers $VORT2_GB)"
     echo "=========================================="
 } > "$LOG"
 
@@ -69,6 +71,8 @@ run_pass() {
     scripts/run_all.sh --cases burgers --jobs "$(workers $BURGERS_GB)" "$@" >> "$LOG" 2>&1 || status=1
     scripts/run_all.sh --cases isothermal_flow --parts 1 --jobs "$(workers $NS1_GB)" "$@" >> "$LOG" 2>&1 || status=1
     scripts/run_all.sh --cases isothermal_flow --parts 2 --jobs "$(workers $NS2_GB)" "$@" >> "$LOG" 2>&1 || status=1
+    scripts/run_all.sh --cases vorticity --parts 1 --jobs "$(workers $VORT1_GB)" "$@" >> "$LOG" 2>&1 || status=1
+    scripts/run_all.sh --cases vorticity --parts 2 --jobs "$(workers $VORT2_GB)" "$@" >> "$LOG" 2>&1 || status=1
 }
 
 if (( QUICK_RUNS > 0 )); then
