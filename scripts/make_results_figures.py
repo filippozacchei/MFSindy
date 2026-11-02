@@ -28,6 +28,7 @@ import pandas as pd
 from mfsindy.cases import hopf as H
 from mfsindy.cases import isothermal_flow as N
 from mfsindy.cases import pendulum as P
+from mfsindy.cases import vorticity_flow as V
 from mfsindy.plots import DISPLAY, PAPER_BOLD, PAPER_RC, PAPER_WIDTH, PART1_COLORS, PART2_COLORS
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -51,6 +52,9 @@ SYSTEMS = [
      r"$\mathbf{u}_t=-(\mathbf{u}\cdot\nabla)\mathbf{u}$" "\n"
      r"$\quad-\rho^{-1}(\nabla p-\mu\Delta\mathbf{u})$" "\n"
      r"$\rho_t=-\nabla\cdot(\rho\mathbf{u})$"),
+    ("Vorticity flow", "vorticity", "vorticity",
+     r"$\omega_t=-(u\,\omega)_x-(v\,\omega)_y$" "\n"
+     r"$\quad+\nu\,(\omega_{xx}+\omega_{yy})$"),
 ]
 
 
@@ -147,6 +151,20 @@ def thumb_ns(ax) -> None:
     flow_surface(ax, cfg, U, batch.metadata["windows"], batch.hf + batch.lf, shown)
 
 
+def thumb_vorticity(ax) -> None:
+    """The vorticity at the final time as a grey surface, the HF and two LF
+    windows tinted, and their noisy vorticity samples on it."""
+
+    cfg = load_main("vorticity", 1).make_config()
+    U, t, grid = V.generate_vorticity_dataset(N=cfg.N, Nt=cfg.Nt, L=cfg.L, T=cfg.T, nu=cfg.nu,
+                                              seed=cfg.seed_base)
+    # As the Monte Carlo does: noise relative to the vorticity's spread on the reference flow.
+    std = float(np.std(U[..., 2]))
+    batch = V._dataset_batch(0, cfg, cfg.noise_hf_rel * std, cfg.noise_lf_rel * std, grid=grid, t=t)
+    shown = [(k, HF if k < cfg.n_hf else LF) for k in range(cfg.n_hf + 2)]
+    flow_surface(ax, cfg, U, batch.metadata["windows"], batch.hf + batch.lf, shown)
+
+
 def flow_surface(ax, cfg, U, windows, data, shown) -> None:
     """The density at the final time in grey, the shown windows tinted, and their
     samples on it; ``shown`` pairs each window with a colour, or with an array of
@@ -220,8 +238,8 @@ def thumb2_burgers(ax) -> None:
     strip_3d(ax)
 
 
-def thumb2_ns(ax) -> None:
-    main = load_main("isothermal_flow", 2)
+def thumb2_ns(ax, case: str = "isothermal_flow") -> None:
+    main = load_main(case, 2)
     cfg, observed = main.make_config(), {}
     _, _, _, noisy, variance = main.run_trajectories(cfg, 0, observed=observed)
     # The density's noise level at the final time, which the surface shows.
@@ -328,7 +346,8 @@ def rule(fig, y: float, lw: float) -> None:
 def figure(part: Part) -> None:
     # A table: a header band, then one band per system, each with the same inner
     # margins, so every row has the same height and the columns line up.
-    fig = plt.figure(figsize=(PAPER_WIDTH, part.height))
+    # part.height is for five systems; each further system adds one band.
+    fig = plt.figure(figsize=(PAPER_WIDTH, part.height * (len(SYSTEMS) + 0.25) / 5.25))
     outer = fig.add_gridspec(len(SYSTEMS) + 1, 1, height_ratios=[0.25] + [1] * len(SYSTEMS),
                              hspace=0.0, left=0.005, right=0.995, top=0.985, bottom=0.03)
     widths = [0.95, 1.4, 1.45, 0.85, 1.75]
@@ -377,20 +396,26 @@ def figure(part: Part) -> None:
 PART1 = Part(1, ["HF", "LF", "MF", "PMF", "VMF", "MF_w"], PART1_COLORS, DISPLAY,
              [(thumb_lorenz, True), (lambda a: thumb_plane(a, H, "hopf", "hopf"), False),
               (lambda a: thumb_plane(a, P, "pendulum", "pendulum"), False),
-              (thumb_burgers, True), (thumb_ns, True)], 6.6)
+              (thumb_burgers, True), (thumb_ns, True), (thumb_vorticity, True)], 6.6)
 #: Part II from no weighting to the full heteroscedastic covariance; the short
 #: names are the caption's: unweighted, unit-variance, diagonal and full GLS.
 PART2 = Part(2, ["No weighting", "Ones GLS", "Variance diag", "Variance GLS"], PART2_COLORS,
              {"No weighting": "None", "Ones GLS": "Unit", "Variance diag": "Diag.", "Variance GLS": "Full"},
              [(lambda a: thumb2_ode(a, "lorenz", 3), True), (lambda a: thumb2_ode(a, "hopf", 2), False),
-              (lambda a: thumb2_ode(a, "pendulum", 2), False), (thumb2_burgers, True), (thumb2_ns, True)],
+              (lambda a: thumb2_ode(a, "pendulum", 2), False), (thumb2_burgers, True), (thumb2_ns, True),
+              (lambda a: thumb2_ns(a, "vorticity"), True)],
              5.2)
 
 
 def main() -> None:
     with plt.rc_context(PAPER_RC):
-        figure(PART1)
-        figure(PART2)
+        for part in (PART1, PART2):
+            missing = [case for _, case, prefix, _ in SYSTEMS
+                       if not (ROOT / "examples" / case / "results" / f"{prefix}_part{part.number}_errors.csv").exists()]
+            if missing:
+                print(f"Part {part.number} skipped: no error table yet for {', '.join(missing)}")
+                continue
+            figure(part)
 
 
 if __name__ == "__main__":

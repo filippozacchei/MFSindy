@@ -1,0 +1,9 @@
+run,method,metric,value
+0,No weighting,L1,0.029592216213944086
+0,No weighting,L0,5.5
+0,Ones GLS,L1,0.020954848550268197
+0,Ones GLS,L0,3.75
+0,Variance diag,L1,8.390606177619846e-05
+0,Variance diag,L0,0.0
+0,Variance GLS,L1,0.0002569897588335445
+0,Variance GLS,L0,0.0
