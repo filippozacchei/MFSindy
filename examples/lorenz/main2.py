@@ -127,7 +127,7 @@ def supports(cfg) -> list:
 #: library (9 terms). T/10 and T/5 go past it; a support is admissible for a
 #: model only if its weak system has at least twice as many rows as library
 #: terms (selection.MIN_ROWS_PER_TERM), which rules them out for one HF trajectory.
-SUPPORT_DIVISORS = (200.0, 100.0, 50.0, 20.0, 10.0, 5.0)
+SUPPORT_DIVISORS = (100.0, 50.0, 20.0, 10.0, 5.0)
 
 
 def run_trajectories(cfg, run_idx: int = 0):

@@ -1423,6 +1423,8 @@ def forecast_metrics(model: np.ndarray, bags: np.ndarray, truth: np.ndarray,
 
     States (``state_*``): the reported (median-coefficient) model's rollout, and
     the band of the bag rollouts that stay bounded; ``bounded`` is their share.
+    Ensemble (``ens_*``): the median of the bag rollouts at each time, a bag
+    dropping out once it diverges, as the earlier Part III scored the forecast.
     Derivatives (``deriv_*``): each model's right side evaluated on the true
     states, against the true derivatives, so they score the identified vector
     field without the compounding of a rollout. ``valid_time`` is the model's,
@@ -1437,6 +1439,11 @@ def forecast_metrics(model: np.ndarray, bags: np.ndarray, truth: np.ndarray,
         derivatives = interval_scores(model_rhs[:n], bag_rhs[:, :n], true_rhs[:n], cfg.band)
         scores.update({f"state_{k}@{h:g}": v for k, v in states.items()})
         scores[f"bounded@{h:g}"] = float(np.mean(bounded))
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)                # all-NaN times
+            ensemble = np.nanmedian(bags[:, :n], axis=0)
+        ens = interval_scores(ensemble, bags[:0, :n], truth[:n], cfg.band)
+        scores.update({f"ens_{k}@{h:g}": ens[k] for k in ("rmse", "r2")})
         scores.update({f"deriv_{k}@{h:g}": v for k, v in derivatives.items()})
     return scores
 

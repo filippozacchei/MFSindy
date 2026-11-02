@@ -28,8 +28,8 @@ warnings.filterwarnings("ignore")
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
 
 #: Candidate supports, as divisors of the training horizon: the ODE ladder of
-#: Part I.
-SUPPORT_DIVISORS = (200.0, 100.0, 50.0, 20.0, 10.0, 5.0)
+#: Part I, T/100 to T/5 as for every case.
+SUPPORT_DIVISORS = (100.0, 50.0, 20.0, 10.0, 5.0)
 
 
 def make_config(**overrides) -> DoublePendulumForecastConfig:
