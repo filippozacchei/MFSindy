@@ -278,16 +278,25 @@ def run_multi_trajectory_gls_experiment(
         )
         C_true = true_coefficients(batch, cfg)
         errors = {method: coefficient_errors(coef_map[method], C_true) for method in methods}
+        # Every support is fitted anyway; its errors, kept for each rung, let the
+        # accuracy be read against kappa with the rung held fixed.
+        post = (lambda c: c) if coef_postprocess is None else coef_postprocess
+        by_support = {m: {H: coefficient_errors(post(np.asarray(f[m].coef_)), C_true) for H, f in fits.items()}
+                      for m in methods}
         # The selection record is kept for the last run only; every run's
         # coefficients and chosen supports are kept for the across-runs plots.
         last = run_idx == cfg.n_runs - 1
         return errors, {"coefs": coef_map, "supports": {m: trace[m]["support"] for m in methods},
+                        "by_support": by_support,
                         "true": C_true, "trace": trace if last else None}
 
     def collect(extras):
         estimates = {m: [e["coefs"][m] for e in extras] for m in methods}
         supports = {m: [e["supports"][m] for e in extras] for m in methods}
-        save_selection(cfg, cfg.n_runs - 1, extras[-1]["true"], extras[-1]["trace"], estimates, supports)
+        by_support = {m: {H: np.array([e["by_support"][m][H] for e in extras]) for H in extras[0]["by_support"][m]}
+                      for m in methods}
+        save_selection(cfg, cfg.n_runs - 1, extras[-1]["true"], extras[-1]["trace"], estimates, supports,
+                       by_support)
 
     df_errors, metric1, metric2 = run_monte_carlo_experiment(
         n_runs=cfg.n_runs,

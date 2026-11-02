@@ -294,9 +294,11 @@ def selection_path(cfg) -> Path:
 
 def save_selection(cfg, run_idx: int, true_coefficients: np.ndarray, trace,
                    coefficients: Mapping[str, list] | None = None,
-                   supports: Mapping[str, list] | None = None) -> None:
+                   supports: Mapping[str, list] | None = None,
+                   errors_by_support: Mapping[str, Mapping[Any, np.ndarray]] | None = None) -> None:
     """Write the last run's selection, and every run's reported coefficients and
-    chosen support."""
+    chosen support; with ``errors_by_support``, every run's (L1, L0) at every
+    support, per rung, as {rung: {support: array (n_runs, 2)}}."""
 
     path = selection_path(cfg)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -305,6 +307,8 @@ def save_selection(cfg, run_idx: int, true_coefficients: np.ndarray, trace,
         record["coefficients"] = {rung: np.stack(c) for rung, c in coefficients.items()}
     if supports is not None:
         record["supports"] = {rung: list(s) for rung, s in supports.items()}
+    if errors_by_support is not None:
+        record["errors_by_support"] = {rung: dict(e) for rung, e in errors_by_support.items()}
     with open(path, "wb") as fh:
         pickle.dump(record, fh)
 
