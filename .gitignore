@@ -77,3 +77,6 @@ site/
 # Legacy snapshots
 OLD/
 OLD/**
+
+# Quick-pass snapshots from scripts/cluster/run_all.pbs
+results/quick_*/

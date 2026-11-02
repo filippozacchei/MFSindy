@@ -7,6 +7,11 @@
 
 # Every case, Parts I and II, on one node: qsub scripts/cluster/run_all.pbs
 #
+# Two passes: first QUICK_RUNS runs of every case, for an early look, then the
+# full Monte Carlo (each config's own number of runs, 100). The quick pass's
+# tables and logs are copied to results/quick_<job id>/<case>/ before the full
+# pass overwrites them. QUICK_RUNS=0 skips it.
+#
 # Each case gets as many workers (Monte Carlo runs in parallel) as the node's
 # memory allows, capped at the cores: the peak memory of one worker was measured
 # with scratch/mem_probe.py and is listed below. The number of workers does not
@@ -38,6 +43,8 @@ workers() {
         if (n < 1) n = 1; print n }'
 }
 
+QUICK_RUNS=10
+
 # Peak GB of one worker, measured on one run of each case.
 ODE_GB=0.5
 BURGERS_GB=2.5   # Part II 2.0, Part I 0.4
@@ -55,10 +62,29 @@ NS2_GB=12        # windows 2.5 on 128 x 128: not yet measured, 4.6 at window 1.2
 } > "$LOG"
 
 status=0
-scripts/run_all.sh --odes --jobs "$(workers $ODE_GB)" >> "$LOG" 2>&1 || status=1
-scripts/run_all.sh --cases burgers --jobs "$(workers $BURGERS_GB)" >> "$LOG" 2>&1 || status=1
-scripts/run_all.sh --cases isothermal_flow --parts 1 --jobs "$(workers $NS1_GB)" >> "$LOG" 2>&1 || status=1
-scripts/run_all.sh --cases isothermal_flow --parts 2 --jobs "$(workers $NS2_GB)" >> "$LOG" 2>&1 || status=1
+
+# Every case, Parts I and II; any extra arguments (--runs N) go to each case.
+run_pass() {
+    scripts/run_all.sh --odes --jobs "$(workers $ODE_GB)" "$@" >> "$LOG" 2>&1 || status=1
+    scripts/run_all.sh --cases burgers --jobs "$(workers $BURGERS_GB)" "$@" >> "$LOG" 2>&1 || status=1
+    scripts/run_all.sh --cases isothermal_flow --parts 1 --jobs "$(workers $NS1_GB)" "$@" >> "$LOG" 2>&1 || status=1
+    scripts/run_all.sh --cases isothermal_flow --parts 2 --jobs "$(workers $NS2_GB)" "$@" >> "$LOG" 2>&1 || status=1
+}
+
+if (( QUICK_RUNS > 0 )); then
+    echo "=== quick pass: $QUICK_RUNS runs per case ($(date)) ===" >> "$LOG"
+    run_pass --runs "$QUICK_RUNS"
+    QUICK_DIR="$ROOT/results/quick_${PBS_JOBID:-local}"
+    for dir in examples/*/results; do
+        case=$(basename "$(dirname "$dir")")
+        mkdir -p "$QUICK_DIR/$case"
+        cp "$dir"/*_errors.csv "$dir"/*_errors_selection.pkl "$dir"/main*.log "$QUICK_DIR/$case/" 2>/dev/null
+    done
+    echo "=== quick pass saved to $QUICK_DIR ($(date)) ===" >> "$LOG"
+fi
+
+echo "=== full pass ($(date)) ===" >> "$LOG"
+run_pass
 
 echo "End time: $(date)" >> "$LOG"
 exit $status

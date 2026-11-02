@@ -231,6 +231,24 @@ _RC = {"font.family": "sans-serif", "font.size": 7, "axes.titlesize": 7,
        "xtick.major.size": 2, "ytick.major.size": 0, "axes.spines.top": False,
        "axes.spines.right": False, "pdf.fonttype": 42, "ps.fonttype": 42}
 
+#: The paper's figures: _RC set in Computer Modern, as LaTeX sets the text, so
+#: every figure in the paper uses one font. The sizes are print sizes: figures
+#: are drawn at the width they are printed at (PAPER_WIDTH, or a share of it) and
+#: saved uncropped, so 8 pt here is 8 pt on the page. cmr10 has no minus sign,
+#: hence unicode_minus off; bold text is set in cmb10 (see PAPER_BOLD).
+PAPER_RC = {**_RC, "font.family": "serif", "font.serif": ["cmr10"], "mathtext.fontset": "cm",
+            "axes.formatter.use_mathtext": True, "axes.unicode_minus": False,
+            "font.size": 8, "axes.labelsize": 8, "axes.titlesize": 8, "legend.fontsize": 7,
+            "xtick.labelsize": 7, "ytick.labelsize": 7,
+            # The cm math fonts have no bold digits. Text that needs them is set
+            # with math_fontfamily="custom", which takes bold from cmb10 and the
+            # rest from Computer Modern.
+            "mathtext.rm": "cmr10", "mathtext.it": "cmmi10", "mathtext.bf": "cmb10",
+            "mathtext.fallback": "cm"}
+#: The manuscript's text width (elsarticle preprint, 11pt): 390 pt, in inches.
+PAPER_WIDTH = 390 / 72.27
+PAPER_BOLD = {"family": "cmb10"}
+
 #: Part I models coloured by family: single fidelity unweighted (greys) and
 #: weighted (blues), fusion without fidelity weights (oranges), and fusion with
 #: them (teal for the per-group variances, red for the full weak covariance).

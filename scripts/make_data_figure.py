@@ -30,7 +30,7 @@ from mpl_toolkits.mplot3d import proj3d
 
 from mfsindy.cases import burgers as B
 from mfsindy.cases import lorenz as L
-from mfsindy.plots import _RC
+from mfsindy.plots import PAPER_RC, PAPER_WIDTH
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "results" / "figures"
@@ -102,74 +102,77 @@ def strip_3d(ax, *labels: str) -> None:
         set_label(text, labelpad=-12)
 
 
-def zoom_column(fig, spec, n: int):
-    sub = spec.subgridspec(n, 1, hspace=0.3)
-    axes = [fig.add_subplot(sub[k]) for k in range(n)]
-    for a in axes:
-        # Ticks and labels on the right, so the arrows arrive on a clear left edge.
-        a.yaxis.tick_right()
-        # tick_right draws the labels with the right-hand tick style, which the
-        # rc sizes do not reach, so set them here.
-        a.tick_params(labelsize=plt.rcParams["xtick.labelsize"])
-        a.yaxis.set_label_position("right")
-        a.spines[["top", "left"]].set_visible(False)
-    for a in axes[:-1]:
-        a.set_xticklabels([])
-    return axes
+#: Each figure is a subfigure printed at 0.49 of the text width, and drawn at it.
+WIDTH = 0.49 * PAPER_WIDTH
+
+
+def style_panel(a) -> None:
+    a.spines[["top", "right"]].set_visible(False)
 
 
 def to_figure(fig, transform, point):
     return fig.transFigure.inverted().transform(transform.transform(point))
 
 
-def legend(ax, *extra) -> None:
-    """HF and LF markers above a zoom column, plus any extra handles."""
+def legend(fig, *extra) -> None:
+    """HF and LF markers along the top of the figure, plus any extra handles."""
 
     handles = [Line2D([], [], ls="none", marker=".", color=HF, label="HF"),
                Line2D([], [], ls="none", marker=".", color=LF, label="LF"), *extra]
-    ax.legend(handles=handles, loc="lower left", bbox_to_anchor=(0.0, 1.02), ncol=len(handles),
-              frameon=False, handletextpad=0.1, columnspacing=1.0, borderaxespad=0.0)
+    fig.legend(handles=handles, loc="upper center", bbox_to_anchor=(0.5, 1.0), ncol=len(handles),
+               frameon=False, handletextpad=0.1, columnspacing=1.0, borderaxespad=0.2)
 
 
 def save(fig, name: str) -> None:
+    # Uncropped, so the file is exactly the printed size.
     OUT.mkdir(parents=True, exist_ok=True)
     out = OUT / f"{name}.pdf"
-    fig.savefig(out, bbox_inches="tight")
-    fig.savefig(out.with_suffix(".png"), dpi=200, bbox_inches="tight")
+    fig.savefig(out)
+    fig.savefig(out.with_suffix(".png"), dpi=300)
     print(f"wrote {out}")
 
 
 def ode_figure() -> None:
+    """The attractor on top; below it, x, y, z against time, one panel each."""
+
     attractor, trajectories, t = lorenz_data()
-    fig = plt.figure(figsize=(7.2, 3.2))
-    grid = fig.add_gridspec(1, 2, width_ratios=[1.6, 1], wspace=0.45)
+    fig = plt.figure(figsize=(WIDTH, 3.4))
+    grid = fig.add_gridspec(5, 1, height_ratios=[2.2, 0.35, 0.75, 0.75, 0.75], hspace=0.25,
+                            left=0.17, right=0.97, top=0.94, bottom=0.11)
 
     ax = fig.add_subplot(grid[0], projection="3d")
-    ax.plot(*attractor.T, color=GREY, lw=0.3, alpha=0.25)
+    ax.plot(*attractor.T, color=GREY, lw=0.25, alpha=0.25)
     for _, noisy, color, _ in trajectories:
-        ax.plot(*noisy[::5].T, ".", ms=1.0, color=color, alpha=0.7, rasterized=True)
+        ax.plot(*noisy[::5].T, ".", ms=0.8, color=color, alpha=0.7, rasterized=True)
     strip_3d(ax, "$x$", "$y$", "$z$")
+    ax.set_box_aspect(None, zoom=1.15)
 
     # One panel per state component, each with all three trajectories, the LF
     # ones under the HF one.
-    zooms = zoom_column(fig, grid[1], 3)
+    zooms = [fig.add_subplot(grid[2 + d]) for d in range(3)]
     for d, (a, name) in enumerate(zip(zooms, "xyz")):
         for _, noisy, color, _ in trajectories[::-1]:
-            a.plot(t, noisy[:, d], ".", ms=0.6, color=color, alpha=0.6, rasterized=True)
+            a.plot(t, noisy[:, d], ".", ms=0.5, color=color, alpha=0.6, rasterized=True)
         a.set_xlim(t[0], t[-1])
-        a.set_ylabel(f"${name}$")
-    zooms[-1].set_xlabel("$t$")
-    legend(zooms[0])
+        a.set_ylabel(f"${name}$", labelpad=1)
+        style_panel(a)
+    for a in zooms[:-1]:
+        a.set_xticklabels([])
+    zooms[-1].set_xlabel("$t$", labelpad=1)
+    legend(fig)
 
     fig.canvas.draw()
-    end = to_figure(fig, zooms[1].transAxes, (-0.04, 0.5))
-    begin = (to_figure(fig, ax.transAxes, (1.0, 0.0))[0], end[1])
-    fig.add_artist(ConnectionPatch(xyA=begin, coordsA=fig.transFigure, xyB=end, coordsB=fig.transFigure,
-                                   arrowstyle="-|>,head_width=0.25", color="0.4", lw=1.2))
+    top = to_figure(fig, zooms[0].transAxes, (0.5, 1.08))
+    bottom = to_figure(fig, ax.transAxes, (0.5, 0.02))
+    fig.add_artist(ConnectionPatch(xyA=(top[0], bottom[1]), coordsA=fig.transFigure, xyB=top,
+                                   coordsB=fig.transFigure, arrowstyle="-|>,head_width=0.2",
+                                   color="0.4", lw=1.0))
     save(fig, "mf_data_ode")
 
 
 def pde_figure() -> None:
+    """The solution on top; below it, each window's spatial profiles."""
+
     cfg, run, batch, windows = burgers_data()
     print(f"Burgers: run {run}")
     U = batch.metadata["flow"]
@@ -178,8 +181,9 @@ def pde_figure() -> None:
     vmax = np.abs(U).max()
     data = batch.hf + batch.lf
 
-    fig = plt.figure(figsize=(7.2, 3.6))
-    grid = fig.add_gridspec(1, 2, width_ratios=[1.6, 1], wspace=0.45)
+    fig = plt.figure(figsize=(WIDTH, 3.4))
+    grid = fig.add_gridspec(3, 3, height_ratios=[2.2, 0.45, 1.1], hspace=0.0, wspace=0.12,
+                            left=0.15, right=0.97, top=0.94, bottom=0.13)
 
     # The clean solution as a grey reference surface, every 10th time step, with
     # each window's strip lightly tinted and its noisy samples on it, as the
@@ -190,53 +194,59 @@ def pde_figure() -> None:
     faces = np.full(X_.shape + (4,), matplotlib.colors.to_rgba(GREY, 0.25))
     for w, color in windows[::-1]:
         faces[np.asarray(batch.metadata["windows"][w])] = matplotlib.colors.to_rgba(color, 0.25)
-    ax = fig.add_subplot(grid[0], projection="3d")
+    ax = fig.add_subplot(grid[0, :], projection="3d")
     ax.plot_surface(X_, T_, U[:, ::step], facecolors=faces, linewidth=0, shade=False,
                     rstride=1, cstride=1, rasterized=True)
     for w, color in windows[::-1]:
         idx = np.asarray(batch.metadata["windows"][w])
         Tw, Xw = np.meshgrid(t[::50], x[idx][::2], indexing="xy")
-        ax.plot(Xw.ravel(), Tw.ravel(), np.asarray(data[w])[::2, ::50, 0].ravel(), ".", ms=1.0,
+        ax.plot(Xw.ravel(), Tw.ravel(), np.asarray(data[w])[::2, ::50, 0].ravel(), ".", ms=0.8,
                 color=color, alpha=0.8, rasterized=True)
     strip_3d(ax, "$x$", "$t$", "$u$")
     ax.view_init(elev=28, azim=-50)
+    ax.set_box_aspect(None, zoom=1.15)
 
     # Each window's data as spatial profiles at t = 0, T/2, T, dark to light:
     # the noisy samples over the clean profile. Panels follow the order of the
-    # strips on the surface, top to bottom, so the arrows do not cross.
+    # strips on the surface, left to right, so the arrows do not cross.
     fig.canvas.draw()
 
     def start(w):
         idx = np.asarray(batch.metadata["windows"][w])
-        i, n = idx[len(idx) // 2], len(t) - 1
+        i, n = idx[len(idx) // 2], 0
         return proj3d.proj_transform(x[i], t[n], U[i, n], ax.get_proj())[:2]
 
-    windows = sorted(windows, key=lambda win: -start(win[0])[1])
-    zooms = zoom_column(fig, grid[1], len(windows))
+    windows = sorted(windows, key=lambda win: start(win[0])[0])
+    zooms = [fig.add_subplot(grid[2, k]) for k in range(len(windows))]
     dx = x[1] - x[0]
     x_window = np.arange(len(batch.metadata["windows"][0])) * dx
     for a, (w, color) in zip(zooms, windows):
         idx = np.asarray(batch.metadata["windows"][w])
         observed = np.asarray(data[w])[..., 0]
         for n, alpha in zip((0, len(t) // 2, len(t) - 1), (1.0, 0.6, 0.3)):
-            a.plot(x_window, U[idx, n], color="0.3", lw=0.6, alpha=alpha)
-            a.plot(x_window, observed[:, n], ".", ms=1.5, color=color, alpha=alpha)
+            a.plot(x_window, U[idx, n], color="0.3", lw=0.5, alpha=alpha)
+            a.plot(x_window, observed[:, n], ".", ms=0.9,
+                   color=color, alpha=alpha)
         a.set_xlim(x_window[0], x_window[-1])
         a.set_ylim(-0.15 * vmax, 1.15 * vmax)
-    zooms[1].set_ylabel("$u$")
-    zooms[-1].set_xlabel("$x-x_0$")
-    legend(zooms[0], Line2D([], [], color="0.3", lw=0.6, label="clean"))
+        a.set_xticks([0, 2])
+        style_panel(a)
+    for a in zooms[1:]:
+        a.set_yticklabels([])
+    zooms[0].set_ylabel("$u$", labelpad=1)
+    zooms[1].set_xlabel("$x-x_0$", labelpad=1)
+    legend(fig, Line2D([], [], color="0.3", lw=0.6, label="clean"))
 
     for a, (w, color) in zip(zooms, windows):
-        fig.add_artist(ConnectionPatch(xyA=start(w), coordsA=ax.transData, xyB=(-0.02, 0.5),
-                                       coordsB=a.transAxes, arrowstyle="-|>,head_width=0.2",
-                                       connectionstyle="arc3,rad=-0.15", color=color, lw=0.8))
+        fig.add_artist(ConnectionPatch(xyA=start(w), coordsA=ax.transData, xyB=(0.5, 1.04),
+                                       coordsB=a.transAxes, arrowstyle="-|>,head_width=0.15",
+                                       connectionstyle="arc3,rad=0.0", color=color, lw=0.7))
     save(fig, "mf_data_pde")
 
 
 def main() -> None:
-    # The package's figure style, so these match the other figures.
-    with plt.rc_context({**_RC, "xtick.labelsize": 6, "ytick.labelsize": 6, "legend.fontsize": 7}):
+    # The paper's figure style, shared with the results figures.
+    with plt.rc_context(PAPER_RC):
         ode_figure()
         pde_figure()
 
