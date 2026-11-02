@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import zlib
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Sequence
@@ -14,6 +15,7 @@ from .base import (
     run_monte_carlo_experiment,
 )
 from .selection import save_selection, select_rungs, support_key, support_variants
+from mfsindy.weighted_weak_pde_library import weak_system
 
 
 #: Part I rungs, in reporting order. PMF and VMF are the baselines required by
@@ -128,16 +130,16 @@ def _variance_signature(variance_field: np.ndarray | None):
 
     Part I weights every sample of a group alike -- ``np.full(shape, sigma**2)``
     -- so one library serves the whole group. A field that varies sample to
-    sample would need its own whitener, and returning None there keeps this from
-    silently handing back the wrong one.
+    sample needs its own whitener, so it is keyed by its exact contents: sensors
+    on one trajectory share one field, and with it one library.
     """
 
     if variance_field is None:
         return ("plain",)
-    array = np.asarray(variance_field)
+    array = np.ascontiguousarray(variance_field, dtype=float)
     low, high = float(array.min()), float(array.max())
     if low != high:
-        return None
+        return (array.shape, hashlib.sha1(array.tobytes()).hexdigest())
     return (array.shape, low)
 
 
@@ -195,22 +197,31 @@ def fit_multi_trajectory_weak_gls_models(
             noise_abs = 1.0
         whitener_mode = "diag" if weighting == "diag" else "full"
 
+        # A batch may carry its own pointwise variances, one field per trajectory
+        # (heteroscedastic noise); the weighted rungs then use them, and PMF unit
+        # variance as before.
+        fields = batch.metadata.get("variance", {}).get(fidelity)
+
         theta_blocks: list[np.ndarray] = []
         rhs_blocks: list[np.ndarray] = []
-        for traj in trajectories:
-            variance_field = (
-                None
-                if weighting == "plain"
-                else np.full(traj.shape[:-1], noise_abs**2, dtype=float)
-            )
+        for i, traj in enumerate(trajectories):
+            if weighting == "plain":
+                variance_field = None
+            elif fields is not None and weighting != "pooled":
+                variance_field = np.asarray(fields[i], dtype=float)
+            else:
+                variance_field = np.full(traj.shape[:-1], noise_abs**2, dtype=float)
             library = library_for(variance_field, whitener_mode, traj)
-            theta_blocks.append(np.asarray(library.transform([traj])[0]))
-            rhs_blocks.append(np.asarray(library.convert_u_dot_integral(traj)))
+            theta, rhs = weak_system(library, traj)
+            theta_blocks.append(theta)
+            rhs_blocks.append(rhs)
         return theta_blocks, rhs_blocks
 
     def fit_stacked(theta_blocks: list[np.ndarray], rhs_blocks: list[np.ndarray]):
+        # Rows are the second-to-last axis of theta: (n, p), or (d, n, p) when the
+        # noise differs by component and each equation is whitened on its own.
         optimizer = optimizer_factory()
-        optimizer.fit(np.vstack(theta_blocks), np.vstack(rhs_blocks))
+        optimizer.fit(np.concatenate(theta_blocks, axis=-2), np.vstack(rhs_blocks))
         return optimizer
 
     return assemble_weak_rungs(

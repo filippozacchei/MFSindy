@@ -1200,13 +1200,14 @@ def summarize_fidelity_benchmark(
 # Part III under the shared protocol
 # ---------------------------------------------------------------------------
 #
-# The surrogate is identified as in Part I: one HF and ten LF trajectories from
-# their own initial conditions, every rung fitted at every support of the ODE
-# ladder, the support chosen by the bagged spread and, per equation, the
+# As before, one trajectory is observed by one HF and ten LF sensors, which
+# differ only in their noise: Part II's heteroscedastic model, at a level per
+# fidelity group. The surrogate is identified with Part I's
+# procedure: every rung fitted at every support of the ODE ladder, the support chosen by the bagged spread and, per equation, the
 # threshold and the polynomial degree chosen together by BIC. The library is
 # polynomial and so does not contain the true (rational, trigonometric) right
-# side; the surrogate is judged, as before, by forecasting the HF trajectory
-# past the end of its training window.
+# side; the surrogate is judged, as before, by forecasting the trajectory past
+# the end of its training window.
 
 
 def polynomial_library_sizes(n_states: int, max_degree: int) -> tuple[int, ...]:
@@ -1223,20 +1224,19 @@ def polynomial_library_sizes(n_states: int, max_degree: int) -> tuple[int, ...]:
 class DoublePendulumForecastConfig(MonteCarloConfig, EnsembleConfigMixin):
     """Part III: surrogate forecasting of the double pendulum."""
 
-    # multi-fidelity data, as in Part I
+    # multi-fidelity data: sensors on one trajectory. The noise is Part II's,
+    # sigma_i(t) = noise_floor * s_i + level * |x_i(t)| (double_pendulum_noise_variance),
+    # with the level of the sensor's fidelity group: Part I's 1% and 25%.
     n_hf: int = 1
     n_lf: int = 10
-    noise_hf_rel: float = 0.01
-    noise_lf_rel: float = 0.25
+    noise_hf_level: float = 0.01
+    noise_lf_level: float = 0.25
+    noise_floor: float = 1e-4
 
-    # time discretisation; T_true is the reference trajectory the noise is scaled by.
-    # The trajectories are longer than Part I's: the surrogate must cover the
-    # region it forecasts in. On clean data, least squares on 11 trajectories of
-    # 1 s forecasts new starts no better than their spread at any degree; at
-    # 10 s degree 5 is within 14% (scratch check before any noisy run).
+    # time discretisation. The trajectory is longer than Part I's, as before: the
+    # surrogate must cover the region it forecasts in.
     dt: float = 1e-3
     T_train: float = 10.0
-    T_true: float = 10.0
 
     # physical parameters (point masses on massless rods)
     m1: float = 1.0
@@ -1276,62 +1276,59 @@ class DoublePendulumForecastConfig(MonteCarloConfig, EnsembleConfigMixin):
         )
 
 
-def _forecast_trajectories(cfg: DoublePendulumForecastConfig, n: int, seed: int, noise_abs: float):
-    """``n`` trajectories over the training horizon from their own starts, with noise."""
+def double_pendulum_clean_trajectory(cfg: DoublePendulumForecastConfig, run_idx: int,
+                                     t_final: float | None = None):
+    """The run's trajectory, from its own start, over ``t_final`` (default: training)."""
 
-    rng = np.random.default_rng(seed)
-    noisy = []
-    for _ in range(n):
-        y0 = sample_double_pendulum_initial_condition(
-            rng, theta_range=cfg.theta_range, omega_range=cfg.omega_range
-        )
-        t, X = simulate_double_pendulum_trajectory(
-            y0=y0, t_final=cfg.T_train, dt=cfg.dt,
-            m1=cfg.m1, m2=cfg.m2, l1=cfg.l1, l2=cfg.l2, g=cfg.g,
-        )
-        noisy.append(X + noise_abs * rng.standard_normal(X.shape))
-    return noisy, t
-
-
-def double_pendulum_reference_state_std(cfg: DoublePendulumForecastConfig) -> float:
-    rng = np.random.default_rng(cfg.seed_base)
+    rng = np.random.default_rng(cfg.seed_base + run_idx)
     y0 = sample_double_pendulum_initial_condition(
         rng, theta_range=cfg.theta_range, omega_range=cfg.omega_range
     )
-    _, X = simulate_double_pendulum_trajectory(
-        y0=y0, t_final=cfg.T_true, dt=cfg.dt,
+    return simulate_double_pendulum_trajectory(
+        y0=y0, t_final=cfg.T_train if t_final is None else t_final, dt=cfg.dt,
         m1=cfg.m1, m2=cfg.m2, l1=cfg.l1, l2=cfg.l2, g=cfg.g,
     )
-    return float(np.std(X))
 
 
-def double_pendulum_forecast_batch(
-    run_idx: int, cfg: DoublePendulumForecastConfig, noise_hf_abs: float, noise_lf_abs: float
-) -> MultiTrajectoryGLSData:
-    hf, t = _forecast_trajectories(cfg, cfg.n_hf, cfg.seed_base + run_idx, noise_hf_abs)
-    lf, _ = _forecast_trajectories(cfg, cfg.n_lf, cfg.seed_base + 100 + run_idx, noise_lf_abs)
+def double_pendulum_noise_variance(X: np.ndarray, level: float, floor: float) -> np.ndarray:
+    """Pointwise noise variance per state component, shape (n_samples, 4).
+
+    Part II's model: sigma_i(t) = floor * s_i + level * |x_i(t)|, an absolute
+    floor plus an error proportional to the reading, with s_i the spread of
+    component i along the trajectory, so the floor is in that component's units
+    and the noise follows each run's own trajectory.
+    """
+
+    sigma = floor * np.std(X, axis=0) + level * np.abs(X)
+    return np.maximum(sigma ** 2, 1e-12)
+
+
+def double_pendulum_forecast_batch(run_idx: int, cfg: DoublePendulumForecastConfig) -> MultiTrajectoryGLSData:
+    """The run's observations: the one trajectory seen by each HF and LF sensor,
+    each with its own noise, and the noise variances the weighted rungs use."""
+
+    t, X = double_pendulum_clean_trajectory(cfg, run_idx)
+    rng = np.random.default_rng(cfg.seed_base + 100 + run_idx)
+    observed, variance = {}, {}
+    for fidelity, n, level in (("hf", cfg.n_hf, cfg.noise_hf_level), ("lf", cfg.n_lf, cfg.noise_lf_level)):
+        field = double_pendulum_noise_variance(X, level, cfg.noise_floor)
+        observed[fidelity] = [X + np.sqrt(field) * rng.standard_normal(X.shape) for _ in range(n)]
+        variance[fidelity] = [field] * n
     return MultiTrajectoryGLSData(
-        hf=hf, lf=lf, t_argument=cfg.dt,
-        metadata={"t_grid": t, "weak_seed": cfg.seed_base + 10_000 + run_idx},
+        hf=observed["hf"], lf=observed["lf"], t_argument=cfg.dt,
+        metadata={"t_grid": t, "weak_seed": cfg.seed_base + 10_000 + run_idx, "variance": variance},
     )
 
 
 def double_pendulum_forecast_case(cfg: DoublePendulumForecastConfig, run_idx: int):
     """Where the run's forecast starts, and the true states from there.
 
-    The forecast continues the (first) HF trajectory: it starts from its clean
+    The forecast continues the observed trajectory: it starts from its clean
     state at the end of the training window and runs ``forecast_horizon`` on,
     on the forecast grid. The training data never reach this stretch.
     """
 
-    rng = np.random.default_rng(cfg.seed_base + run_idx)          # the HF draw
-    y0 = sample_double_pendulum_initial_condition(
-        rng, theta_range=cfg.theta_range, omega_range=cfg.omega_range
-    )
-    _, X = simulate_double_pendulum_trajectory(
-        y0=y0, t_final=cfg.T_train + cfg.forecast_horizon, dt=cfg.dt,
-        m1=cfg.m1, m2=cfg.m2, l1=cfg.l1, l2=cfg.l2, g=cfg.g,
-    )
+    _, X = double_pendulum_clean_trajectory(cfg, run_idx, cfg.T_train + cfg.forecast_horizon)
     truth = X[int(round(cfg.T_train / cfg.dt)):][:: int(round(cfg.forecast_dt / cfg.dt))]
     return truth[0], truth
 
@@ -1441,14 +1438,14 @@ def run_double_pendulum_forecast(cfg: DoublePendulumForecastConfig, run_idx: int
 
     from mfsindy.cases.pendulum import _pendulum_fit_multi_trajectory_weak_gls_models
 
-    state_std = double_pendulum_reference_state_std(cfg)
-    noise_hf_abs, noise_lf_abs = cfg.noise_hf_rel * state_std, cfg.noise_lf_rel * state_std
-    batch = double_pendulum_forecast_batch(run_idx, cfg, noise_hf_abs, noise_lf_abs)
+    batch = double_pendulum_forecast_batch(run_idx, cfg)
     methods = list(cfg.methods)
+    # The weighted rungs read the batch's variance fields, so no scalar noise
+    # level is needed (PMF uses unit variance either way).
     fits = {
         support_key(variant.H_xt): _pendulum_fit_multi_trajectory_weak_gls_models(
             batch, variant, variant.make_optimizer, t_argument=batch.t_argument,
-            noise_hf_abs=noise_hf_abs, noise_lf_abs=noise_lf_abs, methods=methods,
+            noise_hf_abs=np.nan, noise_lf_abs=np.nan, methods=methods,
         )
         for variant in support_variants(cfg)
     }
@@ -1546,9 +1543,10 @@ __all__ = [
     "build_double_pendulum_dataset",
     "build_double_pendulum_feature_library",
     "compute_double_pendulum_derivatives",
+    "double_pendulum_clean_trajectory",
     "double_pendulum_forecast_batch",
     "double_pendulum_record_path",
-    "double_pendulum_reference_state_std",
+    "double_pendulum_noise_variance",
     "double_pendulum_forecast_case",
     "forecast_metrics",
     "interval_scores",
