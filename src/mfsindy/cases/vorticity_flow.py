@@ -25,7 +25,6 @@ Part 2: heteroscedastic GLS (No weighting / Ones GLS / Variance diag / Variance 
 from __future__ import annotations
 
 import functools
-import itertools
 from dataclasses import dataclass, replace
 from typing import Any, Dict, Sequence
 
@@ -155,11 +154,15 @@ def generate_vorticity_dataset(N: int = 128, Nt: int = 1001, L: float = 5.0, T: 
 # Conservative-form library and the true coefficients
 # ---------------------------------------------------------------------------
 
-#: The monomials of (w, u, v) of degree 1 and 2, as the library's input fields:
-#: the conservative fluxes u w and v w are among them.
-_VORT_MONOMIALS: tuple[tuple[int, ...], ...] = tuple(
-    combo for degree in (1, 2) for combo in itertools.combinations_with_replacement((2, 0, 1), degree)
-)
+#: The library's input fields: the monomials of (w, u, v) up to degree 2 that
+#: contain the vorticity, w, w^2, u w and v w (the conservative fluxes). Monomials
+#: of the velocity alone are left out because the flow ties them to these
+#: exactly: u_x + v_y = 0 (incompressibility), v_x - u_y = w, and through both
+#: the Lamb-vector identities, u w = (u v)_x - (u^2/2)_y + (v^2/2)_y and its
+#: counterpart for v w. With them among the inputs the library has exactly
+#: dependent columns, and any multiple of those combinations fits the data at
+#: no cost.
+_VORT_MONOMIALS: tuple[tuple[int, ...], ...] = ((2,), (2, 2), (2, 0), (2, 1))
 _VORT_STATE_NAMES = {0: "u", 1: "v", 2: "w"}
 _VORT_MONOMIAL_NAMES: tuple[str, ...] = tuple(
     "*".join(_VORT_STATE_NAMES[i] for i in combo) for combo in _VORT_MONOMIALS
@@ -169,7 +172,7 @@ _VORT_TARGETS: tuple[int, ...] = (_VORT_MONOMIAL_NAMES.index("w"),)
 
 
 def vorticity_monomial_fields(U: np.ndarray) -> np.ndarray:
-    """The monomials of ``(u, v, w)`` as fields, shape ``(..., 9)``."""
+    """The library's input fields of ``(u, v, w)``, shape ``(..., 4)``."""
 
     U = np.asarray(U, dtype=float)
     return np.stack([np.prod(U[..., list(combo)], axis=-1) for combo in _VORT_MONOMIALS], axis=-1)
@@ -305,15 +308,20 @@ class VorticityMultiTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
 
 
 def _dataset_batch(run_idx: int, cfg: VorticityMultiTrajectoryGLSConfig, noise_hf_abs: float,
-                   noise_lf_abs: float, *, grid: np.ndarray, t: np.ndarray) -> MultiTrajectoryGLSData:
+                   noise_lf_abs: float, *, grid: np.ndarray, t: np.ndarray,
+                   component_scale: np.ndarray) -> MultiTrajectoryGLSData:
+    """One run's windows. ``noise_*_abs`` are the vorticity's noise levels; each
+    field gets the same level relative to its own spread (``component_scale``,
+    the spreads relative to the vorticity's), as a sensor per field would."""
+
     rng = np.random.default_rng(cfg.seed_base + 100 * run_idx)
     U, _, _ = generate_vorticity_dataset(N=cfg.N, Nt=cfg.Nt, L=cfg.L, T=cfg.T, nu=cfg.nu,
                                          seed=cfg.seed_base + run_idx * 1000)
     windows, width = ns_observation_windows(cfg.N, cfg.L, cfg.n_hf + cfg.n_lf, cfg.window, rng)
     clean = [U[idx] for idx in windows]
     return MultiTrajectoryGLSData(
-        hf=[w + noise_hf_abs * rng.standard_normal(w.shape) for w in clean[:cfg.n_hf]],
-        lf=[w + noise_lf_abs * rng.standard_normal(w.shape) for w in clean[cfg.n_hf:]],
+        hf=[w + noise_hf_abs * component_scale * rng.standard_normal(w.shape) for w in clean[:cfg.n_hf]],
+        lf=[w + noise_lf_abs * component_scale * rng.standard_normal(w.shape) for w in clean[cfg.n_hf:]],
         t_argument=t,
         metadata={"grid": np.ascontiguousarray(grid[:width, :width]),
                   "weak_seed": cfg.seed_base + 100_000 + run_idx, "windows": windows},
@@ -372,15 +380,19 @@ def run_vorticity_multi_trajectory_gls_experiment(cfg: VorticityMultiTrajectoryG
 
     U_ref, t_ref, grid_ref = generate_vorticity_dataset(N=cfg.N, Nt=cfg.Nt, L=cfg.L, T=cfg.T, nu=cfg.nu,
                                                         seed=cfg.seed_base)
-    # Noise relative to the vorticity's spread on the reference flow, as the
-    # isothermal flow uses the density's.
-    state_std = float(np.std(U_ref[..., 2]))
+    # Noise relative to each field's spread on the reference flow: the levels
+    # passed around are the vorticity's (the identified field, whose variance
+    # the weighting uses), and u and v get theirs scaled by their own spreads.
+    spreads = np.std(U_ref, axis=(0, 1, 2))
+    state_std = float(spreads[2])
+    component_scale = spreads / state_std
     C_true = build_true_vorticity_coefficients(
         get_vorticity_feature_names(cfg, grid=grid_ref, reference_trajectory=U_ref), nu=cfg.nu)
     return run_multi_trajectory_gls_experiment(
         cfg,
         reference_state_std=lambda _cfg: state_std,
-        dataset_builder=lambda run_idx, cfg, hf, lf: _dataset_batch(run_idx, cfg, hf, lf, grid=grid_ref, t=t_ref),
+        dataset_builder=lambda run_idx, cfg, hf, lf: _dataset_batch(run_idx, cfg, hf, lf, grid=grid_ref, t=t_ref,
+                                                                    component_scale=component_scale),
         true_coefficients=lambda _batch, _cfg: C_true,
         optimizer_factory=cfg.make_optimizer,
         fit_models_fn=_fit_multi_trajectory_models,

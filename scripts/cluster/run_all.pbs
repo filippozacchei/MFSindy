@@ -7,10 +7,13 @@
 
 # Every case, Parts I and II, on one node: qsub scripts/cluster/run_all.pbs
 #
-# Two passes: first QUICK_RUNS runs of every case, for an early look, then the
-# full Monte Carlo (each config's own number of runs, 100). The quick pass's
-# tables and logs are copied to results/quick_<job id>/<case>/ before the full
-# pass overwrites them. QUICK_RUNS=0 skips it.
+# In order: the ODEs and Burgers (full Monte Carlo, each config's own number of
+# runs, 100), then the vorticity flow and the isothermal flow, each first as a
+# quick pass of QUICK_RUNS runs for an early look and then in full. A quick
+# pass's tables and logs are copied to results/quick_<job id>/<case>/ before
+# the full pass overwrites them. QUICK_RUNS=0 skips the quick passes. The
+# isothermal flow, the slowest case and the one the vorticity flow may
+# replace, comes last, so the job can be stopped there.
 #
 # Each case gets as many workers (Monte Carlo runs in parallel) as the node's
 # memory allows, capped at the cores: the peak memory of one worker was measured
@@ -64,33 +67,37 @@ VORT2_GB=8
 } > "$LOG"
 
 status=0
+QUICK_DIR="$ROOT/results/quick_${PBS_JOBID:-local}"
 
-# Every case, Parts I and II; any extra arguments (--runs N) go to each case.
-run_pass() {
-    scripts/run_all.sh --odes --jobs "$(workers $ODE_GB)" "$@" >> "$LOG" 2>&1 || status=1
-    scripts/run_all.sh --cases burgers --jobs "$(workers $BURGERS_GB)" "$@" >> "$LOG" 2>&1 || status=1
-    # The vorticity flow before the isothermal flow: it may replace it, and the
-    # isothermal flow is the slowest case, so it goes last and can be stopped.
-    scripts/run_all.sh --cases vorticity --parts 1 --jobs "$(workers $VORT1_GB)" "$@" >> "$LOG" 2>&1 || status=1
-    scripts/run_all.sh --cases vorticity --parts 2 --jobs "$(workers $VORT2_GB)" "$@" >> "$LOG" 2>&1 || status=1
-    scripts/run_all.sh --cases isothermal_flow --parts 1 --jobs "$(workers $NS1_GB)" "$@" >> "$LOG" 2>&1 || status=1
-    scripts/run_all.sh --cases isothermal_flow --parts 2 --jobs "$(workers $NS2_GB)" "$@" >> "$LOG" 2>&1 || status=1
+run() { scripts/run_all.sh "$@" >> "$LOG" 2>&1 || status=1; }
+
+# Parts I and II of one flow case, with their own worker counts; extra
+# arguments (--runs N) go to both.
+run_flow() {
+    local case=$1 gb1=$2 gb2=$3; shift 3
+    run --cases "$case" --parts 1 --jobs "$(workers "$gb1")" "$@"
+    run --cases "$case" --parts 2 --jobs "$(workers "$gb2")" "$@"
 }
 
-if (( QUICK_RUNS > 0 )); then
-    echo "=== quick pass: $QUICK_RUNS runs per case ($(date)) ===" >> "$LOG"
-    run_pass --runs "$QUICK_RUNS"
-    QUICK_DIR="$ROOT/results/quick_${PBS_JOBID:-local}"
-    for dir in examples/*/results; do
-        case=$(basename "$(dirname "$dir")")
+# A quick pass of a flow case, its tables kept, then the full one.
+quick_then_full() {
+    local case=$1 gb1=$2 gb2=$3
+    if (( QUICK_RUNS > 0 )); then
+        echo "=== $case: quick pass, $QUICK_RUNS runs ($(date)) ===" >> "$LOG"
+        run_flow "$case" "$gb1" "$gb2" --runs "$QUICK_RUNS"
         mkdir -p "$QUICK_DIR/$case"
-        cp "$dir"/*_errors.csv "$dir"/*_errors_selection.pkl "$dir"/main*.log "$QUICK_DIR/$case/" 2>/dev/null
-    done
-    echo "=== quick pass saved to $QUICK_DIR ($(date)) ===" >> "$LOG"
-fi
+        cp examples/"$case"/results/*_errors.csv examples/"$case"/results/*_errors_selection.pkl \
+           examples/"$case"/results/main*.log "$QUICK_DIR/$case/" 2>/dev/null
+        echo "=== $case: quick pass saved to $QUICK_DIR/$case ($(date)) ===" >> "$LOG"
+    fi
+    echo "=== $case: full pass ($(date)) ===" >> "$LOG"
+    run_flow "$case" "$gb1" "$gb2"
+}
 
-echo "=== full pass ($(date)) ===" >> "$LOG"
-run_pass
+run --odes --jobs "$(workers $ODE_GB)"
+run --cases burgers --jobs "$(workers $BURGERS_GB)"
+quick_then_full vorticity "$VORT1_GB" "$VORT2_GB"
+quick_then_full isothermal_flow "$NS1_GB" "$NS2_GB"
 
 echo "End time: $(date)" >> "$LOG"
 exit $status

@@ -159,8 +159,10 @@ def thumb_vorticity(ax) -> None:
     U, t, grid = V.generate_vorticity_dataset(N=cfg.N, Nt=cfg.Nt, L=cfg.L, T=cfg.T, nu=cfg.nu,
                                               seed=cfg.seed_base)
     # As the Monte Carlo does: noise relative to the vorticity's spread on the reference flow.
-    std = float(np.std(U[..., 2]))
-    batch = V._dataset_batch(0, cfg, cfg.noise_hf_rel * std, cfg.noise_lf_rel * std, grid=grid, t=t)
+    spreads = np.std(U, axis=(0, 1, 2))
+    std = float(spreads[2])
+    batch = V._dataset_batch(0, cfg, cfg.noise_hf_rel * std, cfg.noise_lf_rel * std, grid=grid, t=t,
+                             component_scale=spreads / std)
     shown = [(k, HF if k < cfg.n_hf else LF) for k in range(cfg.n_hf + 2)]
     flow_surface(ax, cfg, U, batch.metadata["windows"], batch.hf + batch.lf, shown)
 
