@@ -22,6 +22,7 @@ from mfsindy.experiments import (
     MultiTrajectoryGLSData,
 )
 from mfsindy.experiments.selection import select_rungs, support_key, support_variants
+from mfsindy.noise_estimation import estimate_noise_variance
 from mfsindy.weighted_weak_pde_library import WeightedWeakPDELibrary
 
 DEFAULT_THETA_RANGE = (-np.pi/3, np.pi/3)
@@ -1232,6 +1233,9 @@ class DoublePendulumForecastConfig(MonteCarloConfig, EnsembleConfigMixin):
     n_lf: int = 10
     noise_hf_level: float = 0.01
     noise_lf_level: float = 0.25
+    # whiten with variances estimated from each sensor's own data
+    # (mfsindy.noise_estimation) instead of the true ones
+    estimate_noise: bool = False
 
     # time discretisation, as before: 10 s sampled every 10 ms. The trajectory is
     # longer than Part I's so the surrogate covers the region it forecasts in.
@@ -1309,7 +1313,9 @@ def double_pendulum_noise_variance(X: np.ndarray, level: float) -> np.ndarray:
 
 def double_pendulum_forecast_batch(run_idx: int, cfg: DoublePendulumForecastConfig) -> MultiTrajectoryGLSData:
     """The run's observations: the one trajectory seen by each HF and LF sensor,
-    each with its own noise, and the noise variances the weighted rungs use."""
+    each with its own noise, and the noise variances the weighted rungs use --
+    the true ones, or with ``cfg.estimate_noise`` each sensor's estimate from its
+    own data. The observations are the same either way."""
 
     t, X = double_pendulum_clean_trajectory(cfg, run_idx)
     rng = np.random.default_rng(cfg.seed_base + 100 + run_idx)
@@ -1317,7 +1323,8 @@ def double_pendulum_forecast_batch(run_idx: int, cfg: DoublePendulumForecastConf
     for fidelity, n, level in (("hf", cfg.n_hf, cfg.noise_hf_level), ("lf", cfg.n_lf, cfg.noise_lf_level)):
         field = double_pendulum_noise_variance(X, level)
         observed[fidelity] = [X + np.sqrt(field) * rng.standard_normal(X.shape) for _ in range(n)]
-        variance[fidelity] = [field] * n
+        variance[fidelity] = ([estimate_noise_variance(x) for x in observed[fidelity]]
+                              if cfg.estimate_noise else [field] * n)
     return MultiTrajectoryGLSData(
         hf=observed["hf"], lf=observed["lf"], t_argument=cfg.dt,
         metadata={"t_grid": t, "weak_seed": cfg.seed_base + 10_000 + run_idx, "variance": variance},

@@ -1,17 +1,21 @@
 #!/bin/bash
 #PBS -S /bin/bash
-#PBS -l walltime=12:00:00
+#PBS -l walltime=24:00:00
 #PBS -l nodes=1:ppn=96
 #PBS -N MFSindy_part3
 #PBS -j oe
 
 # Part III, double-pendulum forecasting: qsub scripts/cluster/run_part3.pbs
 # Fewer runs: qsub -v RUNS=10 scripts/cluster/run_part3.pbs
+# Noise study, every LF level with true and with estimated variances:
+#   qsub -v LEVELS="0.05 0.1 0.25 0.5",MODES="true estimated" scripts/cluster/run_part3.pbs
+# Each configuration writes its own table (main3.results_filename); the default
+# is the main configuration alone.
 #
-# Runs examples/double_pendulum/main3.py on one node. One run took 3 min at 10
-# bags on a laptop core, so about 30 min at 100; 100 runs on 48 workers are
-# three rounds, 2 h, well inside the walltime. A worker peaked at 0.3 GB at 10
-# bags, so memory does not limit the workers. The number of workers does not
+# Runs examples/double_pendulum/main3.py on one node. One run takes about 26 min
+# at 100 bags on a laptop core; 100 runs on 48 workers are three rounds, about
+# 1.5 h per configuration, so the full noise study (8) needs about 12 h. A
+# worker peaked at 0.5 GB, so memory does not limit the workers. The number of workers does not
 # change the results (runs are seeded by index). The log is written to
 # examples/double_pendulum/results/main3.log.
 
@@ -35,7 +39,16 @@ LOG=examples/double_pendulum/results/main3.log
     echo "Start time: $(date)"
     echo "PBS_JOBID = ${PBS_JOBID}, runs $RUNS, workers $JOBS"
 } > "$LOG"
-python examples/double_pendulum/main3.py --runs "$RUNS" --jobs "$JOBS" >> "$LOG" 2>&1
-status=$?
+LEVELS=${LEVELS:-0.25}
+MODES=${MODES:-true}
+status=0
+for level in $LEVELS; do
+    for mode in $MODES; do
+        flag=""; [ "$mode" = "estimated" ] && flag="--estimated"
+        echo "=== LF level $level, $mode variances ($(date)) ===" >> "$LOG"
+        python examples/double_pendulum/main3.py --runs "$RUNS" --jobs "$JOBS" --lf-level "$level" $flag \
+            >> "$LOG" 2>&1 || status=1
+    done
+done
 echo "End time: $(date), exit $status" >> "$LOG"
 exit $status
