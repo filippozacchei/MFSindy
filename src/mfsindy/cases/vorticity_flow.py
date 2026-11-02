@@ -3,7 +3,10 @@
 The sixth benchmark, an alternative to the isothermal compressible flow: the same
 observation design (one flow per run, observed through windows a quarter of the
 domain), the same weak, conservative-form library, but an incompressible flow,
-so no density, no shocks and a single equation to identify.
+so no density, no shocks and a single equation to identify. The flow starts from a
+co-rotating vortex pair (make_vortex_pair), localised, so that what a window
+sees is left to chance; the Fourier field of make_initial_vorticity fills every
+window alike.
 
 The flow is observed as three fields, the velocity (u, v) and the vorticity w,
 as a PIV measurement gives them; the velocity is not a local function of the
@@ -114,15 +117,49 @@ def make_initial_vorticity(X, Y, L, rng: np.random.Generator) -> np.ndarray:
     return w / np.max(np.hypot(u, v))
 
 
+def make_vortex_pair(X, Y, L, rng: np.random.Generator) -> np.ndarray:
+    """Two co-rotating Lamb-Oseen vortices, the vortex-merger configuration
+    (Meunier, Le Dizes & Leweke 2005), scaled to a peak speed of 1.
+
+    The flow is localised: the pair covers under a tenth of the domain, so a
+    window may see both vortices, one or neither, as a short ODE trajectory
+    sees part of an attractor. The Fourier field fills every window alike, and
+    there one HF window carries nearly all the information the LF windows do.
+    Each vortex is carried round the other and strained, so advection is
+    excited from the start without an instability to grow. Separation, radii
+    and the circulation ratio are random; a / d > 0.2 throughout, so the pair
+    starts to merge within the horizon. The mean vorticity is removed, as the
+    periodic Poisson solve requires (a uniform background, as in periodic
+    merger simulations).
+    """
+
+    d = 1.0 + 0.5 * rng.random()
+    a = 0.3 + 0.2 * rng.random(2)
+    gamma = np.array([1.0, 0.7 + 0.3 * rng.random()])
+    centre, angle = rng.random(2) * L, 2.0 * np.pi * rng.random()
+    offset = 0.5 * d * np.array([np.cos(angle), np.sin(angle)])
+    w = np.zeros_like(X)
+    for c, a_k, g_k in zip((centre + offset, centre - offset), a, gamma):
+        dx = (X - c[0] + L / 2) % L - L / 2     # nearest periodic image
+        dy = (Y - c[1] + L / 2) % L - L / 2
+        w += g_k / (np.pi * a_k ** 2) * np.exp(-(dx ** 2 + dy ** 2) / a_k ** 2)
+    w -= w.mean()
+    u, v = velocity_from_vorticity(w, L)
+    return w / np.max(np.hypot(u, v))
+
+
+INITIAL_CONDITIONS = {"pair": make_vortex_pair, "fourier": make_initial_vorticity}
+
+
 @functools.lru_cache(maxsize=2)
-def _solve_vorticity(N, Nt, L, T, nu, seed) -> np.ndarray:
+def _solve_vorticity(N, Nt, L, T, nu, seed, ic="pair") -> np.ndarray:
     """The flow of ``generate_vorticity_dataset``, cached: a Part II run is rebuilt
     once per candidate support, and the solve is the slow part."""
 
     rng = np.random.default_rng(seed)
     x = np.linspace(0.0, L, N, endpoint=False)
     X, Y = np.meshgrid(x, x, indexing="ij")
-    w0 = make_initial_vorticity(X, Y, L, rng)
+    w0 = INITIAL_CONDITIONS[ic](X, Y, L, rng)
     sol = solve_ivp(vorticity_rhs, (0.0, T), w0.reshape(-1), t_eval=np.linspace(0.0, T, Nt),
                     args=(N, L, nu), method="RK45", rtol=1e-8, atol=1e-8)
     W = sol.y.reshape(N, N, -1)
@@ -135,11 +172,11 @@ def _solve_vorticity(N, Nt, L, T, nu, seed) -> np.ndarray:
 
 
 def generate_vorticity_dataset(N: int = 128, Nt: int = 1001, L: float = 5.0, T: float = 1.0,
-                               nu: float = 0.05, seed: int = 1):
+                               nu: float = 0.05, seed: int = 1, ic: str = "pair"):
     """One flow on an N x N periodic grid: ``(U, t, grid)``, U of shape
     (N, N, Nt, 3) holding (u, v, w), grid (N, N, Nt, 3) holding (x, y, t)."""
 
-    U = _solve_vorticity(int(N), int(Nt), float(L), float(T), float(nu), int(seed))
+    U = _solve_vorticity(int(N), int(Nt), float(L), float(T), float(nu), int(seed), str(ic))
     t = np.linspace(0.0, T, Nt)
     x = np.linspace(0.0, L, N, endpoint=False)
     X, Y = np.meshgrid(x, x, indexing="ij")
@@ -293,6 +330,7 @@ class VorticityMultiTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
     window: float = 2.5     # edge of a window, a quarter of the domain (64 x 64 points)
 
     nu: float = 0.05
+    ic: str = "pair"        # initial condition, INITIAL_CONDITIONS
 
     derivative_order: int = 2
     include_bias: bool = False
@@ -316,7 +354,7 @@ def _dataset_batch(run_idx: int, cfg: VorticityMultiTrajectoryGLSConfig, noise_h
 
     rng = np.random.default_rng(cfg.seed_base + 100 * run_idx)
     U, _, _ = generate_vorticity_dataset(N=cfg.N, Nt=cfg.Nt, L=cfg.L, T=cfg.T, nu=cfg.nu,
-                                         seed=cfg.seed_base + run_idx * 1000)
+                                         ic=cfg.ic, seed=cfg.seed_base + run_idx * 1000)
     windows, width = ns_observation_windows(cfg.N, cfg.L, cfg.n_hf + cfg.n_lf, cfg.window, rng)
     clean = [U[idx] for idx in windows]
     return MultiTrajectoryGLSData(
@@ -379,7 +417,7 @@ def run_vorticity_multi_trajectory_gls_experiment(cfg: VorticityMultiTrajectoryG
     """Part I Monte Carlo; returns what run_multi_trajectory_gls_experiment does."""
 
     U_ref, t_ref, grid_ref = generate_vorticity_dataset(N=cfg.N, Nt=cfg.Nt, L=cfg.L, T=cfg.T, nu=cfg.nu,
-                                                        seed=cfg.seed_base)
+                                                        ic=cfg.ic, seed=cfg.seed_base)
     # Noise relative to each field's spread on the reference flow: the levels
     # passed around are the vorticity's (the identified field, whose variance
     # the weighting uses), and u and v get theirs scaled by their own spreads.
@@ -410,7 +448,7 @@ def vorticity_kappa_by_support(cfg, candidates, *, coefficients: np.ndarray, n_r
     references = []
     for j in range(int(n_reference)):
         U_ref, _, grid_ref = generate_vorticity_dataset(N=cfg.N, Nt=cfg.Nt, L=cfg.L, T=cfg.T, nu=cfg.nu,
-                                                        seed=cfg.seed_base + j)
+                                                        ic=cfg.ic, seed=cfg.seed_base + j)
         width = int(round(cfg.window / (cfg.L / cfg.N)))
         references.append((np.ascontiguousarray(U_ref[:width, :width]), _window_grid(cfg, grid_ref)))
     rows = []
@@ -446,6 +484,7 @@ class VorticityIntraTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin):
     window: float = 2.5
 
     nu: float = 0.05
+    ic: str = "pair"
 
     # sigma_i(x, y, t) = noise_floor * s_i + noise_level * |u_i(x, y, t)|, as every Part II case
     noise_level: float = 0.15
@@ -479,7 +518,7 @@ def vorticity_run_trajectories(cfg: VorticityIntraTrajectoryGLSConfig, rng: np.r
     every window. ``observed`` receives the whole flow and the windows."""
 
     U, t, grid = generate_vorticity_dataset(N=cfg.N, Nt=cfg.Nt, L=cfg.L, T=cfg.T, nu=cfg.nu,
-                                            seed=int(rng.integers(2**31)))
+                                            ic=cfg.ic, seed=int(rng.integers(2**31)))
     variance = vorticity_noise_variance(U, cfg)
     windows, width = ns_observation_windows(cfg.N, cfg.L, cfg.n_traj, cfg.window, rng)
     if observed is not None:
@@ -544,7 +583,7 @@ def run_vorticity_intra_trajectory_gls_experiment(cfg: VorticityIntraTrajectoryG
     """Part II Monte Carlo; returns what run_intra_trajectory_gls_experiment does."""
 
     U_ref, _, grid_ref = generate_vorticity_dataset(N=cfg.N, Nt=cfg.Nt, L=cfg.L, T=cfg.T, nu=cfg.nu,
-                                                    seed=cfg.seed_base)
+                                                    ic=cfg.ic, seed=cfg.seed_base)
     C_true = build_true_vorticity_coefficients(
         get_vorticity_feature_names(cfg, grid=grid_ref, reference_trajectory=U_ref), nu=cfg.nu)
 

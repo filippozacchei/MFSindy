@@ -157,7 +157,7 @@ def thumb_vorticity(ax) -> None:
 
     cfg = load_main("vorticity", 1).make_config()
     U, t, grid = V.generate_vorticity_dataset(N=cfg.N, Nt=cfg.Nt, L=cfg.L, T=cfg.T, nu=cfg.nu,
-                                              seed=cfg.seed_base)
+                                              ic=cfg.ic, seed=cfg.seed_base)
     # As the Monte Carlo does: noise relative to the vorticity's spread on the reference flow.
     spreads = np.std(U, axis=(0, 1, 2))
     std = float(spreads[2])
