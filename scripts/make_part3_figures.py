@@ -14,13 +14,22 @@ show the data the identification sees.
 - ``double_pendulum_observations``: the four states against time, observed over the
   training window and continued over the forecast one.
 
-The run shown is the last, whose forecasts the Monte Carlo keeps for the
-forecast figure, so the two show the same run.
+- ``double_pendulum_forecast_polynomial``: the forecast of the four states over
+  the forecast window, for FORECAST_RUNGS: each rung's reported model and the
+  band of its bags, after the last seconds of training.
+- ``double_pendulum_forecast_derivatives``: the same rungs' right sides along the
+  true future states, against the true derivatives.
+
+The run shown is the last, whose forecasts the Monte Carlo keeps
+(``--record`` reads another record file, e.g. a draft run's), so every figure
+shows the same run.
 """
 
 from __future__ import annotations
 
+import argparse
 import importlib.util
+import pickle
 import sys
 from pathlib import Path
 
@@ -33,13 +42,17 @@ from matplotlib.lines import Line2D
 from matplotlib.patches import Arc, Circle
 
 from mfsindy.cases import double_pendulum_forecasting as D
-from mfsindy.plots import PAPER_RC, PAPER_WIDTH
+from mfsindy.plots import DISPLAY, PAPER_RC, PAPER_WIDTH, PART1_COLORS
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "results" / "figures"
 
 HF, LF, GREY = "#2f6fae", "#c0392b", "0.55"
 STATES = [r"$\theta_1$", r"$\omega_1$", r"$\theta_2$", r"$\omega_2$"]
+#: Rungs whose forecasts are drawn: one fidelity alone, naive fusion, weighted fusion.
+FORECAST_RUNGS = ("HF", "MF", "MF_w")
+#: Seconds of training drawn before the forecast, for context.
+LEAD = 2.0
 #: The setup figures are subfigures printed at 0.49 of the text width.
 WIDTH = 0.49 * PAPER_WIDTH
 #: Seconds of the outer mass's path drawn behind the schematic.
@@ -199,14 +212,82 @@ def observations(cfg, clean, noisy, t, future) -> None:
     save(fig, "double_pendulum_observations")
 
 
+def load_record(path: Path) -> dict:
+    """The run record holding forecasts: the last of a Monte Carlo's records, or
+    a single run's (``{"record": ...}``, as a draft run writes it)."""
+
+    with open(path, "rb") as fh:
+        data = pickle.load(fh)
+    if isinstance(data, dict) and "record" in data:
+        return data["record"]
+    return data[-1]
+
+
+def forecast_panels(cfg, record, key_truth, key_model, key_bags, labels, lead, name) -> None:
+    """Four panels, one per state: truth dashed, each rung's model and its band."""
+
+    rungs = record["rungs"]
+    first = rungs[FORECAST_RUNGS[0]]["forecast"]
+    n = first[key_truth].shape[0]
+    t_future = cfg.T_train + np.arange(n) * cfg.forecast_dt
+    fig, axes = plt.subplots(2, 2, figsize=(PAPER_WIDTH, 0.5 * PAPER_WIDTH), sharex=True)
+    fig.subplots_adjust(left=0.08, right=0.99, top=0.9, bottom=0.11, hspace=0.15, wspace=0.22)
+    for d, ax in enumerate(axes.ravel()):
+        if lead is not None:
+            ax.plot(lead[0], lead[1][:, d], color="0.6", lw=0.6)
+            ax.axvline(cfg.T_train, color="0.75", lw=0.5, ls=":")
+        for rung in FORECAST_RUNGS:
+            f = rungs[rung]["forecast"]
+            bags = f[key_bags]
+            bags = bags[np.all(np.isfinite(bags), axis=(1, 2))]
+            color = PART1_COLORS[rung]
+            if len(bags):
+                lower, upper = np.quantile(bags, cfg.band, axis=0)
+                ax.fill_between(t_future, lower[:, d], upper[:, d], color=color, alpha=0.18, lw=0)
+            ax.plot(t_future, f[key_model][:, d], color=color, lw=0.9)
+        ax.plot(t_future, first[key_truth][:, d], color="black", lw=0.6, ls=(0, (4, 2)))
+        ax.set_ylabel(labels[d], labelpad=1)
+        style_panel(ax)
+    for ax in axes[1]:
+        ax.set_xlabel("$t$", labelpad=1)
+    handles = [Line2D([], [], color="black", lw=0.6, ls=(0, (4, 2)), label="reference")]
+    handles += [Line2D([], [], color=PART1_COLORS[r], lw=0.9, label=DISPLAY.get(r, r)) for r in FORECAST_RUNGS]
+    handles += [plt.Rectangle((0, 0), 1, 1, color="0.5", alpha=0.25, lw=0,
+                              label=f"{round(100 * (cfg.band[1] - cfg.band[0]))}% band")]
+    fig.legend(handles=handles, loc="upper center", ncol=len(handles), frameon=False,
+               handletextpad=0.3, columnspacing=1.2, borderaxespad=0.2)
+    save(fig, name)
+
+
+def forecasts(cfg, record) -> None:
+    t, clean = D.double_pendulum_clean_trajectory(cfg, record["run"])
+    keep = t >= cfg.T_train - LEAD
+    forecast_panels(cfg, record, "truth", "model", "bags", STATES, (t[keep], clean[keep]),
+                    "double_pendulum_forecast_polynomial")
+    dots = [r"$\dot\theta_1$", r"$\dot\omega_1$", r"$\dot\theta_2$", r"$\dot\omega_2$"]
+    forecast_panels(cfg, record, "true_rhs", "model_rhs", "bag_rhs", dots, None,
+                    "double_pendulum_forecast_derivatives")
+
+
 def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--record", type=Path, default=None,
+                        help="run record with forecasts (default: the Monte Carlo's)")
+    args = parser.parse_args()
+
     plt.rcParams.update(PAPER_RC)
     cfg = make_config()
-    run = cfg.n_runs - 1
+    path = args.record or D.double_pendulum_record_path(cfg)
+    record = load_record(path) if path.exists() else None
+    run = cfg.n_runs - 1 if record is None else record["run"]
     clean, noisy, t, future = run_data(cfg, run)
     schematic(cfg)
     configuration(clean, noisy)
     observations(cfg, clean, noisy, t, future)
+    if record is None:
+        print(f"no forecasts at {path}; forecast figures skipped")
+    else:
+        forecasts(cfg, record)
 
 
 if __name__ == "__main__":

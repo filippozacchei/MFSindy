@@ -1224,14 +1224,14 @@ def polynomial_library_sizes(n_states: int, max_degree: int) -> tuple[int, ...]:
 class DoublePendulumForecastConfig(MonteCarloConfig, EnsembleConfigMixin):
     """Part III: surrogate forecasting of the double pendulum."""
 
-    # multi-fidelity data: sensors on one trajectory. The noise is Part II's,
-    # sigma_i(t) = noise_floor * s_i + level * |x_i(t)| (double_pendulum_noise_variance),
-    # with the level of the sensor's fidelity group: Part I's 1% and 25%.
+    # multi-fidelity data: sensors on one trajectory. The noise has Part II's form,
+    # sigma_i(t) = level * (s_i + |x_i(t)|) (double_pendulum_noise_variance), a
+    # floor plus an error proportional to the reading, both at the level of the
+    # sensor's fidelity group: Part I's 1% and 25%.
     n_hf: int = 1
     n_lf: int = 10
     noise_hf_level: float = 0.01
     noise_lf_level: float = 0.25
-    noise_floor: float = 1e-4
 
     # time discretisation. The trajectory is longer than Part I's, as before: the
     # surrogate must cover the region it forecasts in.
@@ -1256,10 +1256,13 @@ class DoublePendulumForecastConfig(MonteCarloConfig, EnsembleConfigMixin):
     deduplicate: bool = True
     p: int | None = 2
 
-    # forecasting: the HF trajectory from the end of training, over one period of
-    # the slow normal mode of the linearised pendulum (2 pi / sqrt(g (2 - sqrt 2))
-    # = 2.6 s)
-    forecast_horizon: float = 2.6
+    # forecasting: the trajectory from the end of training, for forecast_horizon,
+    # scored over the first h seconds for each h of horizons. valid_error is the
+    # error, relative to the trajectory's spread, at which a forecast stops being
+    # valid (valid_time).
+    forecast_horizon: float = 10.0
+    horizons: tuple[float, ...] = (2.5, 5.0, 10.0)
+    valid_error: float = 0.2
     forecast_dt: float = 1e-2
     band: tuple[float, float] = (0.05, 0.95)
     max_abs_state: float = 50.0
@@ -1290,16 +1293,17 @@ def double_pendulum_clean_trajectory(cfg: DoublePendulumForecastConfig, run_idx:
     )
 
 
-def double_pendulum_noise_variance(X: np.ndarray, level: float, floor: float) -> np.ndarray:
+def double_pendulum_noise_variance(X: np.ndarray, level: float) -> np.ndarray:
     """Pointwise noise variance per state component, shape (n_samples, 4).
 
-    Part II's model: sigma_i(t) = floor * s_i + level * |x_i(t)|, an absolute
-    floor plus an error proportional to the reading, with s_i the spread of
-    component i along the trajectory, so the floor is in that component's units
-    and the noise follows each run's own trajectory.
+    Part II's form, sigma_i(t) = level * (s_i + |x_i(t)|): a floor (the sensor's
+    resolution) plus an error proportional to the reading, both scaling with the
+    sensor's quality. s_i is the spread of component i along the trajectory, so
+    the floor is in that component's units and the noise follows each run's own
+    trajectory; the ratio between fidelity groups is the same everywhere.
     """
 
-    sigma = floor * np.std(X, axis=0) + level * np.abs(X)
+    sigma = level * (np.std(X, axis=0) + np.abs(X))
     return np.maximum(sigma ** 2, 1e-12)
 
 
@@ -1311,7 +1315,7 @@ def double_pendulum_forecast_batch(run_idx: int, cfg: DoublePendulumForecastConf
     rng = np.random.default_rng(cfg.seed_base + 100 + run_idx)
     observed, variance = {}, {}
     for fidelity, n, level in (("hf", cfg.n_hf, cfg.noise_hf_level), ("lf", cfg.n_lf, cfg.noise_lf_level)):
-        field = double_pendulum_noise_variance(X, level, cfg.noise_floor)
+        field = double_pendulum_noise_variance(X, level)
         observed[fidelity] = [X + np.sqrt(field) * rng.standard_normal(X.shape) for _ in range(n)]
         variance[fidelity] = [field] * n
     return MultiTrajectoryGLSData(
@@ -1400,26 +1404,41 @@ def interval_scores(estimate: np.ndarray, members: np.ndarray, truth: np.ndarray
     }
 
 
+def valid_time(model: np.ndarray, truth: np.ndarray, scale: np.ndarray, dt: float,
+               valid_error: float) -> float:
+    """How long the forecast stays valid: the first time its error, relative to
+    ``scale`` per state and pooled over the states, exceeds ``valid_error`` (or
+    the rollout diverges); the whole window if it never does."""
+
+    error = np.sqrt(np.mean(((model - truth) / scale) ** 2, axis=1))
+    invalid = ~(error <= valid_error)                                      # NaN counts as invalid
+    return float(np.argmax(invalid) * dt) if invalid.any() else float((len(error) - 1) * dt)
+
+
 def forecast_metrics(model: np.ndarray, bags: np.ndarray, truth: np.ndarray,
                      model_rhs: np.ndarray, bag_rhs: np.ndarray, true_rhs: np.ndarray,
-                     band: tuple[float, float]) -> dict[str, float]:
-    """Scores over the forecast window, on the states and on their derivatives.
+                     cfg: DoublePendulumForecastConfig, scale: np.ndarray) -> dict[str, float]:
+    """Scores on the states and on their derivatives, over the first h seconds of
+    the forecast for each h of ``cfg.horizons`` (metric names end in ``@h``).
 
     States (``state_*``): the reported (median-coefficient) model's rollout, and
     the band of the bag rollouts that stay bounded; ``bounded`` is their share.
     Derivatives (``deriv_*``): each model's right side evaluated on the true
     states, against the true derivatives, so they score the identified vector
-    field without the compounding of a rollout.
+    field without the compounding of a rollout. ``valid_time`` is the model's,
+    over the whole window, against the training trajectory's spread ``scale``.
     """
 
-    bounded = np.all(np.isfinite(bags), axis=(1, 2))
-    states = interval_scores(model, bags[bounded], truth, band)
-    derivatives = interval_scores(model_rhs, bag_rhs, true_rhs, band)
-    return {
-        **{f"state_{k}": v for k, v in states.items()},
-        "bounded": float(np.mean(bounded)),
-        **{f"deriv_{k}": v for k, v in derivatives.items()},
-    }
+    scores = {"valid_time": valid_time(model, truth, scale, cfg.forecast_dt, cfg.valid_error)}
+    for h in cfg.horizons:
+        n = int(round(h / cfg.forecast_dt)) + 1
+        bounded = np.all(np.isfinite(bags[:, :n]), axis=(1, 2))
+        states = interval_scores(model[:n], bags[bounded, :n], truth[:n], cfg.band)
+        derivatives = interval_scores(model_rhs[:n], bag_rhs[:, :n], true_rhs[:n], cfg.band)
+        scores.update({f"state_{k}@{h:g}": v for k, v in states.items()})
+        scores[f"bounded@{h:g}"] = float(np.mean(bounded))
+        scores.update({f"deriv_{k}@{h:g}": v for k, v in derivatives.items()})
+    return scores
 
 
 def _polynomial_powers(cfg: DoublePendulumForecastConfig) -> np.ndarray:
@@ -1459,6 +1478,7 @@ def run_double_pendulum_forecast(cfg: DoublePendulumForecastConfig, run_idx: int
         truth, m1=cfg.m1, m2=cfg.m2, l1=cfg.l1, l2=cfg.l2, g=cfg.g
     )
     theta = np.prod(truth[:, None, :] ** powers[None], axis=2)              # (n_times, p)
+    scale = np.std(double_pendulum_clean_trajectory(cfg, run_idx)[1], axis=0)
 
     rows, record = [], {"run": run_idx, "rungs": {}}
     for rung in methods:
@@ -1470,7 +1490,7 @@ def run_double_pendulum_forecast(cfg: DoublePendulumForecastConfig, run_idx: int
                                   cfg.forecast_dt, cfg.max_abs_state)
         model_rhs = theta @ coefs[rung].T
         bag_rhs = np.einsum("tp,bnp->btn", theta, trace[rung]["bags"])
-        scores = forecast_metrics(model, bags, truth, model_rhs, bag_rhs, true_rhs, cfg.band)
+        scores = forecast_metrics(model, bags, truth, model_rhs, bag_rhs, true_rhs, cfg, scale)
         scores["terms"] = float(np.count_nonzero(coefs[rung]))
         rows += [{"run": run_idx, "model": rung, "metric": k, "value": v} for k, v in scores.items()]
         record["rungs"][rung] = {
@@ -1549,6 +1569,7 @@ __all__ = [
     "double_pendulum_noise_variance",
     "double_pendulum_forecast_case",
     "forecast_metrics",
+    "valid_time",
     "interval_scores",
     "polynomial_library_sizes",
     "polynomial_rollout",

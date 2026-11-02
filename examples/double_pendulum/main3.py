@@ -1,8 +1,9 @@
 """Part III pipeline for the double-pendulum forecasting benchmark, as a script.
 
 ``python main3.py`` identifies a polynomial surrogate for every Part I model and
-forecasts the observed trajectory past the end of training with it, scoring
-the states and their derivatives (RMSE, R^2, band width and coverage). One
+forecasts the observed trajectory 10 s past the end of training with it,
+scoring the states and their derivatives (RMSE, R^2, band width and coverage)
+over the first 2.5, 5 and 10 s, and how long each forecast stays valid. One
 trajectory is observed by one HF and ten LF sensors (1% and 25% noise); the
 selection is Part I's: the support chosen by the bagged spread, and per
 equation the threshold and the polynomial degree (1 to 5) chosen together by
