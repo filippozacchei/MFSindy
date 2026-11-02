@@ -1233,9 +1233,9 @@ class DoublePendulumForecastConfig(MonteCarloConfig, EnsembleConfigMixin):
     noise_hf_level: float = 0.01
     noise_lf_level: float = 0.25
 
-    # time discretisation. The trajectory is longer than Part I's, as before: the
-    # surrogate must cover the region it forecasts in.
-    dt: float = 1e-3
+    # time discretisation, as before: 10 s sampled every 10 ms. The trajectory is
+    # longer than Part I's so the surrogate covers the region it forecasts in.
+    dt: float = 1e-2
     T_train: float = 10.0
 
     # physical parameters (point masses on massless rods)
