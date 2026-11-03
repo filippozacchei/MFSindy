@@ -113,14 +113,23 @@ def run_intra_trajectory_gls_experiment(
             method: coefficient_errors(coef_map[method], true, **error_kwargs(method))
             for method in methods
         }
+        # Every support is fitted anyway; its errors, kept for each rung, let the
+        # accuracy be read against kappa with the rung held fixed.
+        post = coef_postprocess or (lambda coef, _method: coef)
+        by_support = {m: {H: coefficient_errors(post(np.asarray(f[m].coef_), m), true, **error_kwargs(m))
+                          for H, f in fits.items()}
+                      for m in methods}
         last = run_idx == cfg.n_runs - 1
         return errors, {"coefs": coef_map, "supports": {m: trace[m]["support"] for m in methods},
-                        "true": true, "trace": trace if last else None}
+                        "by_support": by_support, "true": true, "trace": trace if last else None}
 
     def collect(extras):
         estimates = {m: [e["coefs"][m] for e in extras] for m in methods}
         supports = {m: [e["supports"][m] for e in extras] for m in methods}
-        save_selection(cfg, cfg.n_runs - 1, extras[-1]["true"], extras[-1]["trace"], estimates, supports)
+        by_support = {m: {H: np.array([e["by_support"][m][H] for e in extras]) for H in extras[0]["by_support"][m]}
+                      for m in methods}
+        save_selection(cfg, cfg.n_runs - 1, extras[-1]["true"], extras[-1]["trace"], estimates, supports,
+                       by_support)
 
     return run_monte_carlo_experiment(
         n_runs=cfg.n_runs,
