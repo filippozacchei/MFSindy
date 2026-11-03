@@ -138,9 +138,24 @@ def thumb_burgers(ax) -> None:
     strip_3d(ax)
 
 
+def spread_windows(windows, candidates, count: int, chosen=()) -> list:
+    """``count`` of the candidate windows, picked one by one to overlap least with
+    those already chosen, so the tinted strips stay apart on the thumbnail."""
+
+    cells = lambda k: {(i, j) for i in np.asarray(windows[k][0]).ravel() for j in np.asarray(windows[k][1]).ravel()}
+    chosen, pool = list(chosen), [k for k in candidates if k not in chosen]
+    for _ in range(count):
+        taken = set().union(*(cells(k) for k in chosen)) if chosen else set()
+        best = min(pool, key=lambda k: len(cells(k) & taken))
+        chosen.append(best)
+        pool.remove(best)
+    return chosen
+
+
 def thumb_ns(ax) -> None:
-    """The density at the start as a grey surface, the HF and two LF windows
-    tinted, and their noisy density samples on it."""
+    """The density at the final time as a grey surface, the HF and two LF windows
+    tinted, and their noisy density samples on it. The flow is smooth by then;
+    at the start the Fourier modes make a choppy surface the windows are lost on."""
 
     cfg = load_main("isothermal_flow", 1).make_config()
     U, t, grid = N.generate_isothermal_ns_dataset(N=cfg.N, Nt=cfg.Nt, L=cfg.L, T=cfg.T, mu=cfg.mu,
@@ -148,9 +163,11 @@ def thumb_ns(ax) -> None:
     # As the Monte Carlo does: noise relative to the density's spread on the reference flow.
     std = float(np.std(U[:, :, :, 2]))
     batch = N._ns_dataset_batch(0, cfg, cfg.noise_hf_rel * std, cfg.noise_lf_rel * std, grid=grid, t=t)
-    shown = [(k, HF if k < cfg.n_hf else LF) for k in range(cfg.n_hf + 2)]
-    U, windows = centred(cfg, U, batch.metadata["windows"])
-    flow_surface(ax, cfg, U, windows, batch.hf + batch.lf, shown, n=0)
+    windows = batch.metadata["windows"]
+    picked = spread_windows(windows, range(cfg.n_hf, len(windows)), 2, chosen=range(cfg.n_hf))
+    shown = [(k, HF if k < cfg.n_hf else LF) for k in picked]
+    U, windows = centred(cfg, U, windows)
+    flow_surface(ax, cfg, U, windows, batch.hf + batch.lf, shown)
 
 
 def thumb_vorticity(ax) -> None:
@@ -280,9 +297,10 @@ def thumb2_ns(ax, case: str = "isothermal_flow") -> None:
     cfg, observed = main.make_config(), {}
     _, _, _, noisy, variance = main.run_trajectories(cfg, 0, observed=observed)
     # The density's noise level at the final time, which the surface shows.
-    sigma = [np.sqrt(np.asarray(v)[:, :, -1, 2]) for v in variance[:3]]
-    top = max(s.max() for s in sigma)
-    shown = [(k, noise_colors(sigma[k], top)) for k in range(3)]
+    picked = spread_windows(observed["windows"], range(len(observed["windows"])), 3)
+    sigma = {k: np.sqrt(np.asarray(variance[k])[:, :, -1, 2]) for k in picked}
+    top = max(s.max() for s in sigma.values())
+    shown = [(k, noise_colors(sigma[k], top)) for k in picked]
     U, windows = centred(cfg, observed["flow"], observed["windows"])
     flow_surface(ax, cfg, U, windows, noisy, shown)
 
