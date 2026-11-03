@@ -43,12 +43,24 @@ from pysindy.optimizers import BaseOptimizer
 def _ridge(G: np.ndarray, b: np.ndarray, alpha: float) -> np.ndarray:
     """argmin |b - G w|^2 + alpha |w|^2, as least squares on the design augmented
     by sqrt(alpha) I, which keeps the conditioning of G rather than squaring it as
-    the normal equations would."""
+    the normal equations would.
+
+    LAPACK's SVD solver can fail to converge on a finite but badly conditioned
+    design (a degree-5 polynomial library, whitened, on a bag's rows); the system
+    is then solved by QR with column pivoting instead. A non-finite system is an
+    error upstream, so it is reported rather than solved."""
 
     p = G.shape[1]
     G_aug = np.vstack([G, np.sqrt(alpha) * np.eye(p)])
     b_aug = np.concatenate([b, np.zeros(p)])
-    return np.linalg.lstsq(G_aug, b_aug, rcond=None)[0]
+    try:
+        return np.linalg.lstsq(G_aug, b_aug, rcond=None)[0]
+    except np.linalg.LinAlgError:
+        if not (np.all(np.isfinite(G_aug)) and np.all(np.isfinite(b_aug))):
+            raise ValueError("the weak system holds non-finite values") from None
+        import scipy.linalg
+
+        return scipy.linalg.lstsq(G_aug, b_aug, lapack_driver="gelsy")[0]
 
 
 def _stlsq(G: np.ndarray, b: np.ndarray, w: np.ndarray, threshold: float, max_iter: int,
