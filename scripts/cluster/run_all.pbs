@@ -7,7 +7,7 @@
 
 # Every case, Parts I and II, on one node: qsub scripts/cluster/run_all.pbs
 # Some cases only: qsub -v STAGES="vorticity isothermal_flow" scripts/cluster/run_all.pbs
-# One part of the isothermal flow: STAGES="isothermal_flow2" runs Part II alone, in full.
+# One part of the isothermal flow, in full: STAGES="isothermal_flow1" (Part I) or "isothermal_flow2" (Part II).
 #
 # In order: the ODEs and Burgers (full Monte Carlo, each config's own number of
 # runs, 100), then the vorticity flow and the isothermal flow, each first as a
@@ -105,6 +105,7 @@ for stage in $STAGES; do
         burgers)         run --cases burgers --jobs "$(workers $BURGERS_GB)" ;;
         vorticity)       quick_then_full vorticity "$VORT1_GB" "$VORT2_GB" ;;
         isothermal_flow) quick_then_full isothermal_flow "$NS1_GB" "$NS2_GB" ;;
+        isothermal_flow1) run --cases isothermal_flow --parts 1 --jobs "$(workers $NS1_GB)" ;;   # Part I alone, full
         isothermal_flow2) run --cases isothermal_flow --parts 2 --jobs "$(workers $NS2_GB)" ;;   # Part II alone, full
         *)               echo "!! unknown stage $stage" >> "$LOG"; status=1 ;;
     esac
