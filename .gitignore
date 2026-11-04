@@ -80,3 +80,4 @@ OLD/**
 
 # Quick-pass snapshots from scripts/cluster/run_all.pbs
 results/quick_*/
+results/eiv_check/
