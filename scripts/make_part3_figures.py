@@ -20,8 +20,6 @@ show the data the identification sees.
   its bounded bags, after the last seconds of training.
 - ``double_pendulum_forecast_derivatives``: the same rungs' right sides along the
   true future states, against the true derivatives.
-  Both also draw WMF with estimated variances (ESTIMATED_STYLE, no band), from
-  the Monte Carlo that whitens with them: the same run, on the same data.
 - ``double_pendulum_forecast_estimated``: the forecast figure for WMF alone,
   whitened with the true variances and with variances estimated from the data,
   each with its band: the same run, on the same data.
@@ -78,8 +76,6 @@ SHOW_EVERY = 0.02
 FORECAST_RUNGS = {"HF": ("#0072B2", (0, (1, 1))),
                   "MF": ("#E69F00", (0, (5, 1.5, 1, 1.5))),
                   "MF_w": ("#009E73", "-")}
-#: WMF with estimated variances: WMF's colour, its own dash, no band.
-ESTIMATED_STYLE = ("#009E73", (0, (3, 1.5)))
 #: The known-against-estimated figure: WMF in its colour, estimated in Okabe-Ito
 #: vermillion, dashed.
 KNOWN_ESTIMATED = (("known $\\sigma$", "#009E73", "-"), ("estimated $\\sigma$", "#D55E00", (0, (3, 1.5))))
@@ -303,10 +299,9 @@ def load_record(path: Path) -> dict:
     return data[-1]
 
 
-def forecast_panels(cfg, record, key_truth, key_bags, labels, lead, name, estimated=None) -> None:
+def forecast_panels(cfg, record, key_truth, key_bags, labels, lead, name) -> None:
     """Four panels, one per state: truth dashed, each rung's ensemble median and
-    band; with ``lead`` = (t, clean, observed), the end of training in greys; with
-    ``estimated``, a record whose variances were estimated, its WMF median."""
+    band; with ``lead`` = (t, clean, observed), the end of training in greys."""
 
     rungs = record["rungs"]
     first = rungs[next(iter(FORECAST_RUNGS))]["forecast"]
@@ -333,11 +328,6 @@ def forecast_panels(cfg, record, key_truth, key_bags, labels, lead, name, estima
                 warnings.simplefilter("ignore", RuntimeWarning)            # all-NaN times
                 median = np.nanmedian(bags, axis=0)
             ax.plot(t_future, median[:, d], color=color, lw=1.0, ls=style)
-        if estimated is not None:
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore", RuntimeWarning)
-                median = np.nanmedian(estimated["rungs"]["MF_w"]["forecast"][key_bags], axis=0)
-            ax.plot(t_future, median[:, d], color=ESTIMATED_STYLE[0], lw=0.8, ls=ESTIMATED_STYLE[1])
         ax.plot(t_future, first[key_truth][:, d], color="black", lw=0.6, ls=(0, (4, 2)))
         ax.set_xlim((lead[0][0] if lead is not None else t_future[0]), t_future[-1])
         ax.set_ylabel(labels[d], labelpad=1)
@@ -350,9 +340,6 @@ def forecast_panels(cfg, record, key_truth, key_bags, labels, lead, name, estima
                     Line2D([], [], ls="none", marker=".", color="0.75", label="LF data")]
     handles += [Line2D([], [], color=c, lw=1.0, ls=st, label=f"{DISPLAY.get(r, r)} median")
                 for r, (c, st) in FORECAST_RUNGS.items()]
-    if estimated is not None:
-        handles += [Line2D([], [], color=ESTIMATED_STYLE[0], lw=0.8, ls=ESTIMATED_STYLE[1],
-                           label=r"WMF median, estimated $\sigma$")]
     handles += [plt.Rectangle((0, 0), 1, 1, color="0.5", alpha=0.25, lw=0,
                               label=f"{round(100 * (cfg.band[1] - cfg.band[0]))}% band")]
     fig.legend(handles=handles, loc="upper center", ncol=(len(handles) + 1) // 2, frameon=False,
@@ -360,15 +347,15 @@ def forecast_panels(cfg, record, key_truth, key_bags, labels, lead, name, estima
     save(fig, name)
 
 
-def forecasts(cfg, record, clean, observed, t, estimated=None) -> None:
+def forecasts(cfg, record, clean, observed, t) -> None:
     keep = t >= cfg.T_train - LEAD
     lead_data = type(observed)(hf=[X[keep] for X in observed.hf], lf=[X[keep] for X in observed.lf],
                                t_argument=observed.t_argument)
     forecast_panels(cfg, record, "truth", "bags", STATES, (t[keep], clean[keep], lead_data),
-                    "double_pendulum_forecast_polynomial", estimated)
+                    "double_pendulum_forecast_polynomial")
     dots = [r"$\dot\theta_1$", r"$\dot\omega_1$", r"$\dot\theta_2$", r"$\dot\omega_2$"]
     forecast_panels(cfg, record, "true_rhs", "bag_rhs", dots, None,
-                    "double_pendulum_forecast_derivatives", estimated)
+                    "double_pendulum_forecast_derivatives")
 
 
 def forecast_known_estimated(cfg, record, estimated, clean, observed, t) -> None:
@@ -525,7 +512,7 @@ def main() -> None:
     if record is None:
         print("no Monte Carlo results; forecast figures skipped")
         return
-    forecasts(cfg, record, clean, noisy, t, estimated)
+    forecasts(cfg, record, clean, noisy, t)
     if estimated is not None:
         forecast_known_estimated(cfg, record, estimated, clean, noisy, t)
 

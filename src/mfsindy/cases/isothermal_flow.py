@@ -435,7 +435,7 @@ class NSIsothermalMultiTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin
     T_std : float = 1.0
 
     # physical parameters
-    mu: float = 1.0         # chosen so that kappa > 1 at the supports: the case where the neglected term binds
+    mu: float = 1.0         # kappa > 1 at eight of the ten supports (all but W/4 at T/100, T/50): where the neglected term binds
     RT: float = 1.0
     ic: str = "fourier"     # initial condition: "fourier" or "pair" (make_vortex_pair_condition)
 
@@ -886,7 +886,7 @@ class NSIsothermalIntraTrajectoryGLSConfig(MonteCarloConfig, EnsembleConfigMixin
                                  # n_traj whole flows, each from its own initial condition
 
     # physical parameters
-    mu: float = 1.0         # chosen so that kappa > 1 at the supports: the case where the neglected term binds
+    mu: float = 1.0         # kappa > 1 at eight of the ten supports (all but W/4 at T/100, T/50): where the neglected term binds
     RT: float = 1.0
     ic: str = "fourier"     # initial condition: "fourier" or "pair" (make_vortex_pair_condition)
 
