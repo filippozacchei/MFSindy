@@ -39,7 +39,9 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from eiv_check import CASE_API, CASES, _Recorder, _orientation, _per_equation, capture_driver, load_main  # noqa: E402
 
-OUT = ROOT / "results" / "lam_check"
+OUT = Path(os.environ.get("LAM_OUT", ROOT / "results" / "lam_check"))
+#: Only these rungs (comma-separated), for a quick partial look; all by default.
+RUNGS = [r for r in os.environ.get("LAM_RUNGS", "").split(",") if r]
 
 
 def _lam_max(S, G):
@@ -123,6 +125,7 @@ def run_part1(case, run_idx, draws, rng):
     _, kw = capture_driver(case, 1, cfg)
     cfg = kw["cfg"]
     methods = list(getattr(cfg, "methods", None) or PART1_METHODS)
+    methods = [m for m in methods if not RUNGS or m in RUNGS]
     std = float(kw["reference_state_std"](cfg))
     sig = {"hf": cfg.noise_hf_rel * std, "lf": cfg.noise_lf_rel * std}
     scale = inspect.getclosurevars(kw["dataset_builder"]).nonlocals.get("component_scale", 1.0)
@@ -178,6 +181,7 @@ def run_part2(case, run_idx, draws, rng):
     cfg = kw["cfg"]
     methods = kw.get("methods") or getattr(cfg, "methods", None) or [
         "No weighting", "Ones GLS", "Variance diag", "Variance GLS"]
+    methods = [m for m in methods if not RUNGS or m in RUNGS]
     groups = _support_groups(rec, methods, run_idx)
     post2 = kw.get("coef_postprocess") or (lambda c, _m: c)
 
