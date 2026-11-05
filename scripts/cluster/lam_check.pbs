@@ -1,0 +1,63 @@
+#!/bin/bash
+#PBS -S /bin/bash
+#PBS -l walltime=72:00:00
+#PBS -l nodes=1:ppn=96
+#PBS -N MFSindy_lam
+#PBS -j oe
+
+# Validation of the a posteriori EIV diagnostics (scripts/cluster/lam_check.py) at
+# the support each run selected: reads examples/<case>/results, writes
+# results/lam_check/ only. Run a case only once its Monte Carlo results are final.
+#   qsub scripts/cluster/lam_check.pbs
+#   qsub -v STAGES="isothermal_flow",RUNS=100 scripts/cluster/lam_check.pbs
+# Finished runs are skipped, so a stopped job can be resubmitted as is.
+
+ROOT=/u/zacchei/WLS-Sindy
+LOG="$ROOT/scripts/cluster/lam_check_${PBS_JOBID:-local}.log"
+cd "$ROOT" || exit 1
+
+source /u/zacchei/miniconda3/etc/profile.d/conda.sh
+conda activate sindy
+
+export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
+export PYTHONUNBUFFERED=1
+
+CORES=48
+MEM_GB=$(awk '/MemAvailable/ {printf "%d", $2 / 1048576}' /proc/meminfo)
+workers() {
+    awk -v mem="$MEM_GB" -v gb="$1" -v cores="$CORES" 'BEGIN {
+        n = int(0.8 * mem / gb); if (n > cores) n = cores; if (n > 100) n = 100
+        if (n < 1) n = 1; print n }'
+}
+
+# Peak GB of one worker: run_all.pbs's figures, raised for the base and one
+# perturbed system held side by side.
+ODE_GB=1
+BURGERS_GB=4
+VORT1_GB=10
+VORT2_GB=12
+NS1_GB=12
+NS2_GB=16
+DRAWS=${DRAWS:-4}
+RUNS=${RUNS:-20}
+
+check() { python scripts/cluster/lam_check.py --draws "$DRAWS" --runs "$RUNS" "$@" >> "$LOG" 2>&1 || status=1; }
+
+status=0
+STAGES=${STAGES:-"odes burgers vorticity isothermal_flow"}
+echo "Start: $(date)  job ${PBS_JOBID}  free memory ${MEM_GB} GB  stages: $STAGES  draws: $DRAWS  runs: $RUNS" > "$LOG"
+for stage in $STAGES; do
+    echo "=== $stage ($(date))" >> "$LOG"
+    case $stage in
+        odes)            check --cases lorenz hopf pendulum --jobs "$(workers $ODE_GB)" ;;
+        burgers)         check --cases burgers --jobs "$(workers $BURGERS_GB)" ;;
+        vorticity)       check --cases vorticity --parts 1 --jobs "$(workers $VORT1_GB)"
+                         check --cases vorticity --parts 2 --jobs "$(workers $VORT2_GB)" ;;
+        isothermal_flow) check --cases isothermal_flow --parts 1 --jobs "$(workers $NS1_GB)"
+                         check --cases isothermal_flow --parts 2 --jobs "$(workers $NS2_GB)" ;;
+        *)               echo "!! unknown stage $stage" >> "$LOG"; status=1 ;;
+    esac
+done
+python scripts/cluster/lam_check.py --summary >> "$LOG" 2>&1
+echo "End: $(date)" >> "$LOG"
+exit $status
