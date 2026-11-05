@@ -758,7 +758,8 @@ def run_ns_isothermal_multi_trajectory_gls_experiment(
         seed=cfg.seed_base,
     )
 
-    state_std = float(np.std(U_ref[:,:,:,2]))
+    # The std of the whole state (u, v, rho pooled), as the ODE cases take it.
+    state_std = float(np.std(U_ref))
 
     def _reference_state_std(_: NSIsothermalMultiTrajectoryGLSConfig) -> float:
         return state_std

@@ -10,6 +10,7 @@
 # the paper's results in examples/<case>/results are not touched.
 #   qsub scripts/cluster/eiv_check.pbs
 #   qsub -v STAGES="isothermal_flow" scripts/cluster/eiv_check.pbs
+#   qsub -v STAGES="isothermal_flow",RUNS=20 scripts/cluster/eiv_check.pbs
 # Finished runs are skipped, so a stopped job can be resubmitted as is.
 
 ROOT=/u/zacchei/WLS-Sindy
@@ -39,8 +40,9 @@ VORT2_GB=12
 NS1_GB=12
 NS2_GB=16
 DRAWS=${DRAWS:-4}
+RUNS=${RUNS:-100}
 
-check() { python scripts/cluster/eiv_check.py --draws "$DRAWS" "$@" >> "$LOG" 2>&1 || status=1; }
+check() { python scripts/cluster/eiv_check.py --draws "$DRAWS" --runs "$RUNS" "$@" >> "$LOG" 2>&1 || status=1; }
 
 status=0
 STAGES=${STAGES:-"odes burgers vorticity isothermal_flow"}
