@@ -10,6 +10,7 @@
 # results/lam_check/ only. Run a case only once its Monte Carlo results are final.
 #   qsub scripts/cluster/lam_check.pbs
 #   qsub -v STAGES="isothermal_flow",RUNS=100 scripts/cluster/lam_check.pbs
+# One part of the isothermal flow: STAGES="isothermal_flow1" (Part I) or "isothermal_flow2" (Part II).
 # Finished runs are skipped, so a stopped job can be resubmitted as is.
 
 ROOT=/u/zacchei/WLS-Sindy
@@ -55,6 +56,8 @@ for stage in $STAGES; do
                          check --cases vorticity --parts 2 --jobs "$(workers $VORT2_GB)" ;;
         isothermal_flow) check --cases isothermal_flow --parts 1 --jobs "$(workers $NS1_GB)"
                          check --cases isothermal_flow --parts 2 --jobs "$(workers $NS2_GB)" ;;
+        isothermal_flow1) check --cases isothermal_flow --parts 1 --jobs "$(workers $NS1_GB)" ;;
+        isothermal_flow2) check --cases isothermal_flow --parts 2 --jobs "$(workers $NS2_GB)" ;;
         *)               echo "!! unknown stage $stage" >> "$LOG"; status=1 ;;
     esac
 done
